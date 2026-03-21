@@ -36,6 +36,18 @@ public static class ConfiguracaoEndpoints
                 ? Results.NotFound(new { result.Error.Code, result.Error.Description })
                 : Results.BadRequest(new { result.Error.Code, result.Error.Description });
         });
+
+        app.MapPost("/configuracoes/tributos", async (
+            CreateTributoCommand command,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(command, cancellationToken);
+
+            return result.IsSuccess
+                ? Results.Created($"/configuracoes/tributos/{result.Value}", new { Id = result.Value })
+                : Results.BadRequest(new { result.Error.Code, result.Error.Description });
+        });
     }
 
     public sealed record UpdateTributoRequest(bool Ativo, IReadOnlyCollection<FaixaDto> Faixas);
