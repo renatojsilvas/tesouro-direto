@@ -30,6 +30,7 @@ app.MapGet("/health", () => Results.Ok("healthy"));
 app.MapGet("/", () => "Hello World!");
 app.MapImportacaoEndpoints();
 app.MapTituloEndpoints();
+app.MapConfiguracaoEndpoints();
 app.MapMetrics();
 
 app.Run();
