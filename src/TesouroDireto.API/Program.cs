@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Prometheus;
 using TesouroDireto.API.Endpoints;
 using TesouroDireto.API.Extensions;
 using TesouroDireto.API.Middleware;
@@ -22,11 +23,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseSerilogDefaults();
+app.UseHttpMetrics();
 app.UseMiddleware<ApiKeyMiddleware>();
 
 app.MapGet("/health", () => Results.Ok("healthy"));
 app.MapGet("/", () => "Hello World!");
 app.MapImportacaoEndpoints();
+app.MapMetrics();
 
 app.Run();
 
