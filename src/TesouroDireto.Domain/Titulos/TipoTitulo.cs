@@ -10,9 +10,11 @@ public sealed record TipoTitulo
     public static readonly TipoTitulo TesouroIPCA = new("Tesouro IPCA+", Indexador.IPCA, false);
     public static readonly TipoTitulo TesouroIPCAComJuros = new("Tesouro IPCA+ com Juros Semestrais", Indexador.IPCA, true);
     public static readonly TipoTitulo TesouroIGPMComJuros = new("Tesouro IGPM+ com Juros Semestrais", Indexador.IGPM, true);
+    public static readonly TipoTitulo TesouroEduca = new("Tesouro Educa+", Indexador.IPCA, false);
+    public static readonly TipoTitulo TesouroRendaMais = new("Tesouro Renda+ Aposentadoria Extra", Indexador.IPCA, false);
 
     public static IReadOnlyCollection<TipoTitulo> All { get; } =
-        [TesouroPrefixado, TesouroPrefixadoComJuros, TesouroSelic, TesouroIPCA, TesouroIPCAComJuros, TesouroIGPMComJuros];
+        [TesouroPrefixado, TesouroPrefixadoComJuros, TesouroSelic, TesouroIPCA, TesouroIPCAComJuros, TesouroIGPMComJuros, TesouroEduca, TesouroRendaMais];
 
     private TipoTitulo(string name, Indexador indexador, bool pagaJurosSemestrais)
     {

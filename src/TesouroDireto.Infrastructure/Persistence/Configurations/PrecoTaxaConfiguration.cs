@@ -30,42 +30,42 @@ public sealed class PrecoTaxaConfiguration : IEntityTypeConfiguration<PrecoTaxa>
         builder.Property(p => p.TaxaCompra)
             .HasColumnName("taxa_compra")
             .HasPrecision(10, 4)
-            .IsRequired()
+            .IsRequired(false)
             .HasConversion(
-                v => v.Value,
-                v => Taxa.Create(v).Value);
+                v => v != null ? v.Value : (decimal?)null,
+                v => v.HasValue ? Taxa.Create(v.Value).Value : null);
 
         builder.Property(p => p.TaxaVenda)
             .HasColumnName("taxa_venda")
             .HasPrecision(10, 4)
-            .IsRequired()
+            .IsRequired(false)
             .HasConversion(
-                v => v.Value,
-                v => Taxa.Create(v).Value);
+                v => v != null ? v.Value : (decimal?)null,
+                v => v.HasValue ? Taxa.Create(v.Value).Value : null);
 
         builder.Property(p => p.PuCompra)
             .HasColumnName("pu_compra")
             .HasPrecision(18, 6)
-            .IsRequired()
+            .IsRequired(false)
             .HasConversion(
-                v => v.Value,
-                v => PrecoUnitario.Create(v).Value);
+                v => v != null ? v.Value : (decimal?)null,
+                v => v.HasValue ? PrecoUnitario.Create(v.Value).Value : null);
 
         builder.Property(p => p.PuVenda)
             .HasColumnName("pu_venda")
             .HasPrecision(18, 6)
-            .IsRequired()
+            .IsRequired(false)
             .HasConversion(
-                v => v.Value,
-                v => PrecoUnitario.Create(v).Value);
+                v => v != null ? v.Value : (decimal?)null,
+                v => v.HasValue ? PrecoUnitario.Create(v.Value).Value : null);
 
         builder.Property(p => p.PuBase)
             .HasColumnName("pu_base")
             .HasPrecision(18, 6)
-            .IsRequired()
+            .IsRequired(false)
             .HasConversion(
-                v => v.Value,
-                v => PrecoUnitario.Create(v).Value);
+                v => v != null ? v.Value : (decimal?)null,
+                v => v.HasValue ? PrecoUnitario.Create(v.Value).Value : null);
 
         builder.HasOne<TesouroDireto.Domain.Titulos.Titulo>()
             .WithMany()

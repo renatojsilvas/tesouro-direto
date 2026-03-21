@@ -15,11 +15,11 @@ public sealed class PrecoTaxaTests
         result.IsSuccess.Should().BeTrue();
         result.Value.TituloId.Should().Be(TituloId);
         result.Value.DataBase.Value.Should().Be(new DateOnly(2024, 6, 15));
-        result.Value.TaxaCompra.Value.Should().Be(10.50m);
-        result.Value.TaxaVenda.Value.Should().Be(10.75m);
-        result.Value.PuCompra.Value.Should().Be(1000.123456m);
-        result.Value.PuVenda.Value.Should().Be(999.654321m);
-        result.Value.PuBase.Value.Should().Be(998.111111m);
+        result.Value.TaxaCompra!.Value.Should().Be(10.50m);
+        result.Value.TaxaVenda!.Value.Should().Be(10.75m);
+        result.Value.PuCompra!.Value.Should().Be(1000.123456m);
+        result.Value.PuVenda!.Value.Should().Be(999.654321m);
+        result.Value.PuBase!.Value.Should().Be(998.111111m);
     }
 
     [Fact]

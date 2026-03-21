@@ -63,8 +63,8 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
 
         found.Should().NotBeNull();
         found!.TituloId.Should().Be(_titulo.Id);
-        found.TaxaCompra.Value.Should().Be(10.50m);
-        found.PuBase.Value.Should().Be(998.11m);
+        found.TaxaCompra!.Value.Should().Be(10.50m);
+        found.PuBase!.Value.Should().Be(998.11m);
     }
 
     [Fact]

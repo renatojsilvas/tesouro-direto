@@ -165,30 +165,27 @@ public sealed class ImportCsvCommandHandler(
         var dataBaseResult = DataBase.Create(record.DataBase);
         if (dataBaseResult.IsFailure) return dataBaseResult.Error;
 
-        var taxaCompraResult = Taxa.Create(record.TaxaCompra);
-        if (taxaCompraResult.IsFailure) return taxaCompraResult.Error;
-
-        var taxaVendaResult = Taxa.Create(record.TaxaVenda);
-        if (taxaVendaResult.IsFailure) return taxaVendaResult.Error;
-
-        var puCompraResult = PrecoUnitario.Create(record.PuCompra);
-        if (puCompraResult.IsFailure) return puCompraResult.Error;
-
-        var puVendaResult = PrecoUnitario.Create(record.PuVenda);
-        if (puVendaResult.IsFailure) return puVendaResult.Error;
-
-        var puBaseResult = PrecoUnitario.Create(record.PuBase);
-        if (puBaseResult.IsFailure) return puBaseResult.Error;
+        var taxaCompra = CreateTaxaOrNull(record.TaxaCompra);
+        var taxaVenda = CreateTaxaOrNull(record.TaxaVenda);
+        var puCompra = CreatePuOrNull(record.PuCompra);
+        var puVenda = CreatePuOrNull(record.PuVenda);
+        var puBase = CreatePuOrNull(record.PuBase);
 
         return PrecoTaxa.Create(
             tituloId,
             dataBaseResult.Value,
-            taxaCompraResult.Value,
-            taxaVendaResult.Value,
-            puCompraResult.Value,
-            puVendaResult.Value,
-            puBaseResult.Value);
+            taxaCompra,
+            taxaVenda,
+            puCompra,
+            puVenda,
+            puBase);
     }
+
+    private static Taxa? CreateTaxaOrNull(decimal value) =>
+        value == 0 ? null : Taxa.Create(value).Value;
+
+    private static PrecoUnitario? CreatePuOrNull(decimal value) =>
+        value == 0 ? null : PrecoUnitario.Create(value).Value;
 
     private async Task FlushBatchAsync(List<PrecoTaxa> batch, CancellationToken cancellationToken)
     {

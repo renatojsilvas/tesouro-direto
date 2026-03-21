@@ -81,6 +81,6 @@ public sealed class TipoTituloTests
     [Fact]
     public void All_ShouldReturnAllTypes()
     {
-        TipoTitulo.All.Should().HaveCount(6);
+        TipoTitulo.All.Should().HaveCount(8);
     }
 }

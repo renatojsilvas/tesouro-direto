@@ -8,11 +8,11 @@ public sealed class PrecoTaxa : Entity<Guid>
         Guid id,
         Guid tituloId,
         DataBase dataBase,
-        Taxa taxaCompra,
-        Taxa taxaVenda,
-        PrecoUnitario puCompra,
-        PrecoUnitario puVenda,
-        PrecoUnitario puBase)
+        Taxa? taxaCompra,
+        Taxa? taxaVenda,
+        PrecoUnitario? puCompra,
+        PrecoUnitario? puVenda,
+        PrecoUnitario? puBase)
         : base(id)
     {
         TituloId = tituloId;
@@ -26,20 +26,20 @@ public sealed class PrecoTaxa : Entity<Guid>
 
     public Guid TituloId { get; }
     public DataBase DataBase { get; }
-    public Taxa TaxaCompra { get; }
-    public Taxa TaxaVenda { get; }
-    public PrecoUnitario PuCompra { get; }
-    public PrecoUnitario PuVenda { get; }
-    public PrecoUnitario PuBase { get; }
+    public Taxa? TaxaCompra { get; }
+    public Taxa? TaxaVenda { get; }
+    public PrecoUnitario? PuCompra { get; }
+    public PrecoUnitario? PuVenda { get; }
+    public PrecoUnitario? PuBase { get; }
 
     public static Result<PrecoTaxa> Create(
         Guid tituloId,
         DataBase dataBase,
-        Taxa taxaCompra,
-        Taxa taxaVenda,
-        PrecoUnitario puCompra,
-        PrecoUnitario puVenda,
-        PrecoUnitario puBase)
+        Taxa? taxaCompra,
+        Taxa? taxaVenda,
+        PrecoUnitario? puCompra,
+        PrecoUnitario? puVenda,
+        PrecoUnitario? puBase)
     {
         if (tituloId == Guid.Empty)
         {
@@ -47,11 +47,6 @@ public sealed class PrecoTaxa : Entity<Guid>
         }
 
         ArgumentNullException.ThrowIfNull(dataBase);
-        ArgumentNullException.ThrowIfNull(taxaCompra);
-        ArgumentNullException.ThrowIfNull(taxaVenda);
-        ArgumentNullException.ThrowIfNull(puCompra);
-        ArgumentNullException.ThrowIfNull(puVenda);
-        ArgumentNullException.ThrowIfNull(puBase);
 
         return new PrecoTaxa(Guid.NewGuid(), tituloId, dataBase, taxaCompra, taxaVenda, puCompra, puVenda, puBase);
     }
