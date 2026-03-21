@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();
         services.AddScoped<ITituloReadRepository, TituloReadRepository>();
         services.AddScoped<IPrecoTaxaWriteRepository, PrecoTaxaWriteRepository>();
+        services.AddScoped<IPrecoTaxaReadRepository, PrecoTaxaReadRepository>();
         services.AddScoped<ITributoWriteRepository, TributoWriteRepository>();
         services.AddScoped<ITributoReadRepository, TributoReadRepository>();
 
