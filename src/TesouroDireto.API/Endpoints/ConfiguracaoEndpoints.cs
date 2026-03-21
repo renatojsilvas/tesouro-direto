@@ -17,5 +17,26 @@ public static class ConfiguracaoEndpoints
                 ? Results.Ok(result.Value)
                 : Results.BadRequest(new { result.Error.Code, result.Error.Description });
         });
+
+        app.MapPut("/configuracoes/tributos/{id:guid}", async (
+            Guid id,
+            UpdateTributoRequest request,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var command = new UpdateTributoCommand(id, request.Ativo, request.Faixas);
+            var result = await sender.Send(command, cancellationToken);
+
+            if (result.IsSuccess)
+            {
+                return Results.NoContent();
+            }
+
+            return result.Error.Code.Contains("NotFound", StringComparison.Ordinal)
+                ? Results.NotFound(new { result.Error.Code, result.Error.Description })
+                : Results.BadRequest(new { result.Error.Code, result.Error.Description });
+        });
     }
+
+    public sealed record UpdateTributoRequest(bool Ativo, IReadOnlyCollection<FaixaDto> Faixas);
 }
