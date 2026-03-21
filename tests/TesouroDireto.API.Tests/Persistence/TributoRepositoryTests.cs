@@ -23,7 +23,7 @@ public sealed class TributoRepositoryTests : IAsyncLifetime
             .Options;
 
         _dbContext = new AppDbContext(options);
-        await _dbContext.Database.EnsureCreatedAsync(CancellationToken.None);
+        await _dbContext.Database.MigrateAsync(CancellationToken.None);
 
         _writeRepo = new TesouroDireto.Infrastructure.Persistence.Repositories.TributoWriteRepository(_dbContext);
     }

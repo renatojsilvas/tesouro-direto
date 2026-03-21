@@ -25,7 +25,7 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
             .Options;
 
         _dbContext = new AppDbContext(options);
-        await _dbContext.Database.EnsureCreatedAsync(CancellationToken.None);
+        await _dbContext.Database.MigrateAsync(CancellationToken.None);
 
         _titulo = Titulo.Create(
             TipoTitulo.TesouroSelic,
