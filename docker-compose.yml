@@ -1,0 +1,71 @@
+services:
+  app:
+    build: .
+    container_name: tesouro-direto-app
+    ports:
+      - "5000:8080"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=app123
+      - ASPNETCORE_ENVIRONMENT=Production
+      - Serilog__WriteTo__1__Args__uri=http://loki:3100
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: tesouro-direto-db
+    environment:
+      POSTGRES_DB: tesouro_direto
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d tesouro_direto"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Observabilidade
+  grafana:
+    image: grafana/grafana:latest
+    container_name: tesouro-direto-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+  loki:
+    image: grafana/loki:latest
+    container_name: tesouro-direto-loki
+    ports:
+      - "3100:3100"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tesouro-direto-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  # Analise estatica
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: tesouro-direto-sonar
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonar-data:/opt/sonarqube/data
+
+volumes:
+  pgdata:
+  grafana-data:
+  sonar-data:
