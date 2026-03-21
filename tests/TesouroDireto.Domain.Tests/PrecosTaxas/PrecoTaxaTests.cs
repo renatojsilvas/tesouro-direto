@@ -36,8 +36,8 @@ public sealed class PrecoTaxaTests
         var result = PrecoTaxa.Create(
             Guid.Empty,
             DataBase.Create(new DateOnly(2024, 6, 15)).Value,
-            Taxa.Create(10.50m).Value,
-            Taxa.Create(10.75m).Value,
+            Taxa.Create(10.50m),
+            Taxa.Create(10.75m),
             PrecoUnitario.Create(1000m).Value,
             PrecoUnitario.Create(999m).Value,
             PrecoUnitario.Create(998m).Value);
@@ -61,8 +61,8 @@ public sealed class PrecoTaxaTests
         var act = () => PrecoTaxa.Create(
             TituloId,
             null!,
-            Taxa.Create(10m).Value,
-            Taxa.Create(11m).Value,
+            Taxa.Create(10m),
+            Taxa.Create(11m),
             PrecoUnitario.Create(1000m).Value,
             PrecoUnitario.Create(999m).Value,
             PrecoUnitario.Create(998m).Value);
@@ -75,8 +75,8 @@ public sealed class PrecoTaxaTests
         return PrecoTaxa.Create(
             TituloId,
             DataBase.Create(new DateOnly(2024, 6, 15)).Value,
-            Taxa.Create(10.50m).Value,
-            Taxa.Create(10.75m).Value,
+            Taxa.Create(10.50m),
+            Taxa.Create(10.75m),
             PrecoUnitario.Create(1000.123456m).Value,
             PrecoUnitario.Create(999.654321m).Value,
             PrecoUnitario.Create(998.111111m).Value);

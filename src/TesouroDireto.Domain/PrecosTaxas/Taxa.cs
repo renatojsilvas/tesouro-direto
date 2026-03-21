@@ -1,5 +1,3 @@
-using TesouroDireto.Domain.Common;
-
 namespace TesouroDireto.Domain.PrecosTaxas;
 
 public sealed record Taxa
@@ -8,13 +6,5 @@ public sealed record Taxa
 
     public decimal Value { get; }
 
-    public static Result<Taxa> Create(decimal value)
-    {
-        if (value < 0)
-        {
-            return new Error("Taxa.Invalid", "Taxa must not be negative.");
-        }
-
-        return new Taxa(value);
-    }
+    public static Taxa Create(decimal value) => new(value);
 }

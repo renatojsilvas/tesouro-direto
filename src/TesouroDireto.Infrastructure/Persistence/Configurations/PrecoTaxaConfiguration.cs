@@ -33,7 +33,7 @@ public sealed class PrecoTaxaConfiguration : IEntityTypeConfiguration<PrecoTaxa>
             .IsRequired(false)
             .HasConversion(
                 v => v != null ? v.Value : (decimal?)null,
-                v => v.HasValue ? Taxa.Create(v.Value).Value : null);
+                v => v.HasValue ? Taxa.Create(v.Value) : null);
 
         builder.Property(p => p.TaxaVenda)
             .HasColumnName("taxa_venda")
@@ -41,7 +41,7 @@ public sealed class PrecoTaxaConfiguration : IEntityTypeConfiguration<PrecoTaxa>
             .IsRequired(false)
             .HasConversion(
                 v => v != null ? v.Value : (decimal?)null,
-                v => v.HasValue ? Taxa.Create(v.Value).Value : null);
+                v => v.HasValue ? Taxa.Create(v.Value) : null);
 
         builder.Property(p => p.PuCompra)
             .HasColumnName("pu_compra")

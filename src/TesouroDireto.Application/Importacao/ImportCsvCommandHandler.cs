@@ -182,7 +182,7 @@ public sealed class ImportCsvCommandHandler(
     }
 
     private static Taxa? CreateTaxaOrNull(decimal value) =>
-        value == 0 ? null : Taxa.Create(value).Value;
+        value == 0 ? null : Taxa.Create(value);
 
     private static PrecoUnitario? CreatePuOrNull(decimal value) =>
         value == 0 ? null : PrecoUnitario.Create(value).Value;

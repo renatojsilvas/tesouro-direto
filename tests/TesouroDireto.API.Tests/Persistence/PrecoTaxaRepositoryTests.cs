@@ -49,8 +49,8 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
         var preco = PrecoTaxa.Create(
             _titulo.Id,
             DataBase.Create(new DateOnly(2024, 6, 15)).Value,
-            Taxa.Create(10.50m).Value,
-            Taxa.Create(10.75m).Value,
+            Taxa.Create(10.50m),
+            Taxa.Create(10.75m),
             PrecoUnitario.Create(1000.12m).Value,
             PrecoUnitario.Create(999.65m).Value,
             PrecoUnitario.Create(998.11m).Value).Value;
@@ -74,7 +74,7 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
 
         var preco = PrecoTaxa.Create(
             _titulo.Id, dataBase,
-            Taxa.Create(5m).Value, Taxa.Create(6m).Value,
+            Taxa.Create(5m), Taxa.Create(6m),
             PrecoUnitario.Create(500m).Value, PrecoUnitario.Create(499m).Value,
             PrecoUnitario.Create(498m).Value).Value;
 
@@ -104,13 +104,13 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
 
         var p1 = PrecoTaxa.Create(
             _titulo.Id, dataBase,
-            Taxa.Create(5m).Value, Taxa.Create(6m).Value,
+            Taxa.Create(5m), Taxa.Create(6m),
             PrecoUnitario.Create(500m).Value, PrecoUnitario.Create(499m).Value,
             PrecoUnitario.Create(498m).Value).Value;
 
         var p2 = PrecoTaxa.Create(
             _titulo.Id, dataBase,
-            Taxa.Create(7m).Value, Taxa.Create(8m).Value,
+            Taxa.Create(7m), Taxa.Create(8m),
             PrecoUnitario.Create(600m).Value, PrecoUnitario.Create(599m).Value,
             PrecoUnitario.Create(598m).Value).Value;
 
@@ -131,12 +131,12 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
         {
             PrecoTaxa.Create(
                 _titulo.Id, DataBase.Create(new DateOnly(2024, 9, 1)).Value,
-                Taxa.Create(5m).Value, Taxa.Create(6m).Value,
+                Taxa.Create(5m), Taxa.Create(6m),
                 PrecoUnitario.Create(500m).Value, PrecoUnitario.Create(499m).Value,
                 PrecoUnitario.Create(498m).Value).Value,
             PrecoTaxa.Create(
                 _titulo.Id, DataBase.Create(new DateOnly(2024, 9, 2)).Value,
-                Taxa.Create(5.1m).Value, Taxa.Create(6.1m).Value,
+                Taxa.Create(5.1m), Taxa.Create(6.1m),
                 PrecoUnitario.Create(501m).Value, PrecoUnitario.Create(500m).Value,
                 PrecoUnitario.Create(499m).Value).Value
         };

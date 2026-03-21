@@ -6,37 +6,34 @@ namespace TesouroDireto.Domain.Tests.PrecosTaxas;
 public sealed class TaxaTests
 {
     [Fact]
-    public void Create_WithValidValue_ShouldReturnSuccess()
+    public void Create_WithValidValue_ShouldReturnTaxa()
     {
-        var result = Taxa.Create(10.25m);
+        var taxa = Taxa.Create(10.25m);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Value.Should().Be(10.25m);
+        taxa.Value.Should().Be(10.25m);
     }
 
     [Fact]
-    public void Create_WithZero_ShouldReturnSuccess()
+    public void Create_WithZero_ShouldReturnTaxa()
     {
-        var result = Taxa.Create(0m);
+        var taxa = Taxa.Create(0m);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Value.Should().Be(0m);
+        taxa.Value.Should().Be(0m);
     }
 
     [Fact]
-    public void Create_WithNegativeValue_ShouldReturnFailure()
+    public void Create_WithNegativeValue_ShouldReturnTaxa()
     {
-        var result = Taxa.Create(-1m);
+        var taxa = Taxa.Create(-1m);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("Taxa.Invalid");
+        taxa.Value.Should().Be(-1m);
     }
 
     [Fact]
     public void SameValue_ShouldBeEqual()
     {
-        var t1 = Taxa.Create(5.50m).Value;
-        var t2 = Taxa.Create(5.50m).Value;
+        var t1 = Taxa.Create(5.50m);
+        var t2 = Taxa.Create(5.50m);
 
         t1.Should().Be(t2);
     }
