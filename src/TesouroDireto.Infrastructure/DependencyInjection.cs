@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Quartz;
 using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Importacao;
 using TesouroDireto.Application.PrecosTaxas;
@@ -30,6 +31,19 @@ public static class DependencyInjection
         {
             client.Timeout = TimeSpan.FromMinutes(10);
         });
+
+        var cronSchedule = configuration["CsvImport:CronSchedule"] ?? "0 0 6 * * ?";
+
+        services.AddQuartz(q =>
+        {
+            var jobKey = new JobKey("csv-import");
+            q.AddJob<CsvImportJob>(opts => opts.WithIdentity(jobKey));
+            q.AddTrigger(opts => opts
+                .ForJob(jobKey)
+                .WithIdentity("csv-import-trigger")
+                .WithCronSchedule(cronSchedule));
+        });
+        services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
         return services;
     }
