@@ -16,12 +16,14 @@ public sealed class TributoReadRepository(AppDbContext dbContext) : ITributoRead
         return Result<IReadOnlyCollection<Tributo>>.Success(tributos);
     }
 
-    public async Task<Result<Tributo?>> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<Result<Tributo>> GetByIdAsync(Guid id, CancellationToken cancellationToken)
     {
         var tributo = await dbContext.Tributos
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
-        return Result<Tributo?>.Success(tributo);
+        return tributo is not null
+            ? Result<Tributo>.Success(tributo)
+            : Result<Tributo>.Failure(TributoErrors.NotFound);
     }
 
     public async Task<Result<IReadOnlyCollection<Tributo>>> GetAtivosOrdenadosAsync(CancellationToken cancellationToken)

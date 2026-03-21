@@ -52,7 +52,7 @@ public sealed class ImportCsvCommandHandlerTests
 
         _tituloWriteRepository
             .GetByTipoAndVencimentoAsync(Arg.Any<TipoTitulo>(), Arg.Any<DataVencimento>(), Arg.Any<CancellationToken>())
-            .Returns(Result<Titulo?>.Success(null));
+            .Returns(Result<Titulo>.Failure(new Error("Titulo.NotFound", "Titulo was not found.")));
 
         _precoTaxaWriteRepository
             .GetExistingDatasBaseAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -85,7 +85,7 @@ public sealed class ImportCsvCommandHandlerTests
 
         _tituloWriteRepository
             .GetByTipoAndVencimentoAsync(Arg.Any<TipoTitulo>(), Arg.Any<DataVencimento>(), Arg.Any<CancellationToken>())
-            .Returns(Result<Titulo?>.Success(existingTitulo));
+            .Returns(Result<Titulo>.Success(existingTitulo));
 
         _precoTaxaWriteRepository
             .GetExistingDatasBaseAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -118,7 +118,7 @@ public sealed class ImportCsvCommandHandlerTests
 
         _tituloWriteRepository
             .GetByTipoAndVencimentoAsync(Arg.Any<TipoTitulo>(), Arg.Any<DataVencimento>(), Arg.Any<CancellationToken>())
-            .Returns(Result<Titulo?>.Success(existingTitulo));
+            .Returns(Result<Titulo>.Success(existingTitulo));
 
         _precoTaxaWriteRepository
             .GetExistingDatasBaseAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())

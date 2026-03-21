@@ -169,4 +169,26 @@ public sealed class PrecoTaxaReadRepositoryTests : IAsyncLifetime
         var dates = result.Value.Select(p => p.DataBase).ToList();
         dates.Should().BeInAscendingOrder();
     }
+
+    [Fact]
+    public async Task GetLatestByTituloIdAsync_ShouldReturnMostRecentPreco()
+    {
+        await SeedPrecos();
+
+        var result = await _readRepository.GetLatestByTituloIdAsync(_titulo.Id, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value!.DataBase.Should().Be("2024-12-20");
+        result.Value.TaxaCompra.Should().Be(11.00m);
+    }
+
+    [Fact]
+    public async Task GetLatestByTituloIdAsync_WithNoPrecos_ShouldReturnNotFound()
+    {
+        var result = await _readRepository.GetLatestByTituloIdAsync(_titulo.Id, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("PrecoTaxa.NotFound");
+    }
 }

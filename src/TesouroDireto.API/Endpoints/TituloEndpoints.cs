@@ -34,5 +34,17 @@ public static class TituloEndpoints
                 ? Results.Ok(result.Value)
                 : Results.NotFound(new { result.Error.Code, result.Error.Description });
         });
+
+        app.MapGet("/titulos/{id:guid}/preco-atual", async (
+            Guid id,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(new GetPrecoAtualQuery(id), cancellationToken);
+
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : Results.NotFound(new { result.Error.Code, result.Error.Description });
+        });
     }
 }

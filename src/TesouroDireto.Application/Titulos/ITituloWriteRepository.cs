@@ -7,5 +7,5 @@ public interface ITituloWriteRepository
 {
     Task<Result> AddAsync(Titulo titulo, CancellationToken cancellationToken);
     Task<Result<bool>> ExistsAsync(TipoTitulo tipoTitulo, DataVencimento dataVencimento, CancellationToken cancellationToken);
-    Task<Result<Titulo?>> GetByTipoAndVencimentoAsync(TipoTitulo tipoTitulo, DataVencimento dataVencimento, CancellationToken cancellationToken);
+    Task<Result<Titulo>> GetByTipoAndVencimentoAsync(TipoTitulo tipoTitulo, DataVencimento dataVencimento, CancellationToken cancellationToken);
 }

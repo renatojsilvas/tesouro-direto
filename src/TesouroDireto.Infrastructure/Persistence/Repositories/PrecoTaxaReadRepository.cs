@@ -68,6 +68,37 @@ public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrec
         return Result<IReadOnlyCollection<PrecoTaxaDto>>.Success(precos);
     }
 
+    public async Task<Result<PrecoTaxaDto>> GetLatestByTituloIdAsync(Guid tituloId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        var row = await connection.QueryFirstOrDefaultAsync<PrecoTaxaDtoRow>(
+            new CommandDefinition(
+                """
+                SELECT id, data_base, taxa_compra, taxa_venda, pu_compra, pu_venda, pu_base
+                FROM precos_taxas
+                WHERE titulo_id = @TituloId
+                ORDER BY data_base DESC
+                LIMIT 1
+                """,
+                new { TituloId = tituloId },
+                cancellationToken: cancellationToken));
+
+        if (row is null)
+        {
+            return Domain.PrecosTaxas.PrecoTaxaErrors.NotFound;
+        }
+
+        return Result<PrecoTaxaDto>.Success(new PrecoTaxaDto(
+            row.Id,
+            row.DataBase.ToString("yyyy-MM-dd"),
+            row.TaxaCompra,
+            row.TaxaVenda,
+            row.PuCompra,
+            row.PuVenda,
+            row.PuBase));
+    }
+
     private sealed record PrecoTaxaDtoRow(
         Guid Id,
         DateOnly DataBase,

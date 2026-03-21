@@ -131,12 +131,7 @@ public sealed class ImportCsvCommandHandler(
         var existingResult = await tituloWriteRepository.GetByTipoAndVencimentoAsync(
             tipoResult.Value, dataVencimentoResult.Value, cancellationToken);
 
-        if (existingResult.IsFailure)
-        {
-            return existingResult.Error;
-        }
-
-        if (existingResult.Value is not null)
+        if (existingResult.IsSuccess)
         {
             cache[key] = existingResult.Value;
             return (existingResult.Value, false);

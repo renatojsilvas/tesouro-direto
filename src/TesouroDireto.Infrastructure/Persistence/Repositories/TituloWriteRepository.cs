@@ -21,11 +21,13 @@ public sealed class TituloWriteRepository(AppDbContext dbContext) : ITituloWrite
         return Result<bool>.Success(exists);
     }
 
-    public async Task<Result<Titulo?>> GetByTipoAndVencimentoAsync(TipoTitulo tipoTitulo, DataVencimento dataVencimento, CancellationToken cancellationToken)
+    public async Task<Result<Titulo>> GetByTipoAndVencimentoAsync(TipoTitulo tipoTitulo, DataVencimento dataVencimento, CancellationToken cancellationToken)
     {
         var titulo = await dbContext.Titulos
             .FirstOrDefaultAsync(t => t.TipoTitulo == tipoTitulo && t.DataVencimento == dataVencimento, cancellationToken);
 
-        return Result<Titulo?>.Success(titulo);
+        return titulo is not null
+            ? Result<Titulo>.Success(titulo)
+            : Result<Titulo>.Failure(TituloErrors.NotFound);
     }
 }
