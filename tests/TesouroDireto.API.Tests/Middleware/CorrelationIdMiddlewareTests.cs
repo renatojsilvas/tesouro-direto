@@ -8,13 +8,14 @@ public sealed class CorrelationIdMiddlewareTests(WebApplicationFactory<Program> 
     : IClassFixture<WebApplicationFactory<Program>>
 {
     private const string CorrelationIdHeader = "X-Correlation-Id";
+    private const string PublicPath = "/health";
 
     [Fact]
     public async Task Request_WithoutCorrelationId_ShouldGenerateAndReturnInResponse()
     {
         var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/", CancellationToken.None);
+        var response = await client.GetAsync(PublicPath, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.Should().ContainKey(CorrelationIdHeader);
@@ -29,7 +30,7 @@ public sealed class CorrelationIdMiddlewareTests(WebApplicationFactory<Program> 
         var client = factory.CreateClient();
         var expectedId = Guid.NewGuid().ToString();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        using var request = new HttpRequestMessage(HttpMethod.Get, PublicPath);
         request.Headers.Add(CorrelationIdHeader, expectedId);
 
         var response = await client.SendAsync(request, CancellationToken.None);
@@ -44,7 +45,7 @@ public sealed class CorrelationIdMiddlewareTests(WebApplicationFactory<Program> 
     {
         var client = factory.CreateClient();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        using var request = new HttpRequestMessage(HttpMethod.Get, PublicPath);
         request.Headers.Add(CorrelationIdHeader, string.Empty);
 
         var response = await client.SendAsync(request, CancellationToken.None);
@@ -63,7 +64,7 @@ public sealed class CorrelationIdMiddlewareTests(WebApplicationFactory<Program> 
     {
         var client = factory.CreateClient();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        using var request = new HttpRequestMessage(HttpMethod.Get, PublicPath);
         request.Headers.TryAddWithoutValidation(CorrelationIdHeader, maliciousId);
 
         var response = await client.SendAsync(request, CancellationToken.None);
@@ -81,7 +82,7 @@ public sealed class CorrelationIdMiddlewareTests(WebApplicationFactory<Program> 
     {
         var client = factory.CreateClient();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        using var request = new HttpRequestMessage(HttpMethod.Get, PublicPath);
         request.Headers.Add(CorrelationIdHeader, validId);
 
         var response = await client.SendAsync(request, CancellationToken.None);
