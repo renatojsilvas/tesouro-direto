@@ -48,8 +48,14 @@ public sealed class FeriadoImportService(
             yield break;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = ExcelReaderFactory.CreateBinaryReader(stream);
+        using var memoryStream = new MemoryStream();
+        await using (var httpStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+        {
+            await httpStream.CopyToAsync(memoryStream, cancellationToken);
+        }
+
+        memoryStream.Position = 0;
+        using var reader = ExcelReaderFactory.CreateBinaryReader(memoryStream);
 
         var isFirstRow = true;
 
