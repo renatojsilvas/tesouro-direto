@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Quartz;
 using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Importacao;
@@ -17,12 +18,17 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        var connectionString = configuration.GetConnectionString("DefaultConnection")!;
+
         services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(connectionString));
+
+        services.AddSingleton(NpgsqlDataSource.Create(connectionString));
 
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();
+        services.AddScoped<ITituloReadRepository, TituloReadRepository>();
         services.AddScoped<IPrecoTaxaWriteRepository, PrecoTaxaWriteRepository>();
         services.AddScoped<ITributoWriteRepository, TributoWriteRepository>();
         services.AddScoped<ITributoReadRepository, TributoReadRepository>();

@@ -29,6 +29,7 @@ app.UseMiddleware<ApiKeyMiddleware>();
 app.MapGet("/health", () => Results.Ok("healthy"));
 app.MapGet("/", () => "Hello World!");
 app.MapImportacaoEndpoints();
+app.MapTituloEndpoints();
 app.MapMetrics();
 
 app.Run();
