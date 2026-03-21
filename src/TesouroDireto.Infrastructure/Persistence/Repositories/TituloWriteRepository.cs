@@ -16,4 +16,10 @@ public sealed class TituloWriteRepository(AppDbContext dbContext) : ITituloWrite
         return await dbContext.Titulos
             .AnyAsync(t => t.TipoTitulo == tipoTitulo && t.DataVencimento == dataVencimento, cancellationToken);
     }
+
+    public async Task<Titulo?> GetByTipoAndVencimentoAsync(TipoTitulo tipoTitulo, DataVencimento dataVencimento, CancellationToken cancellationToken)
+    {
+        return await dbContext.Titulos
+            .FirstOrDefaultAsync(t => t.TipoTitulo == tipoTitulo && t.DataVencimento == dataVencimento, cancellationToken);
+    }
 }

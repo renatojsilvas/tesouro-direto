@@ -21,4 +21,12 @@ public sealed class PrecoTaxaWriteRepository(AppDbContext dbContext) : IPrecoTax
         return await dbContext.PrecosTaxas
             .AnyAsync(p => p.TituloId == tituloId && p.DataBase == dataBase, cancellationToken);
     }
+
+    public async Task<IReadOnlyCollection<DateOnly>> GetExistingDatasBaseAsync(Guid tituloId, CancellationToken cancellationToken)
+    {
+        return await dbContext.PrecosTaxas
+            .Where(p => p.TituloId == tituloId)
+            .Select(p => p.DataBase.Value)
+            .ToListAsync(cancellationToken);
+    }
 }
