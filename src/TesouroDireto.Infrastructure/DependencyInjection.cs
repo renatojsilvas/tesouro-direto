@@ -7,12 +7,14 @@ using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Importacao;
 using TesouroDireto.Application.PrecosTaxas;
+using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Application.Tributos;
 using TesouroDireto.Infrastructure.CsvImport;
 using TesouroDireto.Infrastructure.Feriados;
 using TesouroDireto.Infrastructure.Persistence;
 using TesouroDireto.Infrastructure.Persistence.Repositories;
+using TesouroDireto.Infrastructure.Projecoes;
 
 namespace TesouroDireto.Infrastructure;
 
@@ -47,6 +49,11 @@ public static class DependencyInjection
         services.AddHttpClient<IFeriadoImportService, FeriadoImportService>(client =>
         {
             client.Timeout = TimeSpan.FromMinutes(5);
+        });
+
+        services.AddHttpClient<IProjecaoMercadoService, FocusBcbService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
         });
 
         var cronSchedule = configuration["CsvImport:CronSchedule"] ?? "0 0 6 * * ?";
