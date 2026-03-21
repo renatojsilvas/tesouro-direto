@@ -25,6 +25,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Feriados\feriados_test.xls" />
+    <EmbeddedResource Include="Feriados\feriados_test.xls" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\TesouroDireto.API\TesouroDireto.API.csproj" />
   </ItemGroup>
 
