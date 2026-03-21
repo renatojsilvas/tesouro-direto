@@ -31,6 +31,7 @@ app.MapGet("/", () => "Hello World!");
 app.MapImportacaoEndpoints();
 app.MapTituloEndpoints();
 app.MapConfiguracaoEndpoints();
+app.MapSimuladorEndpoints();
 app.MapMetrics();
 
 app.Run();

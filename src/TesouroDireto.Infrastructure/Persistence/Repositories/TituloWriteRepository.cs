@@ -21,6 +21,16 @@ public sealed class TituloWriteRepository(AppDbContext dbContext) : ITituloWrite
         return Result<bool>.Success(exists);
     }
 
+    public async Task<Result<Titulo>> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var titulo = await dbContext.Titulos
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+
+        return titulo is not null
+            ? Result<Titulo>.Success(titulo)
+            : Result<Titulo>.Failure(TituloErrors.NotFound);
+    }
+
     public async Task<Result<Titulo>> GetByTipoAndVencimentoAsync(TipoTitulo tipoTitulo, DataVencimento dataVencimento, CancellationToken cancellationToken)
     {
         var titulo = await dbContext.Titulos
