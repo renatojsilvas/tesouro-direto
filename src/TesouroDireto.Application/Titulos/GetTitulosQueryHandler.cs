@@ -18,11 +18,9 @@ public sealed class GetTitulosQueryHandler(ITituloReadRepository tituloReadRepos
             }
         }
 
-        var titulos = await tituloReadRepository.GetFilteredAsync(
+        return await tituloReadRepository.GetFilteredAsync(
             request.Indexador,
             request.Vencido,
             cancellationToken);
-
-        return Result<IReadOnlyCollection<TituloDto>>.Success(titulos);
     }
 }

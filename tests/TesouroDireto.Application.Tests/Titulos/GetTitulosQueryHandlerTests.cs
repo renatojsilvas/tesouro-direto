@@ -1,6 +1,7 @@
 using FluentAssertions;
 using NSubstitute;
 using TesouroDireto.Application.Titulos;
+using TesouroDireto.Domain.Common;
 
 namespace TesouroDireto.Application.Tests.Titulos;
 
@@ -17,7 +18,7 @@ public sealed class GetTitulosQueryHandlerTests
     [Fact]
     public async Task Handle_WithNoFilters_ShouldReturnAllTitulos()
     {
-        var titulos = new[]
+        IReadOnlyCollection<TituloDto> titulos = new[]
         {
             new TituloDto(Guid.NewGuid(), "Tesouro Selic", "2029-03-01", "Selic", false, false),
             new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false)
@@ -25,7 +26,7 @@ public sealed class GetTitulosQueryHandlerTests
 
         _repository
             .GetFilteredAsync(null, null, Arg.Any<CancellationToken>())
-            .Returns(titulos);
+            .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
 
         var result = await _handler.Handle(new GetTitulosQuery(null, null), CancellationToken.None);
 
@@ -36,14 +37,14 @@ public sealed class GetTitulosQueryHandlerTests
     [Fact]
     public async Task Handle_WithIndexadorFilter_ShouldPassFilterToRepository()
     {
-        var titulos = new[]
+        IReadOnlyCollection<TituloDto> titulos = new[]
         {
             new TituloDto(Guid.NewGuid(), "Tesouro Selic", "2029-03-01", "Selic", false, false)
         };
 
         _repository
             .GetFilteredAsync("Selic", null, Arg.Any<CancellationToken>())
-            .Returns(titulos);
+            .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
 
         var result = await _handler.Handle(new GetTitulosQuery("Selic", null), CancellationToken.None);
 
@@ -55,14 +56,14 @@ public sealed class GetTitulosQueryHandlerTests
     [Fact]
     public async Task Handle_WithVencidoFilter_ShouldPassFilterToRepository()
     {
-        var titulos = new[]
+        IReadOnlyCollection<TituloDto> titulos = new[]
         {
             new TituloDto(Guid.NewGuid(), "Tesouro Prefixado", "2020-01-01", "Prefixado", false, true)
         };
 
         _repository
             .GetFilteredAsync(null, true, Arg.Any<CancellationToken>())
-            .Returns(titulos);
+            .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
 
         var result = await _handler.Handle(new GetTitulosQuery(null, true), CancellationToken.None);
 
@@ -83,11 +84,11 @@ public sealed class GetTitulosQueryHandlerTests
     [Fact]
     public async Task Handle_WithBothFilters_ShouldPassBothToRepository()
     {
-        var titulos = Array.Empty<TituloDto>();
+        IReadOnlyCollection<TituloDto> titulos = Array.Empty<TituloDto>();
 
         _repository
             .GetFilteredAsync("IPCA", false, Arg.Any<CancellationToken>())
-            .Returns(titulos);
+            .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
 
         var result = await _handler.Handle(new GetTitulosQuery("IPCA", false), CancellationToken.None);
 
@@ -98,9 +99,11 @@ public sealed class GetTitulosQueryHandlerTests
     [Fact]
     public async Task Handle_WithNoResults_ShouldReturnEmptyCollection()
     {
+        IReadOnlyCollection<TituloDto> titulos = Array.Empty<TituloDto>();
+
         _repository
             .GetFilteredAsync(null, null, Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<TituloDto>());
+            .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
 
         var result = await _handler.Handle(new GetTitulosQuery(null, null), CancellationToken.None);
 

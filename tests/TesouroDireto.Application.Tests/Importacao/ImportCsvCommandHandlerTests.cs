@@ -26,6 +26,14 @@ public sealed class ImportCsvCommandHandlerTests
             _precoTaxaWriteRepository,
             _unitOfWork,
             Substitute.For<ILogger<ImportCsvCommandHandler>>());
+
+        _tituloWriteRepository
+            .AddAsync(Arg.Any<Titulo>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
+
+        _precoTaxaWriteRepository
+            .AddRangeAsync(Arg.Any<IReadOnlyCollection<Domain.PrecosTaxas.PrecoTaxa>>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
     }
 
     [Fact]
@@ -44,11 +52,11 @@ public sealed class ImportCsvCommandHandlerTests
 
         _tituloWriteRepository
             .GetByTipoAndVencimentoAsync(Arg.Any<TipoTitulo>(), Arg.Any<DataVencimento>(), Arg.Any<CancellationToken>())
-            .Returns((Titulo?)null);
+            .Returns(Result<Titulo?>.Success(null));
 
         _precoTaxaWriteRepository
             .GetExistingDatasBaseAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<DateOnly>() as IReadOnlyCollection<DateOnly>);
+            .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(Array.Empty<DateOnly>()));
 
         var result = await _handler.Handle(new ImportCsvCommand(), CancellationToken.None);
 
@@ -77,11 +85,11 @@ public sealed class ImportCsvCommandHandlerTests
 
         _tituloWriteRepository
             .GetByTipoAndVencimentoAsync(Arg.Any<TipoTitulo>(), Arg.Any<DataVencimento>(), Arg.Any<CancellationToken>())
-            .Returns(existingTitulo);
+            .Returns(Result<Titulo?>.Success(existingTitulo));
 
         _precoTaxaWriteRepository
             .GetExistingDatasBaseAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<DateOnly>() as IReadOnlyCollection<DateOnly>);
+            .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(Array.Empty<DateOnly>()));
 
         var result = await _handler.Handle(new ImportCsvCommand(), CancellationToken.None);
 
@@ -110,11 +118,11 @@ public sealed class ImportCsvCommandHandlerTests
 
         _tituloWriteRepository
             .GetByTipoAndVencimentoAsync(Arg.Any<TipoTitulo>(), Arg.Any<DataVencimento>(), Arg.Any<CancellationToken>())
-            .Returns(existingTitulo);
+            .Returns(Result<Titulo?>.Success(existingTitulo));
 
         _precoTaxaWriteRepository
             .GetExistingDatasBaseAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { new DateOnly(2023, 1, 2) } as IReadOnlyCollection<DateOnly>);
+            .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(new[] { new DateOnly(2023, 1, 2) } as IReadOnlyCollection<DateOnly>));
 
         var result = await _handler.Handle(new ImportCsvCommand(), CancellationToken.None);
 

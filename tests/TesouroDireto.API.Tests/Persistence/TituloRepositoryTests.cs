@@ -41,8 +41,10 @@ public sealed class TituloRepositoryTests : IAsyncLifetime
             TipoTitulo.TesouroSelic,
             DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
 
-        await _repository.AddAsync(titulo, CancellationToken.None);
+        var result = await _repository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
 
         var found = await _dbContext.Titulos
             .FirstOrDefaultAsync(t => t.Id == titulo.Id, CancellationToken.None);
@@ -64,20 +66,22 @@ public sealed class TituloRepositoryTests : IAsyncLifetime
         await _repository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var exists = await _repository.ExistsAsync(tipo, vencimento, CancellationToken.None);
+        var result = await _repository.ExistsAsync(tipo, vencimento, CancellationToken.None);
 
-        exists.Should().BeTrue();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
     }
 
     [Fact]
     public async Task ExistsAsync_WhenTituloDoesNotExist_ShouldReturnFalse()
     {
-        var exists = await _repository.ExistsAsync(
+        var result = await _repository.ExistsAsync(
             TipoTitulo.TesouroIPCA,
             DataVencimento.Create(new DateOnly(2035, 5, 15)).Value,
             CancellationToken.None);
 
-        exists.Should().BeFalse();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
     }
 
     [Fact]

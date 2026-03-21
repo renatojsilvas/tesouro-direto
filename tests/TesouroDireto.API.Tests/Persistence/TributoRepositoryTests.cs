@@ -47,8 +47,10 @@ public sealed class TributoRepositoryTests : IAsyncLifetime
 
         var tributo = Tributo.Create("Imposto de Renda", BaseCalculo.Rendimento, TipoCalculo.FaixaPorDias, faixas, 1, false).Value;
 
-        await _writeRepo.AddAsync(tributo, CancellationToken.None);
+        var result = await _writeRepo.AddAsync(tributo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
 
         _dbContext.ChangeTracker.Clear();
 
@@ -75,8 +77,10 @@ public sealed class TributoRepositoryTests : IAsyncLifetime
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
         tributo.Desativar();
-        _writeRepo.Update(tributo);
+        var updateResult = await _writeRepo.UpdateAsync(tributo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        updateResult.IsSuccess.Should().BeTrue();
 
         _dbContext.ChangeTracker.Clear();
 
@@ -102,10 +106,11 @@ public sealed class TributoRepositoryTests : IAsyncLifetime
         _dbContext.ChangeTracker.Clear();
 
         var readRepo = new TesouroDireto.Infrastructure.Persistence.Repositories.TributoReadRepository(_dbContext);
-        var ativos = await readRepo.GetAtivosOrdenadosAsync(CancellationToken.None);
+        var result = await readRepo.GetAtivosOrdenadosAsync(CancellationToken.None);
 
-        ativos.Should().HaveCount(2);
-        ativos.First().Nome.Should().Be("IOF");
-        ativos.Last().Nome.Should().Be("IR");
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        result.Value.First().Nome.Should().Be("IOF");
+        result.Value.Last().Nome.Should().Be("IR");
     }
 }

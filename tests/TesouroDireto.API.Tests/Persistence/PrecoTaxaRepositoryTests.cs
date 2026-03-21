@@ -55,8 +55,10 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
             PrecoUnitario.Create(999.65m).Value,
             PrecoUnitario.Create(998.11m).Value).Value;
 
-        await _repository.AddAsync(preco, CancellationToken.None);
+        var result = await _repository.AddAsync(preco, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
 
         var found = await _dbContext.PrecosTaxas
             .FirstOrDefaultAsync(p => p.Id == preco.Id, CancellationToken.None);
@@ -81,20 +83,22 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
         await _repository.AddAsync(preco, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var exists = await _repository.ExistsAsync(_titulo.Id, dataBase, CancellationToken.None);
+        var result = await _repository.ExistsAsync(_titulo.Id, dataBase, CancellationToken.None);
 
-        exists.Should().BeTrue();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
     }
 
     [Fact]
     public async Task ExistsAsync_WhenNotExists_ShouldReturnFalse()
     {
-        var exists = await _repository.ExistsAsync(
+        var result = await _repository.ExistsAsync(
             _titulo.Id,
             DataBase.Create(new DateOnly(2099, 1, 1)).Value,
             CancellationToken.None);
 
-        exists.Should().BeFalse();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
     }
 
     [Fact]
@@ -141,8 +145,10 @@ public sealed class PrecoTaxaRepositoryTests : IAsyncLifetime
                 PrecoUnitario.Create(499m).Value).Value
         };
 
-        await _repository.AddRangeAsync(precos, CancellationToken.None);
+        var result = await _repository.AddRangeAsync(precos, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
 
         var count = await _dbContext.PrecosTaxas.CountAsync(CancellationToken.None);
 

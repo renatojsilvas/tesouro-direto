@@ -56,8 +56,16 @@ public sealed class ImportCsvCommandHandler(
                 titulosCriados++;
             }
 
-            var existingDates = await GetExistingDatesAsync(
+            var existingDatesResult = await GetExistingDatesAsync(
                 titulo.Id, existingDatesCache, cancellationToken);
+
+            if (existingDatesResult.IsFailure)
+            {
+                linhasComErro++;
+                continue;
+            }
+
+            var existingDates = existingDatesResult.Value;
 
             if (existingDates.Contains(record.DataBase))
             {
@@ -120,13 +128,18 @@ public sealed class ImportCsvCommandHandler(
             return dataVencimentoResult.Error;
         }
 
-        var existing = await tituloWriteRepository.GetByTipoAndVencimentoAsync(
+        var existingResult = await tituloWriteRepository.GetByTipoAndVencimentoAsync(
             tipoResult.Value, dataVencimentoResult.Value, cancellationToken);
 
-        if (existing is not null)
+        if (existingResult.IsFailure)
         {
-            cache[key] = existing;
-            return (existing, false);
+            return existingResult.Error;
+        }
+
+        if (existingResult.Value is not null)
+        {
+            cache[key] = existingResult.Value;
+            return (existingResult.Value, false);
         }
 
         var tituloResult = Titulo.Create(tipoResult.Value, dataVencimentoResult.Value);
@@ -135,29 +148,39 @@ public sealed class ImportCsvCommandHandler(
             return tituloResult.Error;
         }
 
-        await tituloWriteRepository.AddAsync(tituloResult.Value, cancellationToken);
+        var addResult = await tituloWriteRepository.AddAsync(tituloResult.Value, cancellationToken);
+        if (addResult.IsFailure)
+        {
+            return addResult.Error;
+        }
+
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         cache[key] = tituloResult.Value;
         return (tituloResult.Value, true);
     }
 
-    private async Task<HashSet<DateOnly>> GetExistingDatesAsync(
+    private async Task<Result<HashSet<DateOnly>>> GetExistingDatesAsync(
         Guid tituloId,
         Dictionary<Guid, HashSet<DateOnly>> cache,
         CancellationToken cancellationToken)
     {
         if (cache.TryGetValue(tituloId, out var dates))
         {
-            return dates;
+            return Result<HashSet<DateOnly>>.Success(dates);
         }
 
-        var existing = await precoTaxaWriteRepository.GetExistingDatasBaseAsync(
+        var existingResult = await precoTaxaWriteRepository.GetExistingDatasBaseAsync(
             tituloId, cancellationToken);
 
-        var hashSet = new HashSet<DateOnly>(existing);
+        if (existingResult.IsFailure)
+        {
+            return existingResult.Error;
+        }
+
+        var hashSet = new HashSet<DateOnly>(existingResult.Value);
         cache[tituloId] = hashSet;
-        return hashSet;
+        return Result<HashSet<DateOnly>>.Success(hashSet);
     }
 
     private static Result<PrecoTaxa> CreatePrecoTaxa(Guid tituloId, CsvRecord record)

@@ -68,7 +68,8 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
         var result = await _readRepository.GetFilteredAsync(null, null, CancellationToken.None);
 
-        result.Should().HaveCount(4);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(4);
     }
 
     [Fact]
@@ -78,8 +79,9 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
         var result = await _readRepository.GetFilteredAsync("IPCA", null, CancellationToken.None);
 
-        result.Should().HaveCount(2);
-        result.Should().AllSatisfy(t => t.Indexador.Should().Be("IPCA"));
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        result.Value.Should().AllSatisfy(t => t.Indexador.Should().Be("IPCA"));
     }
 
     [Fact]
@@ -89,9 +91,10 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
         var result = await _readRepository.GetFilteredAsync(null, true, CancellationToken.None);
 
-        result.Should().HaveCount(1);
-        result.First().Vencido.Should().BeTrue();
-        result.First().TipoTitulo.Should().Be("Tesouro Prefixado");
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(1);
+        result.Value.First().Vencido.Should().BeTrue();
+        result.Value.First().TipoTitulo.Should().Be("Tesouro Prefixado");
     }
 
     [Fact]
@@ -101,8 +104,9 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
         var result = await _readRepository.GetFilteredAsync(null, false, CancellationToken.None);
 
-        result.Should().HaveCount(3);
-        result.Should().AllSatisfy(t => t.Vencido.Should().BeFalse());
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(3);
+        result.Value.Should().AllSatisfy(t => t.Vencido.Should().BeFalse());
     }
 
     [Fact]
@@ -112,8 +116,9 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
         var result = await _readRepository.GetFilteredAsync("IPCA", false, CancellationToken.None);
 
-        result.Should().HaveCount(2);
-        result.Should().AllSatisfy(t =>
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        result.Value.Should().AllSatisfy(t =>
         {
             t.Indexador.Should().Be("IPCA");
             t.Vencido.Should().BeFalse();
@@ -127,7 +132,8 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
         var result = await _readRepository.GetFilteredAsync("IGPM", null, CancellationToken.None);
 
-        result.Should().BeEmpty();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
     }
 
     [Fact]
@@ -137,8 +143,9 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
         var result = await _readRepository.GetFilteredAsync("Selic", null, CancellationToken.None);
 
-        result.Should().HaveCount(1);
-        var titulo = result.First();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(1);
+        var titulo = result.Value.First();
         titulo.Id.Should().NotBeEmpty();
         titulo.TipoTitulo.Should().Be("Tesouro Selic");
         titulo.DataVencimento.Should().Be("2029-03-01");

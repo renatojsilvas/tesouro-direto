@@ -1,52 +1,21 @@
 using System.Data;
-using System.Reflection;
 using System.Text;
 using Dapper;
 using Npgsql;
 using TesouroDireto.Application.Titulos;
-using TesouroDireto.Domain.Titulos;
+using TesouroDireto.Domain.Common;
 
 namespace TesouroDireto.Infrastructure.Persistence.Repositories;
 
 public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloReadRepository
 {
-    private static readonly ConstructorInfo TituloConstructor = typeof(Titulo)
-        .GetConstructor(
-            BindingFlags.NonPublic | BindingFlags.Instance,
-            [typeof(Guid), typeof(TipoTitulo), typeof(DataVencimento)])!;
-
     static TituloReadRepository()
     {
         DefaultTypeMap.MatchNamesWithUnderscores = true;
         SqlMapper.AddTypeHandler(new DateOnlyTypeHandler());
     }
 
-    public async Task<IReadOnlyCollection<Titulo>> GetAllAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-
-        var rows = await connection.QueryAsync<TituloRow>(
-            new CommandDefinition(
-                "SELECT id, tipo_titulo, data_vencimento, indexador, paga_juros_semestrais FROM titulos",
-                cancellationToken: cancellationToken));
-
-        return rows.Select(MapToEntity).ToList();
-    }
-
-    public async Task<Titulo?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-
-        var row = await connection.QueryFirstOrDefaultAsync<TituloRow>(
-            new CommandDefinition(
-                "SELECT id, tipo_titulo, data_vencimento, indexador, paga_juros_semestrais FROM titulos WHERE id = @Id",
-                new { Id = id },
-                cancellationToken: cancellationToken));
-
-        return row is null ? null : MapToEntity(row);
-    }
-
-    public async Task<IReadOnlyCollection<TituloDto>> GetFilteredAsync(
+    public async Task<Result<IReadOnlyCollection<TituloDto>>> GetFilteredAsync(
         string? indexador,
         bool? vencido,
         CancellationToken cancellationToken)
@@ -82,29 +51,16 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
         var rows = await connection.QueryAsync<TituloDtoRow>(
             new CommandDefinition(sql.ToString(), parameters, cancellationToken: cancellationToken));
 
-        return rows.Select(r => new TituloDto(
+        IReadOnlyCollection<TituloDto> titulos = rows.Select(r => new TituloDto(
             r.Id,
             r.TipoTitulo,
             r.DataVencimento.ToString("yyyy-MM-dd"),
             r.Indexador,
             r.PagaJurosSemestrais,
             r.Vencido)).ToList();
+
+        return Result<IReadOnlyCollection<TituloDto>>.Success(titulos);
     }
-
-    private static Titulo MapToEntity(TituloRow row)
-    {
-        var tipo = TipoTitulo.FromName(row.TipoTitulo).Value;
-        var vencimento = DataVencimento.Create(row.DataVencimento).Value;
-
-        return (Titulo)TituloConstructor.Invoke([row.Id, tipo, vencimento]);
-    }
-
-    private sealed record TituloRow(
-        Guid Id,
-        string TipoTitulo,
-        DateOnly DataVencimento,
-        string Indexador,
-        bool PagaJurosSemestrais);
 
     private sealed record TituloDtoRow(
         Guid Id,
