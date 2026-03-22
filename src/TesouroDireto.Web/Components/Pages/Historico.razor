@@ -1,0 +1,214 @@
+@page "/historico"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Histórico</PageTitle>
+
+<h1>Histórico de Preços e Taxas</h1>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <label for="titulo" class="form-label">Título</label>
+        @if (loadingTitulos)
+        {
+            <p><em>Carregando títulos...</em></p>
+        }
+        else
+        {
+            <select id="titulo" class="form-select" @bind="selectedTituloId" @bind:after="CarregarPrecosAsync">
+                <option value="">Selecione um título</option>
+                @if (titulos is not null)
+                {
+                    @foreach (var titulo in titulos)
+                    {
+                        <option value="@titulo.Id">@titulo.TipoTitulo - @titulo.DataVencimento</option>
+                    }
+                }
+            </select>
+        }
+    </div>
+    <div class="col-md-3">
+        <label for="dataInicio" class="form-label">Data Início</label>
+        <input id="dataInicio" type="date" class="form-control" @bind="dataInicio" @bind:after="CarregarPrecosAsync" />
+    </div>
+    <div class="col-md-3">
+        <label for="dataFim" class="form-label">Data Fim</label>
+        <input id="dataFim" type="date" class="form-control" @bind="dataFim" @bind:after="CarregarPrecosAsync" />
+    </div>
+</div>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (loading)
+{
+    <p><em>Carregando preços...</em></p>
+}
+
+@if (precos is { Count: > 0 })
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">PU Compra / PU Venda</h5>
+            <canvas id="priceChart" height="100"></canvas>
+        </div>
+    </div>
+
+    <p class="text-muted">@precos.Count registro(s)</p>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-striped">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th class="text-end">Taxa Compra</th>
+                    <th class="text-end">Taxa Venda</th>
+                    <th class="text-end">PU Compra</th>
+                    <th class="text-end">PU Venda</th>
+                    <th class="text-end">PU Base</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var preco in precos.TakeLast(50).Reverse())
+                {
+                    <tr>
+                        <td>@FormatDate(preco.DataBase)</td>
+                        <td class="text-end">@FormatDecimal(preco.TaxaCompra, "N2")%</td>
+                        <td class="text-end">@FormatDecimal(preco.TaxaVenda, "N2")%</td>
+                        <td class="text-end">@FormatDecimal(preco.PuCompra, "N6")</td>
+                        <td class="text-end">@FormatDecimal(preco.PuVenda, "N6")</td>
+                        <td class="text-end">@FormatDecimal(preco.PuBase, "N6")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (precos.Count > 50)
+        {
+            <p class="text-muted fst-italic">Exibindo os 50 registros mais recentes de @precos.Count total.</p>
+        }
+    </div>
+}
+else if (!loading && selectedTituloId != "")
+{
+    <p class="text-muted">Nenhum registro encontrado para o período.</p>
+}
+
+@code {
+    private List<TituloItem>? titulos;
+    private List<PrecoItem>? precos;
+    private bool loadingTitulos = true;
+    private bool loading;
+    private string? erro;
+    private string selectedTituloId = "";
+    private DateTime? dataInicio;
+    private DateTime? dataFim;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
+            titulos = await client.GetFromJsonAsync<List<TituloItem>>("titulos");
+        }
+        catch (Exception ex)
+        {
+            erro = $"Falha ao carregar títulos: {ex.Message}";
+        }
+        finally
+        {
+            loadingTitulos = false;
+        }
+    }
+
+    private async Task CarregarPrecosAsync()
+    {
+        if (string.IsNullOrEmpty(selectedTituloId))
+        {
+            precos = null;
+            return;
+        }
+
+        loading = true;
+        erro = null;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
+            var url = $"titulos/{selectedTituloId}/precos";
+            var queryParams = new List<string>();
+
+            if (dataInicio.HasValue)
+            {
+                queryParams.Add($"dataInicio={DateOnly.FromDateTime(dataInicio.Value):yyyy-MM-dd}");
+            }
+
+            if (dataFim.HasValue)
+            {
+                queryParams.Add($"dataFim={DateOnly.FromDateTime(dataFim.Value):yyyy-MM-dd}");
+            }
+
+            if (queryParams.Count > 0)
+            {
+                url += "?" + string.Join("&", queryParams);
+            }
+
+            precos = await client.GetFromJsonAsync<List<PrecoItem>>(url);
+
+            if (precos is { Count: > 0 })
+            {
+                await RenderChartAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            erro = $"Falha ao carregar preços: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task RenderChartAsync()
+    {
+        if (precos is null) return;
+
+        var labels = precos.Select(p => FormatDate(p.DataBase)).ToArray();
+        var datasets = new object[]
+        {
+            new { label = "PU Compra", data = precos.Select(p => p.PuCompra ?? 0).ToArray(), color = "#0d6efd" },
+            new { label = "PU Venda", data = precos.Select(p => p.PuVenda ?? 0).ToArray(), color = "#dc3545" }
+        };
+
+        await JS.InvokeVoidAsync("chartInterop.createLineChart", "priceChart", labels, datasets);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("chartInterop.destroyChart", "priceChart");
+        }
+        catch
+        {
+            // Component may be disposed after circuit disconnect
+        }
+    }
+
+    private static string FormatDate(string date)
+    {
+        return DateOnly.TryParse(date, out var d) ? d.ToString("dd/MM/yyyy") : date;
+    }
+
+    private static string FormatDecimal(decimal? value, string format)
+    {
+        return value?.ToString(format) ?? "-";
+    }
+
+    private sealed record TituloItem(Guid Id, string TipoTitulo, string DataVencimento, string Indexador);
+    private sealed record PrecoItem(Guid Id, string DataBase, decimal? TaxaCompra, decimal? TaxaVenda, decimal? PuCompra, decimal? PuVenda, decimal? PuBase);
+}
