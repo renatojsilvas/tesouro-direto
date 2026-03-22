@@ -14,7 +14,7 @@ export default defineConfig({
     },
     {
       name: "web",
-      testMatch: /(simulador|titulos|historico)\.spec\.ts/,
+      testMatch: /(simulador|titulos|historico|tributos)\.spec\.ts/,
       use: {
         baseURL: process.env.WEB_URL ?? "http://localhost:5275",
       },
