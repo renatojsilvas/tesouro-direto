@@ -1,0 +1,143 @@
+@page "/titulos"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+
+<PageTitle>Títulos</PageTitle>
+
+<h1>Títulos do Tesouro Direto</h1>
+
+<div class="row mb-3">
+    <div class="col-md-3">
+        <label for="indexador" class="form-label">Indexador</label>
+        <select id="indexador" class="form-select" @bind="selectedIndexador" @bind:after="CarregarAsync">
+            <option value="">Todos</option>
+            <option value="Selic">Selic</option>
+            <option value="Prefixado">Prefixado</option>
+            <option value="IPCA">IPCA</option>
+            <option value="IGPM">IGP-M</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label for="status" class="form-label">Status</label>
+        <select id="status" class="form-select" @bind="selectedStatus" @bind:after="CarregarAsync">
+            <option value="">Todos</option>
+            <option value="false">Ativos</option>
+            <option value="true">Vencidos</option>
+        </select>
+    </div>
+</div>
+
+@if (loading)
+{
+    <p><em>Carregando títulos...</em></p>
+}
+else if (erro is not null)
+{
+    <div class="alert alert-danger" data-testid="erro">@erro</div>
+}
+else if (titulos is not null)
+{
+    <p data-testid="count" class="text-muted">@titulos.Count título(s) encontrado(s)</p>
+
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>Tipo</th>
+                <th>Vencimento</th>
+                <th>Indexador</th>
+                <th>Juros Semestrais</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var titulo in titulos)
+            {
+                <tr>
+                    <td>@titulo.TipoTitulo</td>
+                    <td>@FormatDate(titulo.DataVencimento)</td>
+                    <td><span class="badge bg-@BadgeColor(titulo.Indexador)">@titulo.Indexador</span></td>
+                    <td>@(titulo.PagaJurosSemestrais ? "Sim" : "Não")</td>
+                    <td>
+                        @if (titulo.Vencido)
+                        {
+                            <span class="badge bg-secondary">Vencido</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-success">Ativo</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TituloItem>? titulos;
+    private bool loading = true;
+    private string? erro;
+    private string selectedIndexador = "";
+    private string selectedStatus = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        loading = true;
+        erro = null;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
+            var url = "titulos";
+            var queryParams = new List<string>();
+
+            if (!string.IsNullOrEmpty(selectedIndexador))
+            {
+                queryParams.Add($"indexador={selectedIndexador}");
+            }
+
+            if (!string.IsNullOrEmpty(selectedStatus))
+            {
+                queryParams.Add($"vencido={selectedStatus}");
+            }
+
+            if (queryParams.Count > 0)
+            {
+                url += "?" + string.Join("&", queryParams);
+            }
+
+            titulos = await client.GetFromJsonAsync<List<TituloItem>>(url);
+        }
+        catch (Exception ex)
+        {
+            erro = $"Falha ao carregar títulos: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private static string FormatDate(string date)
+    {
+        return DateOnly.TryParse(date, out var d) ? d.ToString("dd/MM/yyyy") : date;
+    }
+
+    private static string BadgeColor(string indexador) => indexador switch
+    {
+        "Selic" => "primary",
+        "Prefixado" => "info",
+        "IPCA" => "warning",
+        "IGPM" => "danger",
+        _ => "secondary"
+    };
+
+    private sealed record TituloItem(
+        Guid Id, string TipoTitulo, string DataVencimento,
+        string Indexador, bool PagaJurosSemestrais, bool Vencido);
+}
