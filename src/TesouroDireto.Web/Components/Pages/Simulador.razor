@@ -1,0 +1,270 @@
+@page "/simulador"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+
+<PageTitle>Simulador</PageTitle>
+
+<h1>Simulador de Investimento</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Dados do Investimento</h5>
+
+                <div class="mb-3">
+                    <label for="titulo" class="form-label">Titulo</label>
+                    @if (loadingTitulos)
+                    {
+                        <p><em>Carregando titulos...</em></p>
+                    }
+                    else
+                    {
+                        <select id="titulo" class="form-select" @bind="selectedTituloId">
+                            <option value="">Selecione um titulo</option>
+                            @if (titulos is not null)
+                            {
+                                @foreach (var titulo in titulos)
+                                {
+                                    <option value="@titulo.Id">@titulo.TipoTitulo - @titulo.DataVencimento</option>
+                                }
+                            }
+                        </select>
+                    }
+                </div>
+
+                <div class="mb-3">
+                    <label for="valorInvestido" class="form-label">Valor Investido (R$)</label>
+                    <input id="valorInvestido" type="number" class="form-control" step="0.01" min="0" @bind="valorInvestido" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="dataCompra" class="form-label">Data de Compra</label>
+                    <input id="dataCompra" type="date" class="form-control" @bind="dataCompra" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="taxaContratada" class="form-label">Taxa Contratada (% a.a.)</label>
+                    <input id="taxaContratada" type="number" class="form-control" step="0.01" @bind="taxaContratada" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="projecaoAnual" class="form-label">Projecao Anual (% a.a.) <small class="text-muted">opcional</small></label>
+                    <input id="projecaoAnual" type="number" class="form-control" step="0.01" @bind="projecaoAnual" />
+                </div>
+
+                <button id="simular" class="btn btn-primary w-100" @onclick="SimularAsync" disabled="@simulando">
+                    @if (simulando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    }
+                    Simular
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        @if (erro is not null)
+        {
+            <div class="alert alert-danger" data-testid="erro">
+                @erro
+            </div>
+        }
+
+        @if (resultado is not null)
+        {
+            <div data-testid="resultado">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Resultado da Simulacao</h5>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td>Valor Investido</td>
+                                    <td class="text-end">@resultado.ValorInvestido.ToString("C2", Cultura)</td>
+                                </tr>
+                                <tr>
+                                    <td>Valor Bruto</td>
+                                    <td class="text-end" data-testid="valor-bruto">@resultado.ValorBruto.ToString("C2", Cultura)</td>
+                                </tr>
+                                <tr>
+                                    <td>Rendimento Bruto</td>
+                                    <td class="text-end text-success" data-testid="rendimento-bruto">@resultado.RendimentoBruto.ToString("C2", Cultura)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                @if (resultado.TributosAplicados.Count > 0)
+                {
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">Tributos</h5>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th class="text-end">Aliquota</th>
+                                        <th class="text-end">Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var tributo in resultado.TributosAplicados)
+                                    {
+                                        <tr>
+                                            <td>@tributo.Nome</td>
+                                            <td class="text-end">@tributo.Aliquota.ToString("N2")%</td>
+                                            <td class="text-end text-danger">@tributo.Valor.ToString("C2", Cultura)</td>
+                                        </tr>
+                                    }
+                                    <tr class="fw-bold">
+                                        <td colspan="2">Total Tributos</td>
+                                        <td class="text-end text-danger">@resultado.TotalTributos.ToString("C2", Cultura)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                <div class="card mb-3 border-success">
+                    <div class="card-body">
+                        <table class="table table-sm mb-0">
+                            <tbody>
+                                <tr class="fw-bold">
+                                    <td>Valor Liquido</td>
+                                    <td class="text-end" data-testid="valor-liquido">@resultado.ValorLiquido.ToString("C2", Cultura)</td>
+                                </tr>
+                                <tr class="fw-bold">
+                                    <td>Rendimento Liquido</td>
+                                    <td class="text-end text-success">@resultado.RendimentoLiquido.ToString("C2", Cultura)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                @if (resultado.Cupons is { Count: > 0 })
+                {
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">Cupons Semestrais</h5>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th class="text-end">Valor Bruto</th>
+                                        <th class="text-end">DU</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var cupom in resultado.Cupons)
+                                    {
+                                        <tr>
+                                            <td>@cupom.Data.ToString("dd/MM/yyyy")</td>
+                                            <td class="text-end">@cupom.ValorBruto.ToString("C2", Cultura)</td>
+                                            <td class="text-end">@cupom.DiasUteis</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Cultura = new("pt-BR");
+
+    private List<TituloItem>? titulos;
+    private bool loadingTitulos = true;
+    private bool simulando;
+    private string? erro;
+    private string selectedTituloId = "";
+    private decimal valorInvestido;
+    private DateTime dataCompra = DateTime.Today;
+    private decimal taxaContratada;
+    private decimal? projecaoAnual;
+    private SimulacaoResult? resultado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
+            titulos = await client.GetFromJsonAsync<List<TituloItem>>("titulos?vencido=false");
+        }
+        catch
+        {
+            erro = "Falha ao carregar titulos.";
+        }
+        finally
+        {
+            loadingTitulos = false;
+        }
+    }
+
+    private async Task SimularAsync()
+    {
+        erro = null;
+        resultado = null;
+
+        if (string.IsNullOrEmpty(selectedTituloId) || valorInvestido <= 0 || taxaContratada == 0)
+        {
+            erro = "Preencha todos os campos obrigatorios.";
+            return;
+        }
+
+        simulando = true;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
+            var request = new
+            {
+                tituloId = selectedTituloId,
+                valorInvestido,
+                dataCompra = DateOnly.FromDateTime(dataCompra).ToString("yyyy-MM-dd"),
+                taxaContratada,
+                projecaoAnual
+            };
+
+            var response = await client.PostAsJsonAsync("simulador", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                resultado = await response.Content.ReadFromJsonAsync<SimulacaoResult>();
+            }
+            else
+            {
+                var error = await response.Content.ReadFromJsonAsync<ApiError>();
+                erro = error?.Description ?? "Erro ao simular investimento.";
+            }
+        }
+        catch
+        {
+            erro = "Falha na comunicacao com a API.";
+        }
+        finally
+        {
+            simulando = false;
+        }
+    }
+
+    private sealed record TituloItem(Guid Id, string TipoTitulo, string DataVencimento, string Indexador, bool PagaJurosSemestrais, bool Vencido);
+
+    private sealed record SimulacaoResult(
+        decimal ValorInvestido, decimal ValorBruto, decimal RendimentoBruto,
+        List<TributoResult> TributosAplicados, decimal TotalTributos,
+        decimal ValorLiquido, decimal RendimentoLiquido,
+        List<CupomResult>? Cupons);
+
+    private sealed record TributoResult(string Nome, decimal Base, decimal Aliquota, decimal Valor);
+    private sealed record CupomResult(DateOnly Data, decimal ValorBruto, int DiasUteis);
+    private sealed record ApiError(string Code, string Description);
+}

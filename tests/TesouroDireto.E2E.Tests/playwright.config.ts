@@ -4,13 +4,20 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   retries: 0,
-  use: {
-    baseURL: process.env.BASE_URL ?? "http://localhost:5000",
-  },
   projects: [
     {
       name: "api",
-      use: {},
+      testMatch: /health\.spec\.ts/,
+      use: {
+        baseURL: process.env.API_URL ?? "http://localhost:5000",
+      },
+    },
+    {
+      name: "web",
+      testMatch: /simulador\.spec\.ts/,
+      use: {
+        baseURL: process.env.WEB_URL ?? "http://localhost:5275",
+      },
     },
   ],
 });
