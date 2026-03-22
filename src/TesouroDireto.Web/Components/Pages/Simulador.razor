@@ -214,9 +214,15 @@
         erro = null;
         resultado = null;
 
-        if (string.IsNullOrEmpty(selectedTituloId) || valorInvestido <= 0 || taxaContratada == 0)
+        if (string.IsNullOrEmpty(selectedTituloId) || !Guid.TryParse(selectedTituloId, out var tituloGuid))
         {
-            erro = "Preencha todos os campos obrigatorios.";
+            erro = "Selecione um titulo.";
+            return;
+        }
+
+        if (valorInvestido <= 0)
+        {
+            erro = "Valor investido deve ser maior que zero.";
             return;
         }
 
@@ -227,28 +233,38 @@
             var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
             var request = new
             {
-                tituloId = selectedTituloId,
+                tituloId = tituloGuid,
                 valorInvestido,
-                dataCompra = DateOnly.FromDateTime(dataCompra).ToString("yyyy-MM-dd"),
+                dataCompra = DateOnly.FromDateTime(dataCompra),
                 taxaContratada,
                 projecaoAnual
             };
 
             var response = await client.PostAsJsonAsync("simulador", request);
+            var responseBody = await response.Content.ReadAsStringAsync();
 
             if (response.IsSuccessStatusCode)
             {
-                resultado = await response.Content.ReadFromJsonAsync<SimulacaoResult>();
+                resultado = System.Text.Json.JsonSerializer.Deserialize<SimulacaoResult>(
+                    responseBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
             else
             {
-                var error = await response.Content.ReadFromJsonAsync<ApiError>();
-                erro = error?.Description ?? "Erro ao simular investimento.";
+                try
+                {
+                    var error = System.Text.Json.JsonSerializer.Deserialize<ApiError>(
+                        responseBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    erro = error?.Description ?? $"Erro da API: HTTP {(int)response.StatusCode}";
+                }
+                catch
+                {
+                    erro = $"Erro da API: HTTP {(int)response.StatusCode} - {responseBody[..Math.Min(200, responseBody.Length)]}";
+                }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            erro = "Falha na comunicacao com a API.";
+            erro = $"Falha na comunicacao com a API: {ex.Message}";
         }
         finally
         {
