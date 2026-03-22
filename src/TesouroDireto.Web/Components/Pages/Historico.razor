@@ -54,7 +54,7 @@
     <div class="card mb-4">
         <div class="card-body">
             <h5 class="card-title">PU Compra / PU Venda</h5>
-            <canvas id="priceChart" height="100"></canvas>
+            <canvas id="priceChart"></canvas>
         </div>
     </div>
 
@@ -79,9 +79,9 @@
                         <td>@FormatDate(preco.DataBase)</td>
                         <td class="text-end">@FormatDecimal(preco.TaxaCompra, "N2")%</td>
                         <td class="text-end">@FormatDecimal(preco.TaxaVenda, "N2")%</td>
-                        <td class="text-end">@FormatDecimal(preco.PuCompra, "N6")</td>
-                        <td class="text-end">@FormatDecimal(preco.PuVenda, "N6")</td>
-                        <td class="text-end">@FormatDecimal(preco.PuBase, "N6")</td>
+                        <td class="text-end">@FormatCurrency(preco.PuCompra)</td>
+                        <td class="text-end">@FormatCurrency(preco.PuVenda)</td>
+                        <td class="text-end">@FormatCurrency(preco.PuBase)</td>
                     </tr>
                 }
             </tbody>
@@ -157,11 +157,7 @@ else if (!loading && selectedTituloId != "")
             }
 
             precos = await client.GetFromJsonAsync<List<PrecoItem>>(url);
-
-            if (precos is { Count: > 0 })
-            {
-                await RenderChartAsync();
-            }
+            chartPending = precos is { Count: > 0 };
         }
         catch (Exception ex)
         {
@@ -173,18 +169,23 @@ else if (!loading && selectedTituloId != "")
         }
     }
 
-    private async Task RenderChartAsync()
+    private bool chartPending;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (precos is null) return;
-
-        var labels = precos.Select(p => FormatDate(p.DataBase)).ToArray();
-        var datasets = new object[]
+        if (chartPending && precos is { Count: > 0 })
         {
-            new { label = "PU Compra", data = precos.Select(p => p.PuCompra ?? 0).ToArray(), color = "#0d6efd" },
-            new { label = "PU Venda", data = precos.Select(p => p.PuVenda ?? 0).ToArray(), color = "#dc3545" }
-        };
+            chartPending = false;
 
-        await JS.InvokeVoidAsync("chartInterop.createLineChart", "priceChart", labels, datasets);
+            var labels = precos.Select(p => FormatDate(p.DataBase)).ToArray();
+            var datasets = new object[]
+            {
+                new { label = "PU Compra", data = precos.Select(p => p.PuCompra ?? 0).ToArray(), color = "#0d6efd" },
+                new { label = "PU Venda", data = precos.Select(p => p.PuVenda ?? 0).ToArray(), color = "#dc3545" }
+            };
+
+            await JS.InvokeVoidAsync("chartInterop.createLineChart", "priceChart", labels, datasets);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -204,9 +205,16 @@ else if (!loading && selectedTituloId != "")
         return DateOnly.TryParse(date, out var d) ? d.ToString("dd/MM/yyyy") : date;
     }
 
+    private static readonly System.Globalization.CultureInfo Cultura = new("pt-BR");
+
     private static string FormatDecimal(decimal? value, string format)
     {
         return value?.ToString(format) ?? "-";
+    }
+
+    private static string FormatCurrency(decimal? value)
+    {
+        return value?.ToString("C2", Cultura) ?? "-";
     }
 
     private sealed record TituloItem(Guid Id, string TipoTitulo, string DataVencimento, string Indexador);
