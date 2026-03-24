@@ -52,6 +52,8 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=http://localhost/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - grafana-data:/var/lib/grafana
 
@@ -66,6 +68,9 @@ services:
     container_name: tesouro-direto-prometheus
     ports:
       - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.external-url=/prometheus/'
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
 
@@ -77,6 +82,7 @@ services:
       - "9000:9000"
     environment:
       - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+      - SONAR_WEB_CONTEXT=/sonar
     volumes:
       - sonar-data:/opt/sonarqube/data
 
@@ -84,3 +90,7 @@ volumes:
   pgdata:
   grafana-data:
   sonar-data:
+
+networks:
+  default:
+    name: tesouro-net
