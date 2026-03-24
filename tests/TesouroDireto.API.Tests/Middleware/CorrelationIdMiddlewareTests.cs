@@ -1,11 +1,13 @@
 using System.Net;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 
 namespace TesouroDireto.API.Tests.Middleware;
 
-public sealed class CorrelationIdMiddlewareTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class CorrelationIdMiddlewareTests(CorrelationIdMiddlewareTests.MiddlewareWebFactory factory)
+    : IClassFixture<CorrelationIdMiddlewareTests.MiddlewareWebFactory>
 {
     private const string CorrelationIdHeader = "X-Correlation-Id";
     private const string PublicPath = "/health";
@@ -90,5 +92,20 @@ public sealed class CorrelationIdMiddlewareTests(WebApplicationFactory<Program> 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var returnedId = response.Headers.GetValues(CorrelationIdHeader).Single();
         returnedId.Should().Be(validId);
+    }
+
+    public sealed class MiddlewareWebFactory : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=fake;Username=fake;Password=fake"
+                });
+            });
+        }
     }
 }

@@ -12,21 +12,88 @@ public sealed class TipoTituloTests
     [InlineData("Tesouro IPCA+")]
     [InlineData("Tesouro IPCA+ com Juros Semestrais")]
     [InlineData("Tesouro IGPM+ com Juros Semestrais")]
-    public void FromName_WithValidName_ShouldReturnSuccess(string name)
+    public void FromName_WithKnownName_ShouldReturnKnownInstance(string name)
     {
         var result = TipoTitulo.FromName(name);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Name.Should().Be(name);
+        TipoTitulo.All.Should().Contain(result.Value);
     }
 
-    [Fact]
-    public void FromName_WithInvalidName_ShouldReturnFailure()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void FromName_WithEmptyName_ShouldReturnFailure(string name)
     {
-        var result = TipoTitulo.FromName("Titulo Inexistente");
+        var result = TipoTitulo.FromName(name);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("TipoTitulo.Invalid");
+    }
+
+    [Fact]
+    public void FromName_WithNullName_ShouldReturnFailure()
+    {
+        var result = TipoTitulo.FromName(null!);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public void FromName_WithUnknownSelicName_ShouldDeriveIndexadorSelic()
+    {
+        var result = TipoTitulo.FromName("Tesouro Selic 2035");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Name.Should().Be("Tesouro Selic 2035");
+        result.Value.Indexador.Should().Be(Indexador.Selic);
+        result.Value.PagaJurosSemestrais.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FromName_WithUnknownIPCAName_ShouldDeriveIndexadorIPCA()
+    {
+        var result = TipoTitulo.FromName("Tesouro IPCA+ Especial");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Indexador.Should().Be(Indexador.IPCA);
+    }
+
+    [Fact]
+    public void FromName_WithUnknownEducaName_ShouldDeriveIndexadorIPCA()
+    {
+        var result = TipoTitulo.FromName("Tesouro Educa+ 2040");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Indexador.Should().Be(Indexador.IPCA);
+    }
+
+    [Fact]
+    public void FromName_WithUnknownIGPMName_ShouldDeriveIndexadorIGPM()
+    {
+        var result = TipoTitulo.FromName("Tesouro IGPM+ 2030");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Indexador.Should().Be(Indexador.IGPM);
+    }
+
+    [Fact]
+    public void FromName_WithUnknownPrefixadoName_ShouldDefaultToPrefixado()
+    {
+        var result = TipoTitulo.FromName("Tesouro Novo Tipo");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Indexador.Should().Be(Indexador.Prefixado);
+    }
+
+    [Fact]
+    public void FromName_WithUnknownJurosSemestrais_ShouldDetectJuros()
+    {
+        var result = TipoTitulo.FromName("Tesouro IPCA+ com Juros Semestrais Extra");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PagaJurosSemestrais.Should().BeTrue();
     }
 
     [Fact]
@@ -79,7 +146,7 @@ public sealed class TipoTituloTests
     }
 
     [Fact]
-    public void All_ShouldReturnAllTypes()
+    public void All_ShouldReturnAllKnownTypes()
     {
         TipoTitulo.All.Should().HaveCount(8);
     }

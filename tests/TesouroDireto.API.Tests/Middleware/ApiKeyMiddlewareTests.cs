@@ -90,12 +90,14 @@ public sealed class ApiKeyMiddlewareTests : IClassFixture<ApiKeyMiddlewareTests.
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.UseEnvironment("Testing");
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ApiKey:Key"] = ValidApiKey,
-                    ["ApiKey:ExcludedPaths:0"] = "/health"
+                    ["ApiKey:ExcludedPaths:0"] = "/health",
+                    ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=fake;Username=fake;Password=fake"
                 });
             });
         }

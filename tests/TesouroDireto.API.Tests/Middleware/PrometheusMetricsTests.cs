@@ -37,13 +37,15 @@ public sealed class PrometheusMetricsTests : IClassFixture<PrometheusMetricsTest
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.UseEnvironment("Testing");
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ApiKey:Key"] = "test-key",
                     ["ApiKey:ExcludedPaths:0"] = "/health",
-                    ["ApiKey:ExcludedPaths:1"] = "/metrics"
+                    ["ApiKey:ExcludedPaths:1"] = "/metrics",
+                    ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=fake;Username=fake;Password=fake"
                 });
             });
         }

@@ -30,10 +30,30 @@ public sealed record TipoTitulo
     public static Result<TipoTitulo> FromName(string name)
     {
         var trimmed = name?.Trim() ?? string.Empty;
-        var match = All.FirstOrDefault(t => string.Equals(t.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(trimmed))
+            return new Error("TipoTitulo.Invalid", "Tipo titulo name cannot be empty.");
 
-        return match is not null
-            ? match
-            : new Error("TipoTitulo.Invalid", $"'{name}' is not a valid tipo titulo.");
+        var match = All.FirstOrDefault(t => string.Equals(t.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+            return match;
+
+        var indexador = DeriveIndexador(trimmed);
+        var pagaJuros = trimmed.Contains("Juros Semestrais", StringComparison.OrdinalIgnoreCase);
+
+        return new TipoTitulo(trimmed, indexador, pagaJuros);
+    }
+
+    private static Indexador DeriveIndexador(string name)
+    {
+        if (name.Contains("Selic", StringComparison.OrdinalIgnoreCase))
+            return Indexador.Selic;
+        if (name.Contains("IPCA", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Educa", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Renda", StringComparison.OrdinalIgnoreCase))
+            return Indexador.IPCA;
+        if (name.Contains("IGPM", StringComparison.OrdinalIgnoreCase))
+            return Indexador.IGPM;
+
+        return Indexador.Prefixado;
     }
 }
