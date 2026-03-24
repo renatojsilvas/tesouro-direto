@@ -20,7 +20,7 @@
 
 @if (sucesso is not null)
 {
-    <div class="alert alert-success alert-dismissible">
+    <div class="alert alert-success alert-dismissible" data-testid="sucesso">
         @sucesso
         <button type="button" class="btn-close" @onclick="() => sucesso = null"></button>
     </div>
@@ -108,14 +108,14 @@
                     }
                 </tbody>
             </table>
-            <button class="btn btn-sm btn-outline-secondary mb-3" @onclick="() => formFaixas.Add(new FaixaForm())">+ Faixa</button>
+            <button class="btn btn-sm btn-outline-secondary mb-3" data-testid="btn-adicionar-faixa" @onclick="() => formFaixas.Add(new FaixaForm())">+ Faixa</button>
 
             <div>
-                <button class="btn btn-success me-2" @onclick="SalvarAsync" disabled="@salvando">
+                <button class="btn btn-success me-2" data-testid="btn-salvar" @onclick="SalvarAsync" disabled="@salvando">
                     @if (salvando) { <span class="spinner-border spinner-border-sm me-1"></span> }
                     Salvar
                 </button>
-                <button class="btn btn-secondary" @onclick="CancelarForm">Cancelar</button>
+                <button class="btn btn-secondary" data-testid="btn-cancelar" @onclick="CancelarForm">Cancelar</button>
             </div>
         </div>
     </div>
@@ -127,7 +127,7 @@
 }
 else if (tributos is { Count: > 0 })
 {
-    <table class="table table-striped table-hover">
+    <table class="table table-striped table-hover" data-testid="tabela-tributos">
         <thead>
             <tr>
                 <th>Nome</th>
@@ -179,7 +179,7 @@ else if (tributos is { Count: > 0 })
                         }
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-outline-primary" @onclick="() => MostrarFormEdicao(tributo)">Editar</button>
+                        <button class="btn btn-sm btn-outline-primary" data-testid="btn-editar" @onclick="() => MostrarFormEdicao(tributo)">Editar</button>
                     </td>
                 </tr>
             }

@@ -99,7 +99,7 @@
 
                 @if (resultado.TributosAplicados.Count > 0)
                 {
-                    <div class="card mb-3">
+                    <div class="card mb-3" data-testid="tabela-tributos">
                         <div class="card-body">
                             <h5 class="card-title">Tributos</h5>
                             <table class="table table-sm">
@@ -121,7 +121,7 @@
                                     }
                                     <tr class="fw-bold">
                                         <td colspan="2">Total Tributos</td>
-                                        <td class="text-end text-danger">@resultado.TotalTributos.ToString("C2", Cultura)</td>
+                                        <td class="text-end text-danger" data-testid="total-tributos">@resultado.TotalTributos.ToString("C2", Cultura)</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -148,7 +148,7 @@
 
                 @if (resultado.Cupons is { Count: > 0 })
                 {
-                    <div class="card mb-3">
+                    <div class="card mb-3" data-testid="cupons">
                         <div class="card-body">
                             <h5 class="card-title">Cupons Semestrais</h5>
                             <table class="table table-sm">

@@ -1,36 +1,37 @@
 import { test, expect } from "@playwright/test";
+import { navigateTo } from "./helpers";
 
 test.describe("Titulos Page", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/titulos");
+    await navigateTo(page, "/titulos");
   });
 
-  test("should have Titulos link in navigation", async ({ page }) => {
-    await page.goto("/");
-    const navLink = page.locator('a[href="titulos"]');
-    await expect(navLink).toBeVisible();
+  test("should display titulos table with data", async ({ page }) => {
+    await expect(page.locator("table")).toBeVisible();
+    await expect(page.locator("table tbody tr")).not.toHaveCount(0);
   });
 
-  test("should display titulos table", async ({ page }) => {
-    await expect(page.locator("h1")).toContainText("Títulos");
-    await expect(page.locator("table")).toBeVisible({ timeout: 10_000 });
-    const rows = page.locator("table tbody tr");
-    await expect(rows).not.toHaveCount(0);
+  test("should show count", async ({ page }) => {
+    await expect(page.locator("[data-testid='count']")).toContainText(
+      "título(s)"
+    );
   });
 
-  test("should have indexador filter", async ({ page }) => {
-    const filter = page.locator("select#indexador");
-    await expect(filter).toBeVisible();
+  test("should have filters", async ({ page }) => {
+    await expect(page.locator("select#indexador")).toBeVisible();
+    await expect(page.locator("select#status")).toBeVisible();
   });
 
-  test("should have status filter", async ({ page }) => {
-    const filter = page.locator("select#status");
-    await expect(filter).toBeVisible();
-  });
+  test("should filter and still show data", async ({ page }) => {
+    await expect(page.locator("table")).toBeVisible();
+    await page.locator("select#indexador").selectOption("Selic");
 
-  test("should show result count", async ({ page }) => {
-    await expect(page.locator("[data-testid='count']")).toBeVisible({
-      timeout: 10_000,
-    });
+    await page.waitForFunction(
+      () => document.querySelectorAll("table tbody tr").length > 0
+    );
+
+    await expect(page.locator("[data-testid='count']")).toContainText(
+      "título(s)"
+    );
   });
 });
