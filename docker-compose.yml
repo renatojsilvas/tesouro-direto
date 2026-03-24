@@ -56,12 +56,18 @@ services:
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
 
   loki:
     image: grafana/loki:latest
     container_name: tesouro-direto-loki
     ports:
       - "3100:3100"
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
 
   prometheus:
     image: prom/prometheus:latest
@@ -89,6 +95,7 @@ services:
 volumes:
   pgdata:
   grafana-data:
+  loki-data:
   sonar-data:
 
 networks:

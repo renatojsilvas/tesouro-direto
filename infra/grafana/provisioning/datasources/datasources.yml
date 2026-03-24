@@ -1,0 +1,21 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://tesouro-direto-prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://tesouro-direto-loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        - name: CorrelationId
+          matcherRegex: '"CorrelationId":"([^"]+)"'
+          url: ''
+          datasourceUid: self
