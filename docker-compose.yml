@@ -29,6 +29,21 @@ services:
       timeout: 5s
       retries: 5
 
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: tesouro-direto-web
+    ports:
+      - "5275:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8081
+      - ApiSettings__BaseUrl=http://app:8080
+      - ApiSettings__ApiKey=CHANGE-ME-IN-PRODUCTION
+    depends_on:
+      - app
+
   # Observabilidade
   grafana:
     image: grafana/grafana:latest

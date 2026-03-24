@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tesouro-direto-e2e-db
+    environment:
+      POSTGRES_DB: tesouro_direto_e2e
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app123
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./tests/TesouroDireto.E2E.Tests/seed.sql:/seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d tesouro_direto_e2e"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    container_name: tesouro-direto-e2e-app
+    ports:
+      - "5000:8080"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto_e2e;Username=app;Password=app123
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "timeout 2 bash -c 'echo > /dev/tcp/localhost/8080' 2>/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: tesouro-direto-e2e-web
+    ports:
+      - "5275:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8081
+      - ApiSettings__BaseUrl=http://app:8080
+      - ApiSettings__ApiKey=CHANGE-ME-IN-PRODUCTION
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "timeout 2 bash -c 'echo > /dev/tcp/localhost/8081' 2>/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
