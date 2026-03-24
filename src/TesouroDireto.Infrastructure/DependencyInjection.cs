@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -10,6 +11,7 @@ using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Application.Tributos;
+using TesouroDireto.Infrastructure.Caching;
 using TesouroDireto.Infrastructure.CsvImport;
 using TesouroDireto.Infrastructure.Feriados;
 using TesouroDireto.Infrastructure.Persistence;
@@ -31,14 +33,42 @@ public static class DependencyInjection
 
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
 
+        services.AddMemoryCache();
+        services.AddSingleton<MemoryCacheInvalidator>();
+        services.AddSingleton<ICacheInvalidator>(sp => sp.GetRequiredService<MemoryCacheInvalidator>());
+
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();
-        services.AddScoped<ITituloReadRepository, TituloReadRepository>();
+        services.AddScoped<TituloReadRepository>();
+        services.AddScoped<ITituloReadRepository>(sp =>
+            new CachedTituloReadRepository(
+                sp.GetRequiredService<TituloReadRepository>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<MemoryCacheInvalidator>()));
+
         services.AddScoped<IPrecoTaxaWriteRepository, PrecoTaxaWriteRepository>();
-        services.AddScoped<IPrecoTaxaReadRepository, PrecoTaxaReadRepository>();
+        services.AddScoped<PrecoTaxaReadRepository>();
+        services.AddScoped<IPrecoTaxaReadRepository>(sp =>
+            new CachedPrecoTaxaReadRepository(
+                sp.GetRequiredService<PrecoTaxaReadRepository>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<MemoryCacheInvalidator>()));
+
         services.AddScoped<ITributoWriteRepository, TributoWriteRepository>();
-        services.AddScoped<ITributoReadRepository, TributoReadRepository>();
+        services.AddScoped<TributoReadRepository>();
+        services.AddScoped<ITributoReadRepository>(sp =>
+            new CachedTributoReadRepository(
+                sp.GetRequiredService<TributoReadRepository>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<MemoryCacheInvalidator>()));
+
         services.AddScoped<IFeriadoWriteRepository, FeriadoWriteRepository>();
-        services.AddScoped<IFeriadoReadRepository, FeriadoReadRepository>();
+        services.AddScoped<FeriadoReadRepository>();
+        services.AddScoped<IFeriadoReadRepository>(sp =>
+            new CachedFeriadoReadRepository(
+                sp.GetRequiredService<FeriadoReadRepository>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<MemoryCacheInvalidator>()));
+
         services.AddScoped<IDiasUteisService, DiasUteisService>();
 
         services.AddHttpClient<ICsvImportService, CsvImportService>(client =>

@@ -15,7 +15,7 @@ public sealed class CreateTributoCommandHandlerTests
 
     public CreateTributoCommandHandlerTests()
     {
-        _handler = new CreateTributoCommandHandler(_writeRepo, _unitOfWork);
+        _handler = new CreateTributoCommandHandler(_writeRepo, _unitOfWork, Substitute.For<ICacheInvalidator>());
 
         _writeRepo.AddAsync(Arg.Any<Tributo>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());

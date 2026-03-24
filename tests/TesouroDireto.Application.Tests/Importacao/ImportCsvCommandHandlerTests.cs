@@ -25,6 +25,7 @@ public sealed class ImportCsvCommandHandlerTests
             _tituloWriteRepository,
             _precoTaxaWriteRepository,
             _unitOfWork,
+            Substitute.For<ICacheInvalidator>(),
             Substitute.For<ILogger<ImportCsvCommandHandler>>());
 
         _tituloWriteRepository
