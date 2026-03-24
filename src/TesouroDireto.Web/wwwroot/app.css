@@ -26,6 +26,26 @@
     --transition-fast: 0.2s ease;
     --transition-normal: 0.3s ease;
     --sidebar-width: 260px;
+
+    /* Bootstrap 5 dark overrides */
+    --bs-body-color: #e8e8f0;
+    --bs-body-bg: #0f0f1a;
+    --bs-border-color: rgba(255, 255, 255, 0.08);
+    --bs-table-color: #e8e8f0;
+    --bs-table-bg: transparent;
+    --bs-table-striped-color: #e8e8f0;
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+    --bs-table-hover-color: #e8e8f0;
+    --bs-table-hover-bg: rgba(255, 255, 255, 0.04);
+    --bs-table-border-color: rgba(255, 255, 255, 0.08);
+    --bs-card-bg: rgba(255, 255, 255, 0.04);
+    --bs-card-border-color: rgba(255, 255, 255, 0.08);
+    --bs-card-color: #e8e8f0;
+    --bs-card-cap-bg: rgba(255, 255, 255, 0.03);
+    --bs-secondary-color: #8888a0;
+    --bs-tertiary-color: #6a6a80;
+    --bs-link-color: #4facfe;
+    --bs-link-hover-color: #7dc4ff;
 }
 
 /* --- Reset & Base --- */
@@ -42,6 +62,26 @@ html, body {
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Force light text on Bootstrap components that use hardcoded dark colors --- */
+.card-body,
+.card-title,
+.card-text,
+.modal-body,
+.modal-title,
+.list-group-item,
+.accordion-body,
+.accordion-button {
+    color: var(--text-primary) !important;
+}
+
+small, .small {
+    color: var(--text-secondary) !important;
+}
+
+.fw-bold {
+    color: var(--text-primary);
 }
 
 /* --- Links --- */
@@ -277,12 +317,15 @@ option {
 
 /* --- Bootstrap Overrides: Tables --- */
 .table {
-    color: var(--text-primary);
+    color: var(--text-primary) !important;
     border-color: var(--border-color);
     --bs-table-bg: transparent;
-    --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
-    --bs-table-hover-bg: rgba(255, 255, 255, 0.04);
-    --bs-table-border-color: var(--border-color);
+    --bs-table-color: #e8e8f0;
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+    --bs-table-striped-color: #e8e8f0;
+    --bs-table-hover-bg: rgba(255, 255, 255, 0.05);
+    --bs-table-hover-color: #e8e8f0;
+    --bs-table-border-color: rgba(255, 255, 255, 0.08);
 }
 
 .table > thead {
@@ -290,7 +333,7 @@ option {
 }
 
 .table > thead th {
-    color: var(--text-secondary);
+    color: var(--text-secondary) !important;
     font-size: 0.8rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -299,10 +342,21 @@ option {
     white-space: nowrap;
 }
 
-.table > tbody td {
+.table > tbody > tr > td {
+    color: var(--text-primary) !important;
     padding: 0.65rem 0.75rem;
     vertical-align: middle;
     border-color: var(--border-color);
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    color: var(--text-primary) !important;
+    --bs-table-striped-color: #e8e8f0;
+}
+
+.table-hover > tbody > tr:hover > * {
+    color: var(--text-primary) !important;
+    --bs-table-hover-color: #e8e8f0;
 }
 
 .table-bordered {
@@ -311,6 +365,7 @@ option {
 
 .table-bordered > :not(caption) > * > * {
     border-color: var(--border-color);
+    color: var(--text-primary) !important;
 }
 
 .table-sm > :not(caption) > * > * {
