@@ -1,7 +1,99 @@
-﻿@page "/"
+@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Tesouro Direto</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="hero-section fade-in">
+    <h1 class="hero-title">Tesouro Direto</h1>
+    <p class="hero-subtitle">
+        Precos atuais e historicos do Tesouro Direto, simulador de investimentos
+        e analise de cenarios — tudo em um so lugar.
+    </p>
+</div>
 
-Welcome to your new app.
+<div class="row g-3 mb-4">
+    <div class="col-md-4 fade-in fade-in-delay-1">
+        <a href="titulos" class="glass-card feature-card d-block">
+            <div class="feature-icon" style="background: rgba(79, 172, 254, 0.1);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4facfe" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="feature-title">Titulos</div>
+                <div class="feature-desc">Consulte todos os titulos disponiveis do Tesouro Direto com filtros por indexador e status.</div>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-md-4 fade-in fade-in-delay-2">
+        <a href="historico" class="glass-card feature-card d-block">
+            <div class="feature-icon" style="background: rgba(0, 200, 150, 0.1);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00c896" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+            </div>
+            <div>
+                <div class="feature-title">Historico</div>
+                <div class="feature-desc">Visualize a evolucao de precos e taxas com graficos interativos e tabelas detalhadas.</div>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-md-4 fade-in fade-in-delay-3">
+        <a href="simulador" class="glass-card feature-card d-block">
+            <div class="feature-icon" style="background: rgba(168, 85, 247, 0.1);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
+                    <line x1="8" y1="6" x2="16" y2="6"></line>
+                    <line x1="8" y1="10" x2="16" y2="10"></line>
+                    <line x1="8" y1="14" x2="12" y2="14"></line>
+                </svg>
+            </div>
+            <div>
+                <div class="feature-title">Simulador</div>
+                <div class="feature-desc">Simule investimentos com calculo de tributos, cupons semestrais e rendimento liquido.</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6 fade-in fade-in-delay-3">
+        <a href="simulador/cenarios" class="glass-card feature-card d-block">
+            <div class="feature-icon" style="background: rgba(255, 192, 72, 0.1);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffc048" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+            </div>
+            <div>
+                <div class="feature-title">Cenarios</div>
+                <div class="feature-desc">Compare diferentes cenarios de projecao para titulos indexados lado a lado.</div>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-md-6 fade-in fade-in-delay-4">
+        <a href="tributos" class="glass-card feature-card d-block">
+            <div class="feature-icon" style="background: rgba(255, 71, 87, 0.1);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff4757" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="feature-title">Tributos</div>
+                <div class="feature-desc">Gerencie configuracoes de IOF, IR e outros tributos com faixas e aliquotas.</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<div class="text-center fade-in fade-in-delay-4">
+    <p class="text-muted" style="font-size: 0.8rem;">
+        Dados do <a href="https://www.tesourotransparente.gov.br" target="_blank">Tesouro Transparente</a> &mdash;
+        Atualizacao diaria
+    </p>
+</div>
