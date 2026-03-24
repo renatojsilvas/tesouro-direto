@@ -7,7 +7,7 @@ test.describe("Historico Page", () => {
   });
 
   test("should display titulo selector", async ({ page }) => {
-    await expect(page.locator("h1")).toContainText("Histórico");
+    await expect(page.locator("h1")).toContainText("Historico");
     await expect(page.locator("select#titulo")).toBeVisible();
   });
 

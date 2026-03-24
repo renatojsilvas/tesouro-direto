@@ -96,9 +96,22 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DB_PASSWORD,API_KEY,GRAFANA_PASSWORD,GRAFANA_ROOT_URL
           script: |
             cd /opt/tesouro-direto
+            cat > .env << ENVEOF
+            DB_PASSWORD=${DB_PASSWORD}
+            API_KEY=${API_KEY}
+            GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
+            GRAFANA_ROOT_URL=${GRAFANA_ROOT_URL}
+            ENVEOF
+            chmod 600 .env
             git pull origin main
             docker compose build --no-cache
             docker compose up -d
             docker image prune -f
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
+          GRAFANA_ROOT_URL: ${{ secrets.GRAFANA_ROOT_URL }}

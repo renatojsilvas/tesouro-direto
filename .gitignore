@@ -13,6 +13,7 @@ playwright-report/
 *.swp
 .DS_Store
 Thumbs.db
+.env
 pgdata/
 grafana-data/
 .sonarqube/

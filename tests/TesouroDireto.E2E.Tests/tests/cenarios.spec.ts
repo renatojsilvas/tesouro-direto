@@ -7,7 +7,7 @@ test.describe("Simulador Cenarios Page", () => {
   });
 
   test("should display form with default cenarios", async ({ page }) => {
-    await expect(page.locator("h1")).toContainText("Cenários");
+    await expect(page.locator("h1")).toContainText("Cenario");
     await expect(page.locator("select#titulo")).toBeVisible();
     await expect(page.locator("button#simular")).toBeVisible();
 

@@ -5,9 +5,10 @@ services:
     ports:
       - "5000:8080"
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=app123
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=${DB_PASSWORD:-app123}
       - ASPNETCORE_ENVIRONMENT=Production
       - Serilog__WriteTo__1__Args__uri=http://loki:3100
+      - ApiKey__Key=${API_KEY:-dev-local-key}
     depends_on:
       db:
         condition: service_healthy
@@ -18,7 +19,7 @@ services:
     environment:
       POSTGRES_DB: tesouro_direto
       POSTGRES_USER: app
-      POSTGRES_PASSWORD: app123
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-app123}
     ports:
       - "5432:5432"
     volumes:
@@ -40,7 +41,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8081
       - ApiSettings__BaseUrl=http://app:8080
-      - ApiSettings__ApiKey=CHANGE-ME-IN-PRODUCTION
+      - ApiSettings__ApiKey=${API_KEY:-dev-local-key}
     depends_on:
       - app
 
@@ -51,8 +52,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_ROOT_URL=http://localhost/grafana/
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - grafana-data:/var/lib/grafana
