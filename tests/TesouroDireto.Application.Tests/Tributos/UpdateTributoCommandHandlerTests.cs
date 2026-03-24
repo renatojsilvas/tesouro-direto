@@ -16,7 +16,7 @@ public sealed class UpdateTributoCommandHandlerTests
 
     public UpdateTributoCommandHandlerTests()
     {
-        _handler = new UpdateTributoCommandHandler(_readRepo, _writeRepo, _unitOfWork, Substitute.For<ICacheInvalidator>());
+        _handler = new UpdateTributoCommandHandler(_readRepo, _writeRepo, _unitOfWork);
 
         _writeRepo.UpdateAsync(Arg.Any<Tributo>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());

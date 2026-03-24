@@ -8,8 +8,7 @@ namespace TesouroDireto.Application.Feriados;
 public sealed class ImportFeriadosCommandHandler(
     IFeriadoImportService importService,
     IFeriadoWriteRepository writeRepository,
-    IUnitOfWork unitOfWork,
-    ICacheInvalidator cacheInvalidator) : IRequestHandler<ImportFeriadosCommand, Result<ImportFeriadosResult>>
+    IUnitOfWork unitOfWork) : IRequestHandler<ImportFeriadosCommand, Result<ImportFeriadosResult>>
 {
     public async Task<Result<ImportFeriadosResult>> Handle(ImportFeriadosCommand request, CancellationToken cancellationToken)
     {
@@ -57,8 +56,6 @@ public sealed class ImportFeriadosCommandHandler(
 
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
-
-        cacheInvalidator.InvalidateFeriados();
 
         return new ImportFeriadosResult(newFeriados.Count, ignorados);
     }

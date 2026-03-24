@@ -8,8 +8,7 @@ namespace TesouroDireto.Application.Tributos;
 public sealed class UpdateTributoCommandHandler(
     ITributoReadRepository tributoReadRepository,
     ITributoWriteRepository tributoWriteRepository,
-    IUnitOfWork unitOfWork,
-    ICacheInvalidator cacheInvalidator)
+    IUnitOfWork unitOfWork)
     : IRequestHandler<UpdateTributoCommand, Result>
 {
     public async Task<Result> Handle(UpdateTributoCommand request, CancellationToken cancellationToken)
@@ -56,8 +55,6 @@ public sealed class UpdateTributoCommandHandler(
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        cacheInvalidator.InvalidateTributos();
 
         return Result.Success();
     }

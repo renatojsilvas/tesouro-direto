@@ -1,3 +1,4 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -35,7 +36,7 @@ public static class DependencyInjection
 
         services.AddMemoryCache();
         services.AddSingleton<MemoryCacheInvalidator>();
-        services.AddSingleton<ICacheInvalidator>(sp => sp.GetRequiredService<MemoryCacheInvalidator>());
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
 
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();
         services.AddScoped<TituloReadRepository>();

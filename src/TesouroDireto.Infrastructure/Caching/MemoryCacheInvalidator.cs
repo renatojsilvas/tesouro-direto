@@ -1,8 +1,6 @@
-using TesouroDireto.Application.Common.Interfaces;
-
 namespace TesouroDireto.Infrastructure.Caching;
 
-public sealed class MemoryCacheInvalidator : ICacheInvalidator
+public sealed class MemoryCacheInvalidator
 {
     private CancellationTokenSource _titulosCts = new();
     private CancellationTokenSource _precosCts = new();

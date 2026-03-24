@@ -16,7 +16,7 @@ public sealed class ImportFeriadosCommandHandlerTests
 
     public ImportFeriadosCommandHandlerTests()
     {
-        _handler = new ImportFeriadosCommandHandler(_importService, _writeRepo, _unitOfWork, Substitute.For<ICacheInvalidator>());
+        _handler = new ImportFeriadosCommandHandler(_importService, _writeRepo, _unitOfWork);
 
         _writeRepo.AddRangeAsync(Arg.Any<IReadOnlyCollection<Feriado>>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());

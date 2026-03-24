@@ -14,7 +14,6 @@ public sealed class ImportCsvCommandHandler(
     ITituloWriteRepository tituloWriteRepository,
     IPrecoTaxaWriteRepository precoTaxaWriteRepository,
     IUnitOfWork unitOfWork,
-    ICacheInvalidator cacheInvalidator,
     ILogger<ImportCsvCommandHandler> logger)
     : IRequestHandler<ImportCsvCommand, Result<ImportResult>>
 {
@@ -95,9 +94,6 @@ public sealed class ImportCsvCommandHandler(
         {
             await FlushBatchAsync(batch, cancellationToken);
         }
-
-        cacheInvalidator.InvalidateTitulos();
-        cacheInvalidator.InvalidatePrecos();
 
         var result = new ImportResult(titulosCriados, precosInseridos, precosIgnorados, linhasComErro);
 
