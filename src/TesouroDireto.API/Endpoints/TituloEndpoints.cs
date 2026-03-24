@@ -46,5 +46,31 @@ public static class TituloEndpoints
                 ? Results.Ok(result.Value)
                 : Results.NotFound(new { result.Error.Code, result.Error.Description });
         });
+
+        app.MapGet("/titulos/preco-atual", async (
+            string nome,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(new GetPrecoAtualByNomeQuery(nome), cancellationToken);
+
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : Results.NotFound(new { result.Error.Code, result.Error.Description });
+        });
+
+        app.MapGet("/titulos/precos", async (
+            string nome,
+            DateOnly? dataInicio,
+            DateOnly? dataFim,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(new GetPrecosByNomeQuery(nome, dataInicio, dataFim), cancellationToken);
+
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : Results.NotFound(new { result.Error.Code, result.Error.Description });
+        });
     }
 }

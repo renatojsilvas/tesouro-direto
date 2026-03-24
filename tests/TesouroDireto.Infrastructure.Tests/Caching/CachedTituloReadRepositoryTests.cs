@@ -109,5 +109,58 @@ public sealed class CachedTituloReadRepositoryTests : IDisposable
         await _inner.Received(2).GetFilteredAsync(null, null, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task GetByNomeAsync_CacheMiss_ShouldCallInnerAndCache()
+    {
+        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false);
+        _inner.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<TituloDto>.Success(titulo));
+
+        var result = await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        await _inner.Received(1).GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetByNomeAsync_CacheHit_ShouldNotCallInner()
+    {
+        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false);
+        _inner.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<TituloDto>.Success(titulo));
+
+        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+
+        await _inner.Received(1).GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetByNomeAsync_CaseInsensitive_ShouldUseSameCacheKey()
+    {
+        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false);
+        _inner.GetByNomeAsync("tesouro ipca+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<TituloDto>.Success(titulo));
+
+        await _sut.GetByNomeAsync("tesouro ipca+ 2035", CancellationToken.None);
+        await _sut.GetByNomeAsync("TESOURO IPCA+ 2035", CancellationToken.None);
+
+        await _inner.Received(1).GetByNomeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetByNomeAsync_AfterInvalidation_ShouldCallInnerAgain()
+    {
+        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false);
+        _inner.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<TituloDto>.Success(titulo));
+
+        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+        _invalidator.InvalidateTitulos();
+        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+
+        await _inner.Received(2).GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
+    }
+
     public void Dispose() => _cache.Dispose();
 }

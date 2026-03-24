@@ -4,6 +4,7 @@ using Dapper;
 using Npgsql;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Domain.Common;
+using TesouroDireto.Domain.Titulos;
 
 namespace TesouroDireto.Infrastructure.Persistence.Repositories;
 
@@ -60,6 +61,35 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
             r.Vencido)).ToList();
 
         return Result<IReadOnlyCollection<TituloDto>>.Success(titulos);
+    }
+
+    public async Task<Result<TituloDto>> GetByNomeAsync(string nome, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        var row = await connection.QueryFirstOrDefaultAsync<TituloDtoRow>(
+            new CommandDefinition(
+                """
+                SELECT id, tipo_titulo, data_vencimento, indexador, paga_juros_semestrais,
+                       CASE WHEN data_vencimento < @Today THEN true ELSE false END AS vencido
+                FROM titulos
+                WHERE UPPER(tipo_titulo || ' ' || EXTRACT(YEAR FROM data_vencimento)::text) = UPPER(@Nome)
+                """,
+                new { Nome = nome.Trim(), Today = DateOnly.FromDateTime(DateTime.UtcNow) },
+                cancellationToken: cancellationToken));
+
+        if (row is null)
+        {
+            return TituloErrors.NotFound;
+        }
+
+        return Result<TituloDto>.Success(new TituloDto(
+            row.Id,
+            row.TipoTitulo,
+            row.DataVencimento.ToString("yyyy-MM-dd"),
+            row.Indexador,
+            row.PagaJurosSemestrais,
+            row.Vencido));
     }
 
     private sealed record TituloDtoRow(
