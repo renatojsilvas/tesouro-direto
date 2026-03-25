@@ -98,15 +98,13 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             mkdir -p /opt/tesouro-direto
-            if [ ! -f /opt/tesouro-direto/.env ]; then
-              printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\n' \
-                '${{ secrets.DB_PASSWORD }}' \
-                '${{ secrets.API_KEY }}' \
-                '${{ secrets.GRAFANA_PASSWORD }}' \
-                '${{ secrets.GRAFANA_ROOT_URL }}' \
-                > /opt/tesouro-direto/.env
-              chmod 600 /opt/tesouro-direto/.env
-            fi
+            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\n' \
+              '${{ secrets.DB_PASSWORD }}' \
+              '${{ secrets.API_KEY }}' \
+              '${{ secrets.GRAFANA_PASSWORD }}' \
+              '${{ secrets.GRAFANA_ROOT_URL }}' \
+              > /opt/tesouro-direto/.env
+            chmod 600 /opt/tesouro-direto/.env
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
