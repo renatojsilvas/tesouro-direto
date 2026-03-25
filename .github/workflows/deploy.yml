@@ -90,33 +90,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Create .env on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            mkdir -p /opt/tesouro-direto
+            if [ ! -f /opt/tesouro-direto/.env ]; then
+              printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\n' \
+                '${{ secrets.DB_PASSWORD }}' \
+                '${{ secrets.API_KEY }}' \
+                '${{ secrets.GRAFANA_PASSWORD }}' \
+                '${{ secrets.GRAFANA_ROOT_URL }}' \
+                > /opt/tesouro-direto/.env
+              chmod 600 /opt/tesouro-direto/.env
+            fi
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: DB_PASSWORD,API_KEY,GRAFANA_PASSWORD,GRAFANA_ROOT_URL
           script: |
-            if [ ! -d /opt/tesouro-direto ]; then
-              git clone https://github.com/${{ github.repository }} /opt/tesouro-direto
-            fi
             cd /opt/tesouro-direto
-            cat > .env <<ENVEOF
-            DB_PASSWORD=${DB_PASSWORD}
-            API_KEY=${API_KEY}
-            GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
-            GRAFANA_ROOT_URL=${GRAFANA_ROOT_URL}
-            ENVEOF
-            chmod 600 .env
-            git pull origin main
+            if [ ! -d .git ]; then
+              git clone https://github.com/${{ github.repository }} .
+            else
+              git pull origin main
+            fi
             cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
             nginx -t && systemctl reload nginx
             docker compose build --no-cache
             docker compose up -d
+            echo "Waiting for app to be healthy..."
+            timeout 60 bash -c 'until curl -sf http://localhost:5000/health; do sleep 3; done'
+            echo "Deploy complete."
             docker image prune -f
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          API_KEY: ${{ secrets.API_KEY }}
-          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
-          GRAFANA_ROOT_URL: ${{ secrets.GRAFANA_ROOT_URL }}
