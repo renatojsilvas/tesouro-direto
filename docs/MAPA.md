@@ -1,0 +1,235 @@
+# Mapa do Sistema — Tesouro Direto API
+
+> Mapeamento por área (rotas/entradas, modelo de dados, integrações externas, jobs/observabilidade, testes).
+> Gerado por análise **somente-leitura** do código. Não altera comportamento.
+> As fragilidades marcadas com ✅ foram confirmadas contra o código pelo revisor; ⚠️ = nuance; ❌ = refutada. Ver seção [Verificação](#verificação-das-fragilidades).
+
+## Arquitetura em uma frase
+
+Solução .NET 8 em **Clean Architecture / Ports & Adapters**, mono-domínio com contextos (Titulos, PrecosTaxas, Tributos, Simulador, Feriados, DiasUteis). CQRS via **MediatR**: escritas com **EF Core**, leituras com **Dapper** (devolvendo DTOs). Duas entradas: **API Minimal** (`TesouroDireto.API`) e **Blazor Server** (`TesouroDireto.Web`) que consome a API por HTTP. Ingestão de dados por **importação agendada (Quartz)** de fontes públicas (Tesouro Transparente, ANBIMA, BCB Focus). Observabilidade com Serilog→Loki + Prometheus→Grafana.
+
+```
+                 ┌─────────────────┐         ┌──────────────────┐
+  navegador ───► │ Web (Blazor SSR) │──HTTP──►│  API (Minimal)   │
+                 └─────────────────┘ X-Api-Key└────────┬─────────┘
+                                                        │ ISender (MediatR)
+                                            ┌───────────▼───────────┐
+                                            │      Application       │  commands/queries + ports
+                                            └───┬───────────────┬────┘
+                          EF Core (write) ◄─────┘               └─────► Dapper (read, +cache decorators)
+                                            ┌───────────────────────┐
+   Tesouro Transparente (CSV) ──Quartz────►│    Infrastructure     │──► PostgreSQL
+   ANBIMA (XLS, manual)       ──HTTP───────►│  adapters / persist.  │
+   BCB Focus (OData, ao vivo) ──HTTP───────►└───────────────────────┘
+```
+
+Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos de teste.
+
+---
+
+## 1. Rotas / Entradas
+
+### O que existe
+
+**API — Minimal API** (`src/TesouroDireto.API/Program.cs`). Pipeline: `AddSerilog` → `AddInfrastructure` → `AddMediatR` → migração automática (exceto env `Testing`) → `UseSerilogDefaults` (CorrelationId + request logging) → `UseHttpMetrics` → `ApiKeyMiddleware` → rotas. Cada endpoint é **fino**: injeta `ISender`, faz `Send(command/query)` e traduz `Result`→`Results.*`. Sem lógica de negócio nos endpoints.
+
+| Método | Rota | Comando/Query | Status |
+|--------|------|---------------|--------|
+| GET | `/health` | (inline, isento de ApiKey) | 200 |
+| GET | `/metrics` | Prometheus (isento) | 200 |
+| POST | `/importacao` | `ImportCsvCommand` (sem body) | 200/400 |
+| POST | `/importacao/feriados` | `ImportFeriadosCommand` (sem body) | 200/400 |
+| GET | `/titulos?indexador&vencido` | `GetTitulosQuery` | 200/400 |
+| GET | `/titulos/{id}/precos?dataInicio&dataFim` | `GetPrecosQuery` | 200/404 |
+| GET | `/titulos/{id}/preco-atual` | `GetPrecoAtualQuery` | 200/404 |
+| GET | `/titulos/preco-atual?nome` | `GetPrecoAtualByNomeQuery` | 200/404 |
+| GET | `/titulos/precos?nome&dataInicio&dataFim` | `GetPrecosByNomeQuery` | 200/404 |
+| GET | `/configuracoes/tributos` | `GetTributosQuery` | 200/400 |
+| POST | `/configuracoes/tributos` | **`CreateTributoCommand` (corpo ligado direto)** | 201/400 |
+| PUT | `/configuracoes/tributos/{id}` | `UpdateTributoCommand` (via `UpdateTributoRequest`) | 204/404/400 |
+| POST | `/simulador` | `SimularCommand` (via `SimularRequest`) | 200/400 |
+| POST | `/simulador/cenarios` | `SimularCenariosCommand` | 200/400 |
+
+**Middleware:** `ApiKeyMiddleware` (header `X-Api-Key`, comparação SHA256 em tempo constante, isenta `/health` e `/metrics`, falha→401 corpo vazio); `CorrelationIdMiddleware` (header `X-Correlation-Id`, valida regex, injeta no LogContext).
+
+**Web — Blazor Server** (`src/TesouroDireto.Web`): Razor Components (InteractiveServer) + `HttpClient` nomeado `"TesouroDiretoApi"` (BaseUrl + header `X-Api-Key` de config). Páginas em `Components/Pages/`: `Titulos`, `Historico` (gráfico via JS interop), `Tributos`, `Simulador`, `Cenarios`, `Home`, `About`, `Error`. As pastas `Pages/` e `Services/` estão **vazias** — cada página injeta `IHttpClientFactory` e chama a API direto.
+
+### Como se conecta
+
+- **API → Application:** único `IPipelineBehavior` registrado é `CacheInvalidationBehavior`. **Não há ValidationBehavior/FluentValidation** — validação vive em cada handler, devolvendo `Result` de falha.
+- **Web → API:** 100% HTTP, autenticação por `X-Api-Key` compartilhado (Web `ApiSettings:ApiKey` == API `ApiKey:Key`). Blazor server-side → chamada sai do servidor, navegador nunca vê a chave; sem CORS.
+- **Contrato de erro:** falha devolve `{ Code, Description }`; cada página desserializa num record local `ApiError`.
+
+### Fragilidades
+- **Contratos vazando/duplicados** ✅: `Contracts/` vazio; DTOs inline nos endpoints; `POST /configuracoes/tributos` liga o corpo direto ao `CreateTributoCommand` da Application — **vazamento da camada Application para o contrato HTTP público**.
+- **Sem camada de acesso no Web** ✅: `Web/Services/` vazio; lógica de acesso à API (CreateClient, request anônimo, desserialização, `ApiError`) **duplicada nas 5 páginas**.
+- **Enums só numéricos no JSON** ✅ (ver Verificação #1): sem `JsonStringEnumConverter`. Workaround frágil em `Tributos.razor:336` `ParseEnum` com ordinais hardcoded e fallback silencioso `_ => 0`.
+- **Erro por string-matching** ✅ (Verificação #9): `PUT /configuracoes/tributos/{id}` decide 404 vs 400 com `Error.Code.Contains("NotFound")`.
+- **Sem validação declarativa na borda; sem exception handler global na API** (Web tem `UseExceptionHandler("/Error")`, API não → exceção crua vira 500).
+- **Sem versionamento, sem Swagger/OpenAPI, sem rate limiting** nos endpoints (inclui `POST /importacao`, que dispara download/parse externo). `GET /` retorna `"Hello World!"`; `AllowedHosts: "*"`.
+- **Mapeamento `Result`→HTTP repetido manualmente** em cada endpoint (sem helper), fácil divergir status.
+
+---
+
+## 2. Modelo de Dados
+
+### O que existe
+
+**Domínio** (`src/TesouroDireto.Domain`), por contexto, tudo herdando `Common/Entity.cs` (igualdade por `Id`) e usando Result Pattern (`Common/Result.cs`, `Error.cs`, `DomainErrors.cs`):
+
+- **Titulos** — agregado `Titulo` (`Entity<Guid>`, factory `Create`, ctor privado). VOs: `TipoTitulo` (8 instâncias), `Indexador` (whitelist de 4), `DataVencimento`. `Titulo` deriva `Indexador` e `PagaJurosSemestrais` do `TipoTitulo` (via pattern matching, `DeriveIndexador`).
+- **PrecosTaxas** — agregado `PrecoTaxa` (referencia `Titulo` por `TituloId`, não navegação). VOs nuláveis: `Taxa`, `PrecoUnitario` (exige `> 0`), `DataBase`. Todos os 6 campos financeiros opcionais.
+- **Tributos** — agregado rico `Tributo` com coleção encapsulada `_faixas`, métodos `Ativar/Desativar/AtualizarFaixas`. VO `Faixa` (record: DiasMin/DiasMax/Dia/Aliquota). Enums `BaseCalculo`, `TipoCalculo`. Único agregado com ctor sem parâmetros para EF.
+- **Feriados** — `Feriado` + VO `DataFeriado`.
+- **Simulador / DiasUteis** — objetos de cálculo transitórios, **não persistidos** (sem DbSet).
+
+**Persistência** (`src/TesouroDireto.Infrastructure/Persistence`): `AppDbContext` implementa `IUnitOfWork`; 4 DbSets (Titulos, PrecosTaxas, Tributos, Feriados). Tabelas snake_case:
+- `titulos` (PK uuid `ValueGeneratedNever`; índice único `ix_titulos_tipo_vencimento` em tipo+vencimento)
+- `precos_taxas` (FK `titulo_id` CASCADE; índice único `ix_precos_taxas_titulo_data`; valores numeric nuláveis)
+- `tributos` + `tributo_faixas` (`OwnsMany`; índice único `ix_tributos_nome`)
+- `feriados` (índice único `ix_feriados_data`)
+
+3 migrations (`InitialCreate`, `MakePrecoTaxaValuesNullable`, `AddFeriados`) + snapshot alinhado (sem drift aparente).
+
+### Como se conecta
+
+- **Dapper (read → DTO):** `TituloReadRepository`, `PrecoTaxaReadRepository`, `FeriadoReadRepository` — SQL cru, `NpgsqlDataSource` singleton, `DateOnlyTypeHandler` custom. Todos embrulhados por decorators de cache.
+- **EF Core (write):** `*WriteRepository` (Add/Update/Exists); `SaveChanges` só via `IUnitOfWork`.
+- **Exceção ao padrão:** `TributoReadRepository` usa **EF e devolve a entidade de domínio** (não DTO) — Tributo é agregado com coleção owned consumida pelo Simulador.
+- **Mapeamento de VOs:** `HasConversion` nas configs — VOs → string/decimal via `.Value` na materialização; `Faixas` como `OwnsMany`; enums como string.
+
+### Fragilidades
+- **VO `Indexador` com whitelist rígida quebra materialização EF** ✅ (Verificação #2): `FromName` só aceita 4 nomes e a config chama `.FromName(v).Value`; `.Value` sobre falha lança. Valor fora da whitelist na coluna → EF explode. `TipoTitulo` já foi mitigado por pattern matching, `Indexador` não.
+- **Converters `.Value` sem tratamento de falha**: `DataVencimento/DataBase/PrecoUnitario.Create(v).Value` assumem sucesso; um `pu` ≤ 0 no banco faria a materialização EF lançar (hoje mascarado porque reads passam por Dapper).
+- **VO `Taxa` sem invariante**: `Create` devolve `Taxa` direto (não `Result`), aceita qualquer decimal — inconsistente com os demais VOs.
+- **Invariantes fiscais não protegidas**: `Faixa`/`Tributo` não impedem faixas sobrepostas/lacunas na tabela regressiva — corretude depende do seed correto.
+- **Redundância em `Titulo`**: `indexador`/`paga_juros_semestrais` derivados **e** persistidos; import parcial pode divergir do que o ctor derivaria, sem check de consistência.
+- **Índices ausentes para filtros comuns**: filtro por `indexador` isolado e `data_vencimento` isolado (vencido) varrem tabela; `GetByNomeAsync` usa expressão não-sargável (`UPPER(... || EXTRACT(YEAR...))`).
+- **Desvio CQRS**: `TributoReadRepository` devolve entidade em vez de DTO (contraria a convenção do projeto).
+
+---
+
+## 3. Integrações Externas
+
+### O que existe (4 integrações, registradas em `Infrastructure/DependencyInjection.cs`)
+
+1. **Projeções / BCB Focus** — `FocusBcbService` (`IProjecaoMercadoService`). API Olinda do BCB (OData), `FocusBcb:BaseUrl`. Dois endpoints: `ExpectativasMercadoSelic` e `ExpectativasMercadoInflacao12Meses` (`$filter=Indicador eq '...'`, mapeia IGPM→`IGP-M`). `$top=1&$orderby=Data desc`. Typed client, timeout **30s**. `Prefixado` rejeitado antes de chamar.
+2. **Feriados / ANBIMA** — `FeriadoImportService` (`IFeriadoImportService`, `IAsyncEnumerable`). XLS binário (BIFF) via `ExcelDataReader`, `FeriadoImport:Url`. Col 0 = data, col 2 = descrição; baixa o arquivo inteiro para `MemoryStream`. Typed client, timeout **5min**.
+3. **CSV Tesouro Direto** — `CsvImportService` (`ICsvImportService`, `IAsyncEnumerable<Result<CsvRecord>>`). Tesouro Transparente/CKAN, `CsvImport:Url`. CSV `;`, 8 colunas, decimais `pt-BR`, `dd/MM/yyyy`. `StripTrailingYear` remove ano do nome via regex. Streaming linha-a-linha. Typed client, timeout **10min**. Agendado por **Quartz** (cron `0 0 6 * * ?`, `[DisallowConcurrentExecution]`).
+4. **Caching** — decorators cache-aside com `IMemoryCache`: `CachedTituloReadRepository` (24h), `CachedPrecoTaxaReadRepository` (6h), `CachedTributoReadRepository` (24h), `CachedFeriadoReadRepository` (7d). Invalidação por `MemoryCacheInvalidator` (4 `CancellationTokenSource`) disparada pelo `CacheInvalidationBehavior` (pipeline MediatR) por tipo de comando.
+
+### Como se conecta
+
+- **Ingestão:** CSV (Quartz 06:00) → `ImportCsvCommand` → handler grava `Titulo`/`PrecoTaxa` em lotes de 1000, deduplica por `DataBase`; sucesso invalida cache titulos+precos. Feriados: `POST /importacao/feriados` → handler grava, deduplica; invalida cache feriados.
+- **Consumo:** `SimularCommandHandler` chama `IProjecaoMercadoService.GetProjecaoAsync` **ao vivo** (quando `ProjecaoAnual` ausente e não-Prefixado), usa `MedianaAnual`; usa `IDiasUteisService` → `FeriadoReadRepository` (cacheado) → `DiasUteisCalculator`.
+- **Camadas:** ports em Application, adapters em Infrastructure, cálculo puro em Domain. Cache é infra pura via pipeline behavior.
+
+### Fragilidades
+- **Resiliência ausente** ✅: nenhum typed client tem Polly/retry/circuit breaker — só timeout. Indisponibilidade transitória de BCB/ANBIMA/Tesouro falha a operação inteira.
+- **BCB Focus sem cache e sem fallback** ✅ (Verificação #3): `IProjecaoMercadoService` **não** é embrulhado por cache. Cada simulação sem `ProjecaoAnual` = 1 chamada ao vivo; BCB fora → simulação inteira falha. Acopla disponibilidade do simulador à do BCB e não escala (N simulações = N chamadas).
+- **Parsing frágil**: `DateOnly.Parse(entry.Data)` sem cultura explícita; indicador de inflação por igualdade de enum (novo indexador → `$filter` vazio, NotFound silencioso); `FeriadoImportService` depende de posições fixas de coluna e formato BIFF (migração para `.xlsx` quebra); `CsvParserHelper` exige 8 colunas/`pt-BR` fixos, `StripTrailingYear` mutila título terminando em 4 dígitos.
+- **Robustez de rede/memória**: XLS inteiro em `MemoryStream` sem limite; exceção durante streaming do corpo (após headers OK) não capturada; desserialização do BCB sem try/catch (JSON malformado → `JsonException` crua).
+- **Cache em processo (não distribuído)**: em deploy multi-instância a invalidação por import só limpa a instância que processou; outras servem dados velhos até o TTL. Invalidação depende do `switch` manual no behavior — novo comando de escrita não adicionado deixa cache stale sem teste de guarda.
+
+---
+
+## 4. Jobs / Crons, Startup e Observabilidade
+
+### O que existe
+
+**Jobs (Quartz.NET):** único job real é `CsvImportJob` — cron `0 0 6 * * ?` (06:00 diário, configurável), `[DisallowConcurrentExecution]`, `WaitForJobsToComplete = true`. Dispara `ImportCsvCommand` e loga resultado. **Feriados NÃO têm job** — só endpoint manual. BCB Focus é sob demanda.
+
+**Startup** (`API/Program.cs`): migrations automáticas em todo ambiente exceto `Testing`. `/health` retorna string fixa `"healthy"` (sem `AddHealthChecks`/DB check). **Sem seed** de tributos/feriados em código (nenhum `HasData`, nenhum `.sql` de produção — só `tests/.../seed.sql`).
+
+**Observabilidade:**
+- **Logs:** Serilog Console + `GrafanaLoki` sink com label `job=tesouro-direto-api` fixado no código (`SerilogExtensions.cs`), enrich `FromLogContext`, CorrelationId propagado. (O diretório `Infrastructure/Observability` citado na tarefa **não existe** — instrumentação vive em `API/Extensions`.)
+- **Métricas:** `prometheus-net` (`UseHttpMetrics` + `/metrics`) — só métricas HTTP genéricas, **nenhuma de negócio/job**. `prometheus.yml` scrape `app:8080`.
+- **Grafana:** provisionado em `infra/grafana/` (datasources UID fixo + dashboard). **Loki:** filesystem, retention 30d, compactor com `delete_request_store`.
+- **Web (Blazor):** sem Serilog/Loki e sem métricas — só logging default ASP.NET (ponto cego).
+
+**Deploy** (`.github/workflows/deploy.yml`): `test` → `e2e` → `deploy` (SSH VPS). `.env` sempre reescrito com `printf`, `git pull`, copia nginx conf, `nginx -t && reload`, `docker compose build --no-cache && up -d`, aguarda `/health`. Migrations rodam no startup do container. Nginx porta 3080: `/`→Web, `/api/`→API, `/grafana/` público, `/prometheus/` restrito a 127.0.0.1.
+
+### Como se conecta
+
+Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). CorrelationId flui header → LogContext → Loki → derivedField no Grafana. Prometheus scrape `app:8080` → Grafana (UIDs fixos).
+
+### Fragilidades
+- **Sem seed de tributos (IOF/IR) e feriados em produção** ✅ (Verificação #4): deploy em banco novo sobe com tabelas vazias → Simulador quebra até popular manualmente. Estado manual não versionado nem reproduzível (agravado: Postgres ignora senha/estado se o volume já existe).
+- **Feriados sem agendamento** ✅ (Verificação #5): só endpoint manual, sem Quartz. Feriados do próximo ano não entram sozinhos → distorce dias úteis → distorce todas as projeções do Simulador.
+- **Lock apenas intra-instância** ⚠️: `[DisallowConcurrentExecution]` + RAMJobStore (in-memory). Multi-instância ou cron concomitante a `POST /importacao` manual → sem lock distribuído. Idempotência real vem de `existingDates.Contains(DataBase)`, mas `GetOrCreateTitulo` não é atômico — depende da constraint única `ix_titulos_tipo_vencimento` (ver Verificação #6).
+- **Job silencioso em falha** ✅: `CsvImportJob` só faz `LogError`; sem métrica, sem alerta, sem relançar. Fonte fora do ar por dias passa despercebida.
+- **Sem métricas de negócio/job** ✅: nenhum counter/gauge para sucesso/falha do import, linhas processadas, idade do último preço, duração do job. Impossível alertar em Grafana.
+- **Healthcheck raso** ✅ (Verificação #7): `/health` não toca o banco; gate de deploy pode reportar "healthy" com Postgres indisponível ou migrations pendentes.
+- **Web sem observabilidade** ✅: erros/latência da UI ficam fora do Loki/Grafana.
+- **Grafana exposto publicamente com senha default** ⚠️/✅ (Verificação #8): `/grafana/` sem restrição de IP no nginx + `GRAFANA_PASSWORD:-admin` no compose.
+
+---
+
+## 5. Testes
+
+### O que existe
+
+6 projetos C# (**~296 métodos** xUnit) + E2E Playwright/TS (**22 testes**). Stack: xUnit 2.5.3, FluentAssertions 8.9, NSubstitute 5.3, coverlet; Testcontainers.PostgreSql + Mvc.Testing (só API.Tests).
+
+- **Domain.Tests** — unitário puro: VOs, entidades, Result, `DiasUteisCalculator` (14), `SimuladorService` (16, maior concentração), `TipoTitulo` pattern matching (17).
+- **Application.Tests** — handlers CQRS com repos mockados (NSubstitute): PrecosTaxas, Titulos, Tributos, Simulador, Importacao, Feriados.
+- **API.Tests** — mistura: `Persistence/` (5 classes, **integração real Testcontainers postgres:16**, migrate + write/read repos); `Middleware/` (3 classes, `WebApplicationFactory` + connection string fake — ApiKey 7 testes, CorrelationId, métricas); `Projecoes/FocusBcbServiceTests` (HTTP mockado); `Feriados/FeriadoImportServiceTests` (.xls real embutido); `CsvImport/` (parser + job).
+- **Infrastructure.Tests** — cobre **apenas** `Caching/` (decorators, invalidator, behavior).
+- **Architecture.Tests** — impõe direção de dependências, convenções de código (handlers ctor único, commands records, Application sealed, repos retornam `Task<Result>`) e convenções de Domain (sealed, sem `List<>` exposto).
+- **E2E.Tests** — Playwright: projeto `api` (health/metrics) + `web` (5 páginas), `retries: 2`, `workers: 1`, helpers com espera de `window.Blazor`.
+
+### Como se conecta
+
+**CI gateia deploy:** `test` (dotnet test + cobertura opencover + SonarQube condicional; tem service container postgres 5432 **aparentemente não consumido**) → `e2e` (`docker-compose.e2e.yml` + seed.sql via psql + Playwright chromium; E2E vermelho bloqueia deploy) → `deploy` (SSH). Ambiente E2E efêmero (db postgres:16 + app + web). `seed.sql` idempotente (TRUNCATE+INSERT): 7 títulos, preços, IOF+IR, feriados 2024-2025 — independente das migrations. Testes de integração de Infrastructure moram fisicamente em **API.Tests**, não em Infrastructure.Tests.
+
+### Fragilidades
+- **Zero teste de integração HTTP nas 11 rotas de negócio** ✅ (Verificação #10): `WebApplicationFactory` só nos 3 testes de middleware (batem em `/` e `/health`). Rotas reais cobertas só por handlers unitários (repos mockados) + E2E via Blazor. Bug de roteamento/serialização (ex.: enums numéricos) passaria despercebido.
+- **E2E web baseado em presença de elementos**: muitos testes só `toBeVisible()`/contagem (contraria diretriz de testes comportamentais). Há exceções boas (simulador valida `R$`, tributos cria real, titulos filtra).
+- **Flakiness inerente do Blazor Server**: `retries: 2` + hacks `waitForTimeout(1000)` "if Blazor missed the event".
+- **Adapters de I/O sem integração real**: FocusBcb só com `FakeHttpMessageHandler`; `CsvImportService` **sem teste dedicado** (só mockado no handler).
+- **Infrastructure.Tests só cobre Caching**; resto testado a partir de API.Tests (placement inconsistente).
+- **Sem gate de cobertura** (coleta mas não reprova build); **sem testes de componente Blazor (bUnit)**.
+- **Drift de schema seed↔migrations**: `seed.sql` define schema manualmente em paralelo às migrations — mudança numa migration sem atualizar seed quebra E2E silenciosamente.
+
+---
+
+## Verificação das fragilidades
+
+Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8.
+
+| # | Afirmação | Veredito | Evidência |
+|---|-----------|----------|-----------|
+| 1 | Sem `JsonStringEnumConverter` → enums só aceitam número no POST | ✅ CONFIRMADO | Zero ocorrência de `JsonStringEnumConverter`/`AddJsonOptions`/`ConfigureHttpJsonOptions` em `src`. `CreateTributoCommand` bindado direto do body em `ConfiguracaoEndpoints.cs:39`. |
+| 2 | `Indexador.FromName(v).Value` quebra materialização EF com valor fora da whitelist | ✅ CONFIRMADO | `Indexador.cs:11-24` (whitelist 4); `Result<T>.Value` lança em falha (`Common/Result.cs:47-48`); usado em `TituloConfiguration.cs:36`. |
+| 3 | Simulador chama BCB Focus ao vivo, sem cache/fallback | ✅ CONFIRMADO | `SimularCommandHandler.cs:40-47` propaga falha sem fallback; `DependencyInjection.cs:82-85` registra sem decorator `Cached*` (contraste com repos, linhas 40-73). |
+| 4 | Nenhum seed de tributos/feriados em produção | ✅ CONFIRMADO | Zero `.HasData(` em `src` (hits anteriores eram `HasDatabaseName`); único `seed.sql` é de teste E2E. |
+| 5 | Import de feriados sem job Quartz (só endpoint manual) | ✅ CONFIRMADO | `DependencyInjection.cs:87-96` só registra `JobKey("csv-import")`; sem `FeriadoImportJob`; caminho único é `ImportacaoEndpoints.cs:19-25`. |
+| 6 | `ix_titulos_tipo_vencimento` é UNIQUE e o upsert não é atômico | ✅ CONFIRMADO | `TituloConfiguration.cs:42-44` `.IsUnique()`; `GetOrCreateTituloAsync` (`ImportCsvCommandHandler.cs:107-132`) é check-then-act sem transação → race sob concorrência (UNIQUE evita duplicata mas lança exceção não tratada). |
+| 7 | Healthcheck raso (`/health` string fixa, não toca banco) | ✅ CONFIRMADO | `Program.cs:29`; zero `AddHealthChecks`/`AddDbContextCheck`/`MapHealthChecks` em `src`. |
+| 8 | Grafana público + senha default `admin` | ✅ CONFIRMADO (agravado) | `nginx/tesouro-direto.conf` `location /grafana/` sem `allow/deny` (vs `/prometheus/` que tem `allow 127.0.0.1; deny all`); `docker-compose.yml:67` `${GRAFANA_PASSWORD:-admin}`. **Exposição pública foi decisão recente e intencional** (commit `67406be`) — mais grave, não menos. |
+| 9 | PUT tributos decide 404 vs 400 por `Error.Code.Contains("NotFound")` | ✅ CONFIRMADO | `ConfiguracaoEndpoints.cs:33` — substring match; frágil a rename de código de erro e a colisão acidental. |
+| 10 | Zero teste de integração HTTP nas rotas de negócio | ✅ CONFIRMADO | `WebApplicationFactory` só em 3 testes de middleware (`/`, `/health`, `/metrics`); nenhum bate em `/titulos`, `/simulador`, `/configuracoes/tributos`, `/importacao`. |
+
+**Conclusão do revisor:** 10/10 confirmadas contra o código real. As demais fragilidades listadas nas seções §1–§5 (sem verificação individual marcada) vêm da leitura dos agentes de mapeamento e são consistentes com o código, mas não passaram pelo passo adversarial explícito.
+
+---
+
+## Fragilidades priorizadas (síntese)
+
+**Bloqueiam operação / corretude:**
+1. **Sem seed versionado de tributos e feriados** → Simulador quebra em banco novo (§4).
+2. **Feriados sem job agendado** → dias úteis e projeções degradam silenciosamente (§4).
+3. **BCB Focus ao vivo, sem cache nem fallback** → simulador acoplado à disponibilidade do BCB (§3).
+4. **`Indexador` whitelist rígida** → materialização EF quebra com valor inesperado na coluna (§2).
+
+**Segurança / operação:**
+5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1).
+6. Grafana público com senha default `admin` (§4).
+7. Sem retry/circuit breaker em nenhuma integração externa (§3).
+8. Healthcheck raso não detecta banco fora (§4).
+
+**Qualidade / manutenção:**
+9. Contrato HTTP vazando `CreateTributoCommand`; acesso à API duplicado em 5 páginas Blazor (§1).
+10. Enums só numéricos + `ParseEnum` hardcoded frágil (§1).
+11. Zero teste de integração de endpoint HTTP (§5); sem gate de cobertura.
+12. Observabilidade sem métricas de negócio/job; Web fora do Loki/Grafana (§4).
