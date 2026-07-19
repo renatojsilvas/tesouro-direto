@@ -13,7 +13,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | # | Tarefa | Retorno | Risco | Esforço |
 |---|--------|---------|-------|---------|
 | 1 | ✅ Grafana: falhar sem senha (remover `:-admin`) — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
-| 2 | `Indexador` por pattern matching (não quebrar EF) | Alto (corretude) | Baixo | 🟢 |
+| 2 | ✅ `Indexador` tolerante na persistência (não quebrar EF) — concluída 2026-07-19 | Alto (corretude) | Baixo | 🟢 |
 | 3 | Healthcheck real com DB check | Alto (operação) | Baixo | 🟢 |
 | 4 | Enums como string no JSON (`JsonStringEnumConverter`) | Alto (API/Web) | Baixo | 🟢 |
 | 5 | API key: falhar em prod se for o default | Alto (segurança) | Baixo | 🟢 |
@@ -42,7 +42,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** se a env não estiver setada, o Grafana deixa de subir — pode derrubar observabilidade num deploy. Mitigar setando o secret **antes** de mergear.
 - **Verificação:** `docker compose config` sem `GRAFANA_PASSWORD` → erro/variável vazia explícita; com a env setada, Grafana sobe e login com `admin/admin` falha.
 
-### 2. `Indexador` derivado por pattern matching 🟢
+### 2. `Indexador` derivado por pattern matching 🟢 ✅ Concluída (2026-07-19)
+> **Feito:** em vez de tornar `Indexador.FromName` tolerante (o que quebraria a validação de filtro em `GetTitulosQueryHandler` — `?indexador=CDI` viraria 200 vazio em vez de 400 e alteraria o contrato público), optou-se pela **2ª via do plano**: `FromName` permanece **estrito** e um novo factory `Indexador.FromPersistence(string)` (sem-falha, lossless — casa case-insensitive com os 4 conhecidos ou preserva o nome bruto) é usado **só** na conversão de leitura do EF (`TituloConfiguration`). Menor raio de dano, contrato de API intacto. Revisor confirmou por reversão de código que `Result.Value` lançava na versão antiga (teste de integração não-vacuoso via Testcontainers real) e rodou a suíte completa (312 testes verdes). Risco residual registrado: `HasMaxLength(20)` na coluna `indexador` pode truncar/estourar valor bruto exótico e longo — pré-existente, fora do escopo.
 - **Escopo:** eliminar a quebra de materialização EF quando a coluna `indexador` tem valor fora da whitelist. Aplicar o mesmo padrão já usado em `TipoTitulo.DeriveIndexador` (derivação sem falhar) ou tornar a conversão de leitura tolerante (fallback em vez de `.Value` sobre `Result` de falha).
 - **Arquivos:** `src/TesouroDireto.Domain/Titulos/Indexador.cs`, `src/TesouroDireto.Infrastructure/Persistence/Configurations/TituloConfiguration.cs`.
 - **Risco:** mudar a semântica de `Indexador` pode afetar filtros por indexador e testes de Domain que esperam `Error` para nomes inválidos. Ajustar testes junto.

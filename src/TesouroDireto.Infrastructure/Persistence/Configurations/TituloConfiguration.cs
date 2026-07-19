@@ -37,7 +37,7 @@ public sealed class TituloConfiguration : IEntityTypeConfiguration<Titulo>
             .IsRequired()
             .HasConversion(
                 v => v.Name,
-                v => Indexador.FromName(v).Value);
+                v => Indexador.FromPersistence(v));
 
         builder.Property(t => t.PagaJurosSemestrais)
             .HasColumnName("paga_juros_semestrais")
