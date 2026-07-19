@@ -2,7 +2,7 @@
 
 > Mapeamento por área (rotas/entradas, modelo de dados, integrações externas, jobs/observabilidade, testes).
 > Gerado por análise **somente-leitura** do código. Não altera comportamento.
-> As fragilidades marcadas com ✅ foram confirmadas contra o código pelo revisor; ⚠️ = nuance; ❌ = refutada. Ver seção [Verificação](#verificação-das-fragilidades).
+> As fragilidades marcadas com ✅ foram confirmadas contra o código pelo revisor; ⚠️ = nuance; ❌ = refutada. **✔️ RESOLVIDO** = já corrigida (tarefa do [PLANO](./PLANO.md) + data). Ver seção [Verificação](#verificação-das-fragilidades).
 
 ## Arquitetura em uma frase
 
@@ -31,11 +31,12 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 
 ### O que existe
 
-**API — Minimal API** (`src/TesouroDireto.API/Program.cs`). Pipeline: `AddSerilog` → `AddInfrastructure` → `AddMediatR` → migração automática (exceto env `Testing`) → `UseSerilogDefaults` (CorrelationId + request logging) → `UseHttpMetrics` → `ApiKeyMiddleware` → rotas. Cada endpoint é **fino**: injeta `ISender`, faz `Send(command/query)` e traduz `Result`→`Results.*`. Sem lógica de negócio nos endpoints.
+**API — Minimal API** (`src/TesouroDireto.API/Program.cs`). Pipeline: `AddSerilog` → `AddInfrastructure` → `AddMediatR` → `AddHealthChecks().AddDbContextCheck` → **`ApiKeyGuard.Validate` (aborta o boot em ambiente != Development/Testing se `ApiKey:Key` for vazia ou o default — antes da migração)** → migração automática (exceto env `Testing`) → `UseSerilogDefaults` (CorrelationId + request logging) → `UseHttpMetrics` → `ApiKeyMiddleware` → rotas. Cada endpoint é **fino**: injeta `ISender`, faz `Send(command/query)` e traduz `Result`→`Results.*`. Sem lógica de negócio nos endpoints.
 
 | Método | Rota | Comando/Query | Status |
 |--------|------|---------------|--------|
-| GET | `/health` | (inline, isento de ApiKey) | 200 |
+| GET | `/health`, `/health/ready` | `AddDbContextCheck` (readiness, isento de ApiKey) | 200/503 |
+| GET | `/health/live` | liveness (`Predicate=_=>false`, não toca DB, isento) | 200 |
 | GET | `/metrics` | Prometheus (isento) | 200 |
 | POST | `/importacao` | `ImportCsvCommand` (sem body) | 200/400 |
 | POST | `/importacao/feriados` | `ImportFeriadosCommand` (sem body) | 200/400 |
@@ -99,7 +100,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **Mapeamento de VOs:** `HasConversion` nas configs — VOs → string/decimal via `.Value` na materialização; `Faixas` como `OwnsMany`; enums como string.
 
 ### Fragilidades
-- **VO `Indexador` com whitelist rígida quebra materialização EF** ✅ (Verificação #2): `FromName` só aceita 4 nomes e a config chama `.FromName(v).Value`; `.Value` sobre falha lança. Valor fora da whitelist na coluna → EF explode. `TipoTitulo` já foi mitigado por pattern matching, `Indexador` não.
+- **VO `Indexador` com whitelist rígida quebra materialização EF** ✔️ RESOLVIDO (tarefa 2, 2026-07-19): novo factory `Indexador.FromPersistence(string)` (lossless, sem-falha) usado só na leitura do EF (`TituloConfiguration`); `FromName` permanece estrito para validação de filtro (contrato de API intacto). Valor fora da whitelist na coluna não quebra mais a materialização. `TipoTitulo` já era mitigado por pattern matching.
 - **Converters `.Value` sem tratamento de falha**: `DataVencimento/DataBase/PrecoUnitario.Create(v).Value` assumem sucesso; um `pu` ≤ 0 no banco faria a materialização EF lançar (hoje mascarado porque reads passam por Dapper).
 - **VO `Taxa` sem invariante**: `Create` devolve `Taxa` direto (não `Result`), aceita qualquer decimal — inconsistente com os demais VOs.
 - **Invariantes fiscais não protegidas**: `Faixa`/`Tributo` não impedem faixas sobrepostas/lacunas na tabela regressiva — corretude depende do seed correto.
@@ -139,7 +140,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 
 **Jobs (Quartz.NET):** único job real é `CsvImportJob` — cron `0 0 6 * * ?` (06:00 diário, configurável), `[DisallowConcurrentExecution]`, `WaitForJobsToComplete = true`. Dispara `ImportCsvCommand` e loga resultado. **Feriados NÃO têm job** — só endpoint manual. BCB Focus é sob demanda.
 
-**Startup** (`API/Program.cs`): migrations automáticas em todo ambiente exceto `Testing`. `/health` retorna string fixa `"healthy"` (sem `AddHealthChecks`/DB check). **Sem seed** de tributos/feriados em código (nenhum `HasData`, nenhum `.sql` de produção — só `tests/.../seed.sql`).
+**Startup** (`API/Program.cs`): `ApiKeyGuard.Validate` aborta o boot em prod se `ApiKey:Key` for vazia/default; migrations automáticas em todo ambiente exceto `Testing`. **Healthcheck real:** `AddDbContextCheck<AppDbContext>()` com `/health` + `/health/ready` (readiness, 503 se banco fora) e `/health/live` (liveness, não toca DB). **Sem seed** de tributos/feriados em código (nenhum `HasData`, nenhum `.sql` de produção — só `tests/.../seed.sql`).
 
 **Observabilidade:**
 - **Logs:** Serilog Console + `GrafanaLoki` sink com label `job=tesouro-direto-api` fixado no código (`SerilogExtensions.cs`), enrich `FromLogContext`, CorrelationId propagado. (O diretório `Infrastructure/Observability` citado na tarefa **não existe** — instrumentação vive em `API/Extensions`.)
@@ -159,9 +160,9 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 - **Lock apenas intra-instância** ⚠️: `[DisallowConcurrentExecution]` + RAMJobStore (in-memory). Multi-instância ou cron concomitante a `POST /importacao` manual → sem lock distribuído. Idempotência real vem de `existingDates.Contains(DataBase)`, mas `GetOrCreateTitulo` não é atômico — depende da constraint única `ix_titulos_tipo_vencimento` (ver Verificação #6).
 - **Job silencioso em falha** ✅: `CsvImportJob` só faz `LogError`; sem métrica, sem alerta, sem relançar. Fonte fora do ar por dias passa despercebida.
 - **Sem métricas de negócio/job** ✅: nenhum counter/gauge para sucesso/falha do import, linhas processadas, idade do último preço, duração do job. Impossível alertar em Grafana.
-- **Healthcheck raso** ✅ (Verificação #7): `/health` não toca o banco; gate de deploy pode reportar "healthy" com Postgres indisponível ou migrations pendentes.
+- **Healthcheck raso** ✔️ RESOLVIDO (tarefa 3, 2026-07-19): `AddDbContextCheck` + `/health`/`/health/ready` (503 com banco fora) e `/health/live` (liveness); Docker healthcheck e gates de deploy apontam para `/health/ready`.
 - **Web sem observabilidade** ✅: erros/latência da UI ficam fora do Loki/Grafana.
-- **Grafana exposto publicamente com senha default** ⚠️/✅ (Verificação #8): `/grafana/` sem restrição de IP no nginx + `GRAFANA_PASSWORD:-admin` no compose.
+- **Grafana exposto publicamente com senha default** ✔️ RESOLVIDO (tarefa 1 + commit `ba3b103`, 2026-07-19): `GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?...}` (boot falha sem o secret, sem fallback `:-admin`) e `/grafana/` restrito por IP no nginx.
 
 ---
 
@@ -195,18 +196,18 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 
 ## Verificação das fragilidades
 
-Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8.
+Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8. **Status de correção** (coluna final): itens **2, 7 e 8 já foram resolvidos** (tarefas 2, 3 e 1 do PLANO, 2026-07-19); os demais seguem abertos.
 
 | # | Afirmação | Veredito | Evidência |
 |---|-----------|----------|-----------|
 | 1 | Sem `JsonStringEnumConverter` → enums só aceitam número no POST | ✅ CONFIRMADO | Zero ocorrência de `JsonStringEnumConverter`/`AddJsonOptions`/`ConfigureHttpJsonOptions` em `src`. `CreateTributoCommand` bindado direto do body em `ConfiguracaoEndpoints.cs:39`. |
-| 2 | `Indexador.FromName(v).Value` quebra materialização EF com valor fora da whitelist | ✅ CONFIRMADO | `Indexador.cs:11-24` (whitelist 4); `Result<T>.Value` lança em falha (`Common/Result.cs:47-48`); usado em `TituloConfiguration.cs:36`. |
+| 2 | `Indexador.FromName(v).Value` quebra materialização EF com valor fora da whitelist | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 2) | `Indexador.cs:11-24` (whitelist 4); `Result<T>.Value` lança em falha (`Common/Result.cs:47-48`); usado em `TituloConfiguration.cs:36`. **Corrigido:** `Indexador.FromPersistence` (lossless) na leitura EF. |
 | 3 | Simulador chama BCB Focus ao vivo, sem cache/fallback | ✅ CONFIRMADO | `SimularCommandHandler.cs:40-47` propaga falha sem fallback; `DependencyInjection.cs:82-85` registra sem decorator `Cached*` (contraste com repos, linhas 40-73). |
 | 4 | Nenhum seed de tributos/feriados em produção | ✅ CONFIRMADO | Zero `.HasData(` em `src` (hits anteriores eram `HasDatabaseName`); único `seed.sql` é de teste E2E. |
 | 5 | Import de feriados sem job Quartz (só endpoint manual) | ✅ CONFIRMADO | `DependencyInjection.cs:87-96` só registra `JobKey("csv-import")`; sem `FeriadoImportJob`; caminho único é `ImportacaoEndpoints.cs:19-25`. |
 | 6 | `ix_titulos_tipo_vencimento` é UNIQUE e o upsert não é atômico | ✅ CONFIRMADO | `TituloConfiguration.cs:42-44` `.IsUnique()`; `GetOrCreateTituloAsync` (`ImportCsvCommandHandler.cs:107-132`) é check-then-act sem transação → race sob concorrência (UNIQUE evita duplicata mas lança exceção não tratada). |
-| 7 | Healthcheck raso (`/health` string fixa, não toca banco) | ✅ CONFIRMADO | `Program.cs:29`; zero `AddHealthChecks`/`AddDbContextCheck`/`MapHealthChecks` em `src`. |
-| 8 | Grafana público + senha default `admin` | ✅ CONFIRMADO (agravado) | `nginx/tesouro-direto.conf` `location /grafana/` sem `allow/deny` (vs `/prometheus/` que tem `allow 127.0.0.1; deny all`); `docker-compose.yml:67` `${GRAFANA_PASSWORD:-admin}`. **Exposição pública foi decisão recente e intencional** (commit `67406be`) — mais grave, não menos. |
+| 7 | Healthcheck raso (`/health` string fixa, não toca banco) | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 3) | `Program.cs:29`; zero `AddHealthChecks`/`AddDbContextCheck`/`MapHealthChecks` em `src`. **Corrigido:** `AddDbContextCheck` + readiness/liveness. |
+| 8 | Grafana público + senha default `admin` | ✅ CONFIRMADO (agravado) → ✔️ RESOLVIDO (tarefa 1) | `nginx/tesouro-direto.conf` `location /grafana/` sem `allow/deny` (vs `/prometheus/` que tem `allow 127.0.0.1; deny all`); `docker-compose.yml:67` `${GRAFANA_PASSWORD:-admin}`. **Exposição pública foi decisão recente e intencional** (commit `67406be`). **Corrigido:** `GRAFANA_PASSWORD:?` (sem fallback) + `/grafana/` restrito por IP (commit `ba3b103`). |
 | 9 | PUT tributos decide 404 vs 400 por `Error.Code.Contains("NotFound")` | ✅ CONFIRMADO | `ConfiguracaoEndpoints.cs:33` — substring match; frágil a rename de código de erro e a colisão acidental. |
 | 10 | Zero teste de integração HTTP nas rotas de negócio | ✅ CONFIRMADO | `WebApplicationFactory` só em 3 testes de middleware (`/`, `/health`, `/metrics`); nenhum bate em `/titulos`, `/simulador`, `/configuracoes/tributos`, `/importacao`. |
 
@@ -220,13 +221,13 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 1. **Sem seed versionado de tributos e feriados** → Simulador quebra em banco novo (§4).
 2. **Feriados sem job agendado** → dias úteis e projeções degradam silenciosamente (§4).
 3. **BCB Focus ao vivo, sem cache nem fallback** → simulador acoplado à disponibilidade do BCB (§3).
-4. **`Indexador` whitelist rígida** → materialização EF quebra com valor inesperado na coluna (§2).
+4. ✔️ RESOLVIDO (tarefa 2) **`Indexador` whitelist rígida** → materialização EF quebra com valor inesperado na coluna (§2).
 
 **Segurança / operação:**
-5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1).
-6. Grafana público com senha default `admin` (§4).
+5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1). **Parcial** ✔️ (tarefa 5): boot agora aborta em prod com a chave default/vazia; segue aberto o compartilhamento único e a paridade leitura/escrita.
+6. ✔️ RESOLVIDO (tarefa 1) Grafana público com senha default `admin` (§4).
 7. Sem retry/circuit breaker em nenhuma integração externa (§3).
-8. Healthcheck raso não detecta banco fora (§4).
+8. ✔️ RESOLVIDO (tarefa 3) Healthcheck raso não detecta banco fora (§4).
 
 **Qualidade / manutenção:**
 9. Contrato HTTP vazando `CreateTributoCommand`; acesso à API duplicado em 5 páginas Blazor (§1).
