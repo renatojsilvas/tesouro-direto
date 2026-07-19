@@ -1,4 +1,3 @@
-using System.Data;
 using System.Text;
 using Dapper;
 using Npgsql;
@@ -10,10 +9,13 @@ namespace TesouroDireto.Infrastructure.Persistence.Repositories;
 
 public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloReadRepository
 {
+    // Ver DapperTypeHandlers para o porquê deste registro (MatchNamesWithUnderscores +
+    // handler de DateOnly). AddInfrastructure já chama DapperTypeHandlers.Register() no
+    // boot, mas repetimos aqui como defesa em profundidade para testes que instanciam
+    // este repositório diretamente (fora do container de DI).
     static TituloReadRepository()
     {
-        DefaultTypeMap.MatchNamesWithUnderscores = true;
-        SqlMapper.AddTypeHandler(new DateOnlyTypeHandler());
+        DapperTypeHandlers.Register();
     }
 
     public async Task<Result<IReadOnlyCollection<TituloDto>>> GetFilteredAsync(
@@ -99,15 +101,4 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
         string Indexador,
         bool PagaJurosSemestrais,
         bool Vencido);
-
-    private sealed class DateOnlyTypeHandler : SqlMapper.TypeHandler<DateOnly>
-    {
-        public override DateOnly Parse(object value) => DateOnly.FromDateTime((DateTime)value);
-
-        public override void SetValue(IDbDataParameter parameter, DateOnly value)
-        {
-            parameter.DbType = DbType.Date;
-            parameter.Value = value.ToDateTime(TimeOnly.MinValue);
-        }
-    }
 }

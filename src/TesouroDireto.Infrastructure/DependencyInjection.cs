@@ -25,6 +25,10 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        // Registra config estática do Dapper (name matching + DateOnly) uma única vez,
+        // no boot, antes de qualquer repositório ser resolvido — ver DapperTypeHandlers.
+        DapperTypeHandlers.Register();
+
         var connectionString = configuration.GetConnectionString("DefaultConnection")!;
 
         services.AddDbContext<AppDbContext>(options =>
