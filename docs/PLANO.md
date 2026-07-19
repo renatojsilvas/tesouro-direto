@@ -16,7 +16,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 2 | ✅ `Indexador` tolerante na persistência (não quebrar EF) — concluída 2026-07-19 | Alto (corretude) | Baixo | 🟢 |
 | 3 | ✅ Healthcheck real com DB check — concluída 2026-07-19 | Alto (operação) | Baixo | 🟢 |
 | 4 | Enums como string no JSON (`JsonStringEnumConverter`) | Alto (API/Web) | Baixo | 🟢 |
-| 5 | API key: falhar em prod se for o default | Alto (segurança) | Baixo | 🟢 |
+| 5 | ✅ API key: falhar em prod se for o default — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
 | 6 | Exception handler global (ProblemDetails) na API | Médio | Baixo | 🟢 |
 | 7 | Helper `Result`→HTTP (fim do `Contains("NotFound")`) | Médio | Baixo | 🟢 |
 | 8 | Testes de integração HTTP das rotas | Alto (rede de segurança) | Baixo | 🟡 |
@@ -63,7 +63,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** clientes que hoje mandam **número** no `POST /configuracoes/tributos` quebram (mas o único cliente é o próprio Web). `JsonStringEnumConverter` aceita ambos na desserialização por padrão? Não — confirmar; se preciso, manter compat. Ajustar E2E de tributos.
 - **Verificação:** `POST /configuracoes/tributos` com `"baseCalculo":"Rendimento"` retorna 201; E2E `tributos.spec.ts` verde. Ver memória `feedback_api_enums_numeric`.
 
-### 5. API key: falhar em produção se for o default 🟢
+### 5. API key: falhar em produção se for o default 🟢 ✅ Concluída (2026-07-19)
+> **Feito:** novo `ApiKeyGuard` (`src/TesouroDireto.API/Extensions/ApiKeyGuard.cs`) com método puro e testável `Validate(string environmentName, string? configuredKey)` + overload `Validate(IConfiguration, IHostEnvironment)`, chamado em `Program.cs` **logo após `builder.Build()` e ANTES da migração** (ordem crítica: garante que a falha seja do guard, não do DB). Em `Development`/`Testing` (case-insensitive) o guard passa direto; em qualquer outro ambiente (Production/Staging/…) lança `InvalidOperationException` e aborta o boot se `ApiKey:Key` for vazia/whitespace ou o default. `appsettings.json` **não** mudou (default `CHANGE-ME-IN-PRODUCTION` preservado p/ dev local). O `deploy.yml` já injeta o secret `API_KEY` no `.env` (mitigação de risco pronta). Revisor executou a verificação **real por processo** (DLL publicado, pois `dotnet run` força Development via launchSettings): prod sem chave → aborta com a exceção do guard; prod com chave real → guard passa (falha depois só no DB); `Staging` dispara; case do ambiente robusto. **Furo achado e corrigido:** default com espaço acidental ou case diferente (`"CHANGE-ME-IN-PRODUCTION "`, `"change-me-in-production"`) passava — endurecido com `Trim()` + `OrdinalIgnoreCase` na comparação do valor. Suíte: 10/10 testes do guard, 79/79 do projeto API. **Risco residual:** o fallback do `docker-compose.yml` é `${API_KEY:-dev-local-key}` — se o secret `API_KEY` estiver vazio no deploy, a API sobe com `dev-local-key` (que o guard NÃO bloqueia, pois o escopo literal só cobre o default do appsettings). Endereçável separadamente (bloquear `dev-local-key` ou remover o fallback do compose).
 - **Escopo:** no startup, se `ASPNETCORE_ENVIRONMENT != Development/Testing` e `ApiKey:Key == "CHANGE-ME-IN-PRODUCTION"` (ou vazia), lançar e abortar o boot.
 - **Arquivos:** `src/TesouroDireto.API/Program.cs` ou `Middleware/ApiKeyMiddleware.cs` (validação no registro).
 - **Risco:** se o `.env` de prod não tiver `ApiKey__Key`, a API deixa de subir. Garantir o secret antes de mergear.
