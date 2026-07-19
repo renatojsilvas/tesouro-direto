@@ -48,6 +48,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Verificação:** teste novo — inserir linha em `titulos` com `indexador` fora da whitelist e materializar via read repo EF **sem lançar**; suíte de Domain (`TipoTituloTests`/novos) verde. Ver memória `feedback_vo_whitelist_fragile`.
 
 ### 3. Healthcheck real com DB check 🟢
+> Detalhado no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), item **O5** (inclui separação liveness/readiness).
 - **Escopo:** trocar `MapGet("/health", () => "healthy")` por `AddHealthChecks().AddDbContextCheck<AppDbContext>()` + `MapHealthChecks("/health")`. Manter isento de ApiKey.
 - **Arquivos:** `src/TesouroDireto.API/Program.cs` (e `Extensions/` se extrair).
 - **Risco:** healthcheck do Docker/deploy passa a depender do banco — se o Postgres demorar a subir, o gate `/health` do deploy pode falhar (comportamento correto, mas checar o timeout do compose). Manter startup order/`depends_on`.
@@ -66,6 +67,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Verificação:** subir com env de prod e chave default → falha explícita no log; com chave real → sobe normal.
 
 ### 6. Exception handler global (ProblemDetails) na API 🟢
+> Também coberto no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), item **O4** (captura de erros, camada 1).
 - **Escopo:** adicionar `UseExceptionHandler` + `AddProblemDetails` para que exceções não tratadas virem resposta `application/problem+json` consistente (hoje viram 500 cru). Padronizar também o corpo do 401 do `ApiKeyMiddleware`.
 - **Arquivos:** `src/TesouroDireto.API/Program.cs`, `src/TesouroDireto.API/Middleware/ApiKeyMiddleware.cs`.
 - **Risco:** baixo; muda o formato do corpo de erro 500 (nenhum cliente depende do corpo cru hoje).
@@ -122,6 +124,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 ## Onda 3 — Observabilidade, arquitetura e manutenção
 
 ### 14. Métricas de negócio/job no Prometheus 🟡
+> **Expandido** no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), camada 3 (itens **O6/O7** — os 6 eventos de negócio definidos + alertas). Ver também `docs/analises/observabilidade.md`.
 - **Escopo:** expor counters/gauges: sucesso/falha do import, linhas processadas, **idade do último preço importado**, duração do job. Permite alertar em Grafana sobre "import falhou"/"dados velhos".
 - **Arquivos:** `src/TesouroDireto.Infrastructure/CsvImport/CsvImportJob.cs`, `ImportCsvCommandHandler.cs`; painel em `infra/grafana/dashboards/`.
 - **Risco:** baixo. Cuidar de nomes de métrica estáveis.
@@ -140,6 +143,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Verificação:** E2E web (todas as specs) verde após o refactor; nenhuma página monta HttpClient/`ApiError` local.
 
 ### 17. Observabilidade no Web (Serilog/Loki) 🟢
+> Detalhado no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), item **O2** (correlação Web→API via `DelegatingHandler`).
 - **Escopo:** configurar Serilog + sink Loki no Web (hoje só logging default), propagando CorrelationId nas chamadas à API para trace end-to-end.
 - **Arquivos:** `src/TesouroDireto.Web/Program.cs`; reuso de `SerilogExtensions`.
 - **Risco:** baixo. Ver memória `feedback_loki_serilog_labels` (labels no código, não JSON).
@@ -168,3 +172,72 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **10 (job de feriados)** e **9 (seed)** se complementam: com o job, o "seed" de feriados pode ser o primeiro run agendado.
 - **13 (resiliência)** reforça **10 e 11** (ANBIMA/BCB fora do ar).
 - Todas as demais são independentes e mergeáveis isoladamente.
+
+---
+
+## Anexo — Observabilidade em 3 camadas
+
+> Base: [`docs/analises/observabilidade.md`](./analises/observabilidade.md). **Stack decidida: nativo incremental** — evoluir Serilog+Loki (logs) e prometheus-net→Prometheus→Grafana (métricas), reusando o padrão de pipeline behavior do MediatR. Rejeitados: `pino` (é Node; projeto é .NET 8) e OpenTelemetry agora (exigiria backend de traces/Tempo, mudança maior). Trade-off aceito: correlação Web→API por header manual, sem trace distribuído.
+>
+> Ordem: **camada 1 (fundação) → camada 2 (técnica) → camada 3 (negócio)**. Alguns itens expandem/detalham tarefas já listadas acima (3, 6, 14, 17); os demais são novos.
+
+### Camada 1 — Fundação (logs estruturados, correlação, captura de erros)
+
+**O1. Logs em JSON + remover sink Loki duplicado** 🟢
+- Escopo: Console com `CompactJsonFormatter`; remover a duplicidade do sink Loki (`appsettings.json:15` **e** `SerilogExtensions.cs:16` → manter só no código); enrichers `environment`/`service`/`MachineName`; validar o `derivedField` do CorrelationId no Grafana.
+- Arquivos: `src/TesouroDireto.API/Extensions/SerilogExtensions.cs`, `src/TesouroDireto.API/appsettings.json`, `infra/grafana/provisioning/datasources/datasources.yml`.
+- Risco: baixo (formato de log local muda; parsing do Loki melhora). Verificação: Loki mostra linhas JSON com `CorrelationId` e **sem** duplicata.
+
+**O2. Correlação ponta-a-ponta Web→API** 🟢 · *(expande tarefa 17)*
+- Escopo: Serilog+Loki no Web + `DelegatingHandler` que injeta `X-Correlation-Id` nas chamadas à API (hoje só manda `X-Api-Key`).
+- Arquivos: `src/TesouroDireto.Web/Program.cs`, novo `src/TesouroDireto.Web/Services/CorrelationIdHandler.cs`.
+- Risco: baixo (Web passa a depender do Loki no boot — sink não-bloqueante). Verificação: um único `CorrelationId` em Web+API para a mesma ação.
+
+**O3. `LoggingBehavior` (MediatR) + `IResult` para captura de falhas sem exceção** 🟡
+- Escopo: behavior espelhando `CacheInvalidationBehavior` que loga início/fim e captura `Result.IsFailure` como Warning (`Error.Code`/`Description`). Introduzir interface mínima `IResult { bool IsSuccess; Error Error; }` em `Result`/`Result<T>` para leitura genérica (evita o pattern-match por tipo que hoje cai no `default`). Logar linhas de CSV inválidas individualmente.
+- Arquivos: novo `LoggingBehavior` (Application/Common ou Infrastructure), `src/TesouroDireto.Domain/Common/Result.cs` (+`IResult`, aditivo), registro em `DependencyInjection.cs`, `ImportCsvCommandHandler.cs`.
+- Risco: baixo–médio — toca `Result` do Domain; rodar `Architecture.Tests`. Verificação: comando que falha → Warning no Loki, sem 500.
+
+**O4. Exception handler global (ProblemDetails)** 🟢 · *(= tarefa 6)*
+- Escopo/arquivos/verificação: ver tarefa 6. Fecha a captura de erros da camada 1 (exceções não tratadas → `problem+json` com CorrelationId; corpo do 401 padronizado).
+
+### Camada 2 — Métricas técnicas (latência, erro, saturação, healthcheck)
+
+**O5. Healthcheck real + liveness/readiness** 🟢 · *(= tarefa 3, expandida)*
+- Escopo: `AddDbContextCheck<AppDbContext>()`; separar `/health/live` (sem deps) de `/health/ready` (com DB); apontar Docker healthcheck e gate de deploy para readiness.
+- Arquivos: `src/TesouroDireto.API/Program.cs`, `appsettings.json` (ExcludedPaths), `docker-compose.yml`, `.github/workflows/deploy.yml`.
+- Risco: baixo–médio (gate passa a exigir DB; conferir `start_period`). Verificação: `stop db` → `/health/ready` 503, `/health/live` 200.
+
+**O6. `MetricsBehavior` (MediatR) — latência/erro por caso de uso** 🟡
+- Escopo: histogram de duração + counter de desfecho (`success|failure|exception`) por `request_type`, complementando o `http_request_duration`. Reusa `IResult` (O3).
+- Arquivos: novo `src/TesouroDireto.Infrastructure/Observability/MetricsBehavior.cs`, registro em `DependencyInjection.cs`.
+- Risco: baixo (cardinalidade controlada). Verificação: `/metrics` expõe `mediatr_request_duration_seconds`/`mediatr_requests_total`.
+
+**O7. Métricas de dependências externas** 🟢
+- Escopo: `UseHttpClientMetrics()` nos 3 typed clients (BCB/ANBIMA/Tesouro) → latência/erro por dependência.
+- Arquivos: `src/TesouroDireto.Infrastructure/DependencyInjection.cs` (registros `:75/80/85`), `src/TesouroDireto.API/Program.cs`.
+- Risco: baixo. Verificação: `httpclient_request_duration_seconds` por client em `/metrics`.
+
+### Camada 3 — Métricas de negócio (medem se o produto funciona)
+
+**O8. Instrumentar os eventos de negócio** 🟡 · *(expande tarefa 14)*
+Helper `BusinessMetrics` em `src/TesouroDireto.Infrastructure/Observability/`. 4 essenciais (E1–E4) + 2 complementares:
+
+| Métrica | Tipo | Labels | Onde | Mede |
+|---------|------|--------|------|------|
+| `import_last_success_timestamp_seconds` | Gauge | — | `ImportCsvCommandHandler` | **frescor do dado** (age = `time()-metric`) |
+| `import_runs_total` | Counter | `outcome` | `CsvImportJob` | ingestão roda/passa? |
+| `simulations_total` | Counter | `indexador`,`outcome` | `SimularCommandHandler` | caso de uso principal vivo? |
+| `simulation_failures_total` | Counter | `reason` | `SimularCommandHandler` | simulador degradado (liga ao BCB) |
+| `import_prices_processed_total` | Counter | `kind` | `ImportCsvCommandHandler` | volume/qualidade da ingestão |
+| `tributos_config_changes_total` | Counter | `op` | `Create/UpdateTributoCommandHandler` | mudança de config fiscal |
+
+- Risco: baixo — **cuidar de cardinalidade** (nunca IDs em label). Verificação: rodar import+simulação e ver E1–E4 em `/metrics`; painel "frescor do último preço".
+
+**O9. Alertas mínimos no Grafana** 🟡 · *(tarefa NOVA)*
+- Escopo: regras provisionadas (Grafana alerting, sem Alertmanager) sobre: dado velho (age E1 > 48h útil), app/DB down (O5), 5xx alto, p95 alto, falha de import (E2), simulador degradado (E4). Thresholds simples (sem SLO formal ainda).
+- Arquivos: novo `infra/grafana/provisioning/alerting/*.yaml` (+ contact point).
+- Risco: baixo (calibrar para evitar ruído). Verificação: parar import/DB em staging → alerta dispara.
+
+### Sequência recomendada
+**O1, O2, O5** primeiro (quick wins) → **O3** (`IResult`+LoggingBehavior, destrava O6 e a camada 3) → **O4** → **O6, O7** → **O8, O9**. A **tarefa 8** (testes de integração HTTP) é rede de segurança antes de mexer em `Program.cs`/behaviors.
