@@ -4,7 +4,7 @@ test("GET /health should return 200 healthy", async ({ request }) => {
   const response = await request.get("/health");
 
   expect(response.status()).toBe(200);
-  expect(await response.text()).toContain("healthy");
+  expect(await response.text()).toContain("Healthy");
 });
 
 test("GET /metrics should return 200 with Prometheus format", async ({

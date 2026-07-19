@@ -10,7 +10,7 @@ public sealed class CorrelationIdMiddlewareTests(CorrelationIdMiddlewareTests.Mi
     : IClassFixture<CorrelationIdMiddlewareTests.MiddlewareWebFactory>
 {
     private const string CorrelationIdHeader = "X-Correlation-Id";
-    private const string PublicPath = "/health";
+    private const string PublicPath = "/health/live";
 
     [Fact]
     public async Task Request_WithoutCorrelationId_ShouldGenerateAndReturnInResponse()

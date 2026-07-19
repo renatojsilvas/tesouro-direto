@@ -14,7 +14,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 |---|--------|---------|-------|---------|
 | 1 | ✅ Grafana: falhar sem senha (remover `:-admin`) — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
 | 2 | ✅ `Indexador` tolerante na persistência (não quebrar EF) — concluída 2026-07-19 | Alto (corretude) | Baixo | 🟢 |
-| 3 | Healthcheck real com DB check | Alto (operação) | Baixo | 🟢 |
+| 3 | ✅ Healthcheck real com DB check — concluída 2026-07-19 | Alto (operação) | Baixo | 🟢 |
 | 4 | Enums como string no JSON (`JsonStringEnumConverter`) | Alto (API/Web) | Baixo | 🟢 |
 | 5 | API key: falhar em prod se for o default | Alto (segurança) | Baixo | 🟢 |
 | 6 | Exception handler global (ProblemDetails) na API | Médio | Baixo | 🟢 |
@@ -49,7 +49,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** mudar a semântica de `Indexador` pode afetar filtros por indexador e testes de Domain que esperam `Error` para nomes inválidos. Ajustar testes junto.
 - **Verificação:** teste novo — inserir linha em `titulos` com `indexador` fora da whitelist e materializar via read repo EF **sem lançar**; suíte de Domain (`TipoTituloTests`/novos) verde. Ver memória `feedback_vo_whitelist_fragile`.
 
-### 3. Healthcheck real com DB check 🟢
+### 3. Healthcheck real com DB check 🟢 ✅ Concluída (2026-07-19)
+> **Feito:** `AddHealthChecks().AddDbContextCheck<AppDbContext>()` + três endpoints — `/health` e `/health/ready` (readiness, rodam o DB check) e `/health/live` (`Predicate = _ => false`, liveness, não toca o banco). Pacote `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` v8.0.11. Docker healthcheck e os dois gates do `deploy.yml` apontam para `/health/ready`. `appsettings.json` **não** mudou: `ExcludedPaths` tem `/health` e o `ApiKeyMiddleware` usa `StartsWithSegments`, então `/health/live` e `/health/ready` já ficam isentos de ApiKey (confirmado empiricamente). Testes de middleware (`ApiKeyMiddlewareTests`, `CorrelationIdMiddlewareTests`) passaram a usar `/health/live` como path público (em `Testing` o DB é fake → readiness = 503); E2E `health.spec.ts` ajustado para corpo `"Healthy"`. Revisor executou a verificação **real** com Postgres efêmero (não vacuosa): DB no ar → `/health` e `/health/ready` = 200; DB parado → ambos = 503 e `/health/live` = 200 (3/3, refutando queda do liveness). Suíte 312/312 verde.
 > Detalhado no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), item **O5** (inclui separação liveness/readiness).
 - **Escopo:** trocar `MapGet("/health", () => "healthy")` por `AddHealthChecks().AddDbContextCheck<AppDbContext>()` + `MapHealthChecks("/health")`. Manter isento de ApiKey.
 - **Arquivos:** `src/TesouroDireto.API/Program.cs` (e `Extensions/` se extrair).
@@ -205,7 +206,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ### Camada 2 — Métricas técnicas (latência, erro, saturação, healthcheck)
 
-**O5. Healthcheck real + liveness/readiness** 🟢 · *(= tarefa 3, expandida)*
+**O5. Healthcheck real + liveness/readiness** 🟢 ✅ Concluída (2026-07-19) · *(= tarefa 3, expandida)*
 - Escopo: `AddDbContextCheck<AppDbContext>()`; separar `/health/live` (sem deps) de `/health/ready` (com DB); apontar Docker healthcheck e gate de deploy para readiness.
 - Arquivos: `src/TesouroDireto.API/Program.cs`, `appsettings.json` (ExcludedPaths), `docker-compose.yml`, `.github/workflows/deploy.yml`.
 - Risco: baixo–médio (gate passa a exigir DB; conferir `start_period`). Verificação: `stop db` → `/health/ready` 503, `/health/live` 200.

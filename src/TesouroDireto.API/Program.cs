@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Prometheus;
 using TesouroDireto.API.Endpoints;
@@ -12,6 +13,7 @@ builder.AddSerilog();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(TesouroDireto.Application.Importacao.ImportCsvCommand).Assembly));
+builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();
 
 var app = builder.Build();
 
@@ -26,7 +28,9 @@ app.UseSerilogDefaults();
 app.UseHttpMetrics();
 app.UseMiddleware<ApiKeyMiddleware>();
 
-app.MapGet("/health", () => Results.Ok("healthy"));
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/ready");
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapGet("/", () => "Hello World!");
 app.MapImportacaoEndpoints();
 app.MapTituloEndpoints();

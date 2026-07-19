@@ -47,7 +47,7 @@ jobs:
       - name: Wait for services to be healthy
         run: |
           echo "Waiting for API..."
-          timeout 120 bash -c 'until curl -sf http://localhost:5000/health; do sleep 2; done'
+          timeout 120 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 2; done'
           echo ""
           echo "Waiting for Web..."
           timeout 120 bash -c 'until curl -sf http://localhost:5275/; do sleep 2; done'
@@ -123,6 +123,6 @@ jobs:
             docker compose build --no-cache
             docker compose up -d
             echo "Waiting for app to be healthy..."
-            timeout 60 bash -c 'until curl -sf http://localhost:5000/health; do sleep 3; done'
+            timeout 60 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 3; done'
             echo "Deploy complete."
             docker image prune -f
