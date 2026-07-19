@@ -64,7 +64,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD é obrigatório no .env}
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:

@@ -12,7 +12,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 | # | Tarefa | Retorno | Risco | Esforço |
 |---|--------|---------|-------|---------|
-| 1 | Grafana: falhar sem senha (remover `:-admin`) | Alto (segurança) | Baixo | 🟢 |
+| 1 | ✅ Grafana: falhar sem senha (remover `:-admin`) — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
 | 2 | `Indexador` por pattern matching (não quebrar EF) | Alto (corretude) | Baixo | 🟢 |
 | 3 | Healthcheck real com DB check | Alto (operação) | Baixo | 🟢 |
 | 4 | Enums como string no JSON (`JsonStringEnumConverter`) | Alto (API/Web) | Baixo | 🟢 |
@@ -35,7 +35,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ## Onda 1 — Quick wins (baixo risco, alto retorno)
 
-### 1. Grafana: falhar sem senha explícita 🟢
+### 1. Grafana: falhar sem senha explícita 🟢 ✅ Concluída (2026-07-19)
+> **Feito:** `GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?...}` (sintaxe `:?` — falha o boot se ausente **ou vazia**). Revisor confirmou as 4 verificações do PLANO e não achou furo (sem `.env`/override conflitante, sem provisioning alternativo, sem auth anônima). `deploy.yml` já injetava o secret. Risco remanescente: se o secret `GRAFANA_PASSWORD` do GitHub estiver vazio, o deploy falha (comportamento correto) — não verificável localmente.
 - **Escopo:** remover o fallback `:-admin` de `GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}` para que o container **não suba** sem `GRAFANA_PASSWORD` no `.env`. (A restrição de rede no nginx já foi feita no commit `ba3b103`.)
 - **Arquivos:** `docker-compose.yml`. Garantir `GRAFANA_PASSWORD` no `.env` do VPS e no passo `printf` do `.github/workflows/deploy.yml`.
 - **Risco:** se a env não estiver setada, o Grafana deixa de subir — pode derrubar observabilidade num deploy. Mitigar setando o secret **antes** de mergear.
