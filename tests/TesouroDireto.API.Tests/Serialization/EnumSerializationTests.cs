@@ -6,10 +6,15 @@ using TesouroDireto.Domain.Tributos;
 namespace TesouroDireto.API.Tests.Serialization;
 
 /// <summary>
-/// Não é um teste de integração HTTP (não sobe host nem toca o pipeline) — só documenta
-/// o contrato de serialização assumido pelos testes de integração de
-/// /configuracoes/tributos: como o projeto não registra JsonStringEnumConverter, os
-/// enums BaseCalculo/TipoCalculo precisam ir como número no corpo JSON do POST/PUT.
+/// Não é um teste de integração HTTP (não sobe host nem toca o pipeline) — documenta apenas
+/// o comportamento do serializer padrão usado pelo HttpClient de testes
+/// (<see cref="JsonSerializerDefaults.Web"/> sem JsonStringEnumConverter), que ainda serializa
+/// enums como número quando não configurado explicitamente.
+/// A API (Program.cs) registra <c>JsonStringEnumConverter</c> via ConfigureHttpJsonOptions e,
+/// na desserialização do POST /configuracoes/tributos, aceita AMBAS as representações dos
+/// enums BaseCalculo/TipoCalculo: string (ex.: "Rendimento") e número (ex.: 0). Ver
+/// TributosEndpointsTests.PostConfiguracoesTributos_WithStringEnums_ShouldReturn201 e
+/// PostConfiguracoesTributos_WithNumericEnums_ShouldReturn201 para a prova empírica.
 /// </summary>
 public sealed class EnumSerializationTests
 {

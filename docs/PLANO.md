@@ -15,7 +15,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 1 | ✅ Grafana: falhar sem senha (remover `:-admin`) — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
 | 2 | ✅ `Indexador` tolerante na persistência (não quebrar EF) — concluída 2026-07-19 | Alto (corretude) | Baixo | 🟢 |
 | 3 | ✅ Healthcheck real com DB check — concluída 2026-07-19 | Alto (operação) | Baixo | 🟢 |
-| 4 | Enums como string no JSON (`JsonStringEnumConverter`) | Alto (API/Web) | Baixo | 🟢 |
+| 4 | ✅ Enums como string no JSON (`JsonStringEnumConverter`) — concluída 2026-07-20 | Alto (API/Web) | Baixo | 🟢 |
 | 5 | ✅ API key: falhar em prod se for o default — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
 | 6 | Exception handler global (ProblemDetails) na API | Médio | Baixo | 🟢 |
 | 7 | Helper `Result`→HTTP (fim do `Contains("NotFound")`) | Médio | Baixo | 🟢 |
@@ -57,7 +57,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** healthcheck do Docker/deploy passa a depender do banco — se o Postgres demorar a subir, o gate `/health` do deploy pode falhar (comportamento correto, mas checar o timeout do compose). Manter startup order/`depends_on`.
 - **Verificação:** `/health` retorna 200 com banco OK e **503** com o Postgres parado (`docker compose stop db && curl -i /health`).
 
-### 4. Enums como string no JSON 🟢
+### 4. Enums como string no JSON 🟢 ✅ Concluída (2026-07-20)
+> **Feito:** `builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()))` na API (é o mecanismo correto p/ Minimal API — não `AddControllers().AddJsonOptions`) e remoção completa do `ParseEnum` do `Tributos.razor` (envia `formBaseCalculo`/`formTipoCalculo` string direto). **O palpite do plano ("aceita ambos na desserialização? Não") estava ERRADO:** verificado empiricamente que o `JsonStringEnumConverter` do System.Text.Json aceita **string E número** na desserialização por padrão → **nenhuma quebra de contrato**, compat retroativa preservada sem código extra. Prova por 2 testes de integração HTTP com JSON cru (`tests/.../TributosEndpointsTests.cs`): `"baseCalculo":"Rendimento"`→201 e `"baseCalculo":0`→201. O revisor confirmou **não-vacuidade** revertendo o converter (o teste de string cai p/ 400 sem ele, volta a 201 com ele). GET não afetado (`TributoDto` já expõe enums como string via `.ToString()`). Suíte API **117/117** (115+2); E2E completo **22/22** verde (rebuild via `run-e2e.sh`), incluindo `tributos.spec.ts › should create a new tributo`. `EnumSerializationTests` teve só o comentário XML atualizado (premissa "não registra converter" ficou obsoleta). Ver memória `feedback_api_enums_numeric` (invertida).
 - **Escopo:** registrar `JsonStringEnumConverter` (via `ConfigureHttpJsonOptions`) na API para aceitar/serializar `BaseCalculo`/`TipoCalculo` como string; remover o `ParseEnum` hardcoded do Web.
 - **Arquivos:** `src/TesouroDireto.API/Program.cs`; `src/TesouroDireto.Web/Components/Pages/Tributos.razor` (remover `ParseEnum`, enviar string).
 - **Risco:** clientes que hoje mandam **número** no `POST /configuracoes/tributos` quebram (mas o único cliente é o próprio Web). `JsonStringEnumConverter` aceita ambos na desserialização por padrão? Não — confirmar; se preciso, manter compat. Ajustar E2E de tributos.

@@ -74,6 +74,34 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         doc.RootElement.GetProperty("id").GetGuid().Should().NotBeEmpty();
     }
 
+    // 21a. POST /configuracoes/tributos com enums como STRING no JSON -> 201
+    [Fact]
+    public async Task PostConfiguracoesTributos_WithStringEnums_ShouldReturn201()
+    {
+        var json = """
+        {"nome":"IOF String","baseCalculo":"Rendimento","tipoCalculo":"TabelaDiaria","faixas":[{"diasMin":0,"diasMax":29,"dia":null,"aliquota":96},{"diasMin":null,"diasMax":null,"dia":29,"aliquota":0}],"ordem":1,"cumulativo":false}
+        """;
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/configuracoes/tributos", content, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    // 21b. POST /configuracoes/tributos com enums como NÚMERO no JSON (backward compat) -> 201
+    [Fact]
+    public async Task PostConfiguracoesTributos_WithNumericEnums_ShouldReturn201()
+    {
+        var json = """
+        {"nome":"IOF Numerico","baseCalculo":0,"tipoCalculo":2,"faixas":[{"diasMin":0,"diasMax":29,"dia":null,"aliquota":96},{"diasMin":null,"diasMax":null,"dia":29,"aliquota":0}],"ordem":1,"cumulativo":false}
+        """;
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/configuracoes/tributos", content, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
     // 22. POST /configuracoes/tributos sem faixas/nome inválido -> 400
     [Fact]
     public async Task PostConfiguracoesTributos_WithoutFaixas_ShouldReturn400()

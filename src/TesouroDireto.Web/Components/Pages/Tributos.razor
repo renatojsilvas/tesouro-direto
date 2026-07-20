@@ -288,8 +288,8 @@ else if (!loading)
                 var body = new
                 {
                     nome = formNome,
-                    baseCalculo = ParseEnum(formBaseCalculo),
-                    tipoCalculo = ParseEnum(formTipoCalculo),
+                    baseCalculo = formBaseCalculo,
+                    tipoCalculo = formTipoCalculo,
                     faixas,
                     ordem = formOrdem,
                     cumulativo = formCumulativo
@@ -331,21 +331,6 @@ else if (!loading)
         {
             salvando = false;
         }
-    }
-
-    private static int ParseEnum(string value)
-    {
-        return value switch
-        {
-            "Rendimento" => 0,
-            "PuBruto" => 1,
-            "ValorInvestido" => 2,
-            "ValorResgate" => 3,
-            "FaixaPorDias" => 0,
-            "AliquotaFixa" => 1,
-            "TabelaDiaria" => 2,
-            _ => 0
-        };
     }
 
     private sealed class FaixaForm
