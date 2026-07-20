@@ -17,7 +17,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 3 | ✅ Healthcheck real com DB check — concluída 2026-07-19 | Alto (operação) | Baixo | 🟢 |
 | 4 | ✅ Enums como string no JSON (`JsonStringEnumConverter`) — concluída 2026-07-20 | Alto (API/Web) | Baixo | 🟢 |
 | 5 | ✅ API key: falhar em prod se for o default — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
-| 6 | Exception handler global (ProblemDetails) na API | Médio | Baixo | 🟢 |
+| 6 | ✅ Exception handler global (ProblemDetails) na API — concluída 2026-07-20 | Médio | Baixo | 🟢 |
 | 7 | Helper `Result`→HTTP (fim do `Contains("NotFound")`) | Médio | Baixo | 🟢 |
 | 8 | Testes de integração HTTP das rotas | Alto (rede de segurança) | Baixo | 🟡 |
 | 9 | Seed versionado de tributos e feriados | Muito alto (corretude) | Médio | 🟡 |
@@ -71,7 +71,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** se o `.env` de prod não tiver `ApiKey__Key`, a API deixa de subir. Garantir o secret antes de mergear.
 - **Verificação:** subir com env de prod e chave default → falha explícita no log; com chave real → sobe normal.
 
-### 6. Exception handler global (ProblemDetails) na API 🟢
+### 6. Exception handler global (ProblemDetails) na API 🟢 ✅ Concluída (2026-07-20)
+> **Feito:** `AddProblemDetails` com `CustomizeProblemDetails` injetando `correlationId` (lido de `HttpContext.Items["CorrelationId"]`) e `traceId` no corpo; `app.UseExceptionHandler()` registrado como middleware **mais externo** (antes do `CorrelationIdMiddleware`, capturando todo o downstream). O `CorrelationIdMiddleware` passou a gravar `context.Items["CorrelationId"]` (antes o valor só existia no header e no `LogContext`), habilitando sua leitura no corpo. Os **dois** caminhos de 401 do `ApiKeyMiddleware` agora escrevem `application/problem+json` via `IProblemDetailsService` (o `correlationId` vem do mesmo `CustomizeProblemDetails`). Endpoint `GET /_test/throw` mapeado **só em `Testing`** para forçar exceção nos testes. **Palpite do plano corrigido:** `traceId` NÃO é auto-injetado em Minimal API fora de MVC — foi adicionado explicitamente (`Activity.Current?.Id ?? TraceIdentifier`). 3 testes de integração novos (500→problem+json, 401→problem+json, eco de `X-Correlation-Id` conhecido no corpo). Revisor confirmou **não-vacuidade** revertendo a injeção do `correlationId` (os 3 testes caem) e rastreou o stack trace real da exceção provando a ordem do pipeline (Correlation grava `Items` antes de `next`, exceção sobe e é capturada no mesmo `HttpContext`). Suíte API **120/120** verde (117+3), sem regressão na tarefa 8. Cercas respeitadas: mapeamento Result→status (tarefa 7), behaviors MediatR (O3) e validação de key/ExcludedPaths intactos.
 > Também coberto no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), item **O4** (captura de erros, camada 1).
 - **Escopo:** adicionar `UseExceptionHandler` + `AddProblemDetails` para que exceções não tratadas virem resposta `application/problem+json` consistente (hoje viram 500 cru). Padronizar também o corpo do 401 do `ApiKeyMiddleware`.
 - **Arquivos:** `src/TesouroDireto.API/Program.cs`, `src/TesouroDireto.API/Middleware/ApiKeyMiddleware.cs`.
@@ -203,7 +204,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - Arquivos: novo `LoggingBehavior` (Application/Common ou Infrastructure), `src/TesouroDireto.Domain/Common/Result.cs` (+`IResult`, aditivo), registro em `DependencyInjection.cs`, `ImportCsvCommandHandler.cs`.
 - Risco: baixo–médio — toca `Result` do Domain; rodar `Architecture.Tests`. Verificação: comando que falha → Warning no Loki, sem 500.
 
-**O4. Exception handler global (ProblemDetails)** 🟢 · *(= tarefa 6)*
+**O4. Exception handler global (ProblemDetails)** 🟢 ✅ Concluída (2026-07-20) · *(= tarefa 6)*
 - Escopo/arquivos/verificação: ver tarefa 6. Fecha a captura de erros da camada 1 (exceções não tratadas → `problem+json` com CorrelationId; corpo do 401 padronizado).
 
 ### Camada 2 — Métricas técnicas (latência, erro, saturação, healthcheck)

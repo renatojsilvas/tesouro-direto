@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Prometheus;
@@ -18,6 +19,22 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
 });
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        if (context.HttpContext.Items["CorrelationId"] is string correlationId)
+        {
+            context.ProblemDetails.Extensions["correlationId"] = correlationId;
+        }
+
+        // ProblemDetails não injeta traceId por padrão fora do contexto MVC/[ApiController];
+        // seguimos o padrão oficial da Microsoft para minimal APIs (CustomizeProblemDetails)
+        // usando o Activity atual (W3C trace id) com fallback para o TraceIdentifier do ASP.NET Core.
+        context.ProblemDetails.Extensions["traceId"] =
+            Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
+    };
+});
 
 var app = builder.Build();
 
@@ -29,6 +46,8 @@ if (!app.Environment.IsEnvironment("Testing"))
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
 }
+
+app.UseExceptionHandler();
 
 app.UseSerilogDefaults();
 app.UseHttpMetrics();
@@ -43,6 +62,11 @@ app.MapTituloEndpoints();
 app.MapConfiguracaoEndpoints();
 app.MapSimuladorEndpoints();
 app.MapMetrics();
+
+if (app.Environment.IsEnvironment("Testing"))
+{
+    app.MapGet("/_test/throw", IResult () => throw new InvalidOperationException("Forced exception for exception handler testing."));
+}
 
 app.Run();
 

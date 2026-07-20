@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace TesouroDireto.API.Middleware;
 
@@ -31,18 +33,30 @@ public sealed class ApiKeyMiddleware
         if (!TryGetValidApiKey(context, out var providedKey))
         {
             _logger.LogWarning("Request without API key to {Path}", context.Request.Path);
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await WriteUnauthorizedAsync(context);
             return;
         }
 
         if (!IsKeyValid(providedKey, _configuredKey))
         {
             _logger.LogWarning("Invalid API key attempt to {Path}", context.Request.Path);
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await WriteUnauthorizedAsync(context);
             return;
         }
 
         await _next(context);
+    }
+
+    private static async Task WriteUnauthorizedAsync(HttpContext context)
+    {
+        var problemDetailsService = context.RequestServices.GetRequiredService<IProblemDetailsService>();
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+
+        await problemDetailsService.WriteAsync(new ProblemDetailsContext
+        {
+            HttpContext = context,
+            ProblemDetails = new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" }
+        });
     }
 
     private bool IsExcludedPath(PathString path)
