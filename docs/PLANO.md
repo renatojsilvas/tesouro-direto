@@ -26,7 +26,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 12 | Índices para filtros comuns | Médio (performance) | Baixo | 🟢 |
 | 13 | Retry/circuit breaker (Polly) nas integrações | Médio (resiliência) | Médio | 🟡 |
 | 14 | Métricas de negócio/job no Prometheus | Médio (observabilidade) | Baixo | 🟡 |
-| 15 | Separar contrato HTTP do `CreateTributoCommand` | Médio (arquitetura) | Baixo | 🟢 |
+| 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21 | Médio (arquitetura) | Baixo | 🟢 |
 | 16 | Cliente tipado no Web (dedup das 5 páginas) | Médio (manutenção) | Médio | 🔴 |
 | 17 | Observabilidade no Web (Serilog/Loki) | Médio | Baixo | 🟢 |
 | 18 | Gate de cobertura no CI | Baixo–Médio | Baixo | 🟢 |
@@ -138,7 +138,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** baixo. Cuidar de nomes de métrica estáveis.
 - **Verificação:** `/metrics` expõe as novas séries; painel/alerta no Grafana reage a import falho.
 
-### 15. Separar contrato HTTP do `CreateTributoCommand` 🟢
+### 15. Separar contrato HTTP do `CreateTributoCommand` 🟢 ✅ Concluída (2026-07-21)
+> **Feito:** novo `src/TesouroDireto.API/Contracts/CreateTributoRequest.cs` (`sealed record`, namespace `TesouroDireto.API.Contracts`) espelhando campo a campo o `CreateTributoCommand` (`Nome`, `BaseCalculo`, `TipoCalculo`, `Faixas`, `Ordem`, `Cumulativo` — mesmos nomes/tipos/ordem, enums como string da tarefa 4). O `MapPost("/configuracoes/tributos")` passou a bindar `CreateTributoRequest request` e mapear para o comando **dentro** do handler (mesmo padrão do `MapPut`/`UpdateTributoRequest`); retorno via helper `ToHttpResult` (tarefa 7) intacto. **Decisão de escopo:** `Faixas` reusa o `FaixaDto` da Application (não se criou um `FaixaRequest` próprio) para manter consistência com o `UpdateTributoRequest` existente e não expandir a tarefa. **JSON de entrada byte-idêntico** — prova não-vacuosa: os testes de POST em `TributosEndpointsTests.cs` serializam um `CreateTributoCommand` (tipo da Application) direto no corpo e bindam com sucesso no `CreateTributoRequest`, sem nenhuma asserção alterada. Revisor executou as 4 verificações com evidência real: (a) arquivo de teste inalterado via `git diff` + API **125/125** (8/8 isolado); (b) **E2E 22/22** com rebuild genuíno do container, incluindo `tributos.spec.ts › should create a new tributo`; (c) grep confirma `CreateTributoCommand` só na construção interna do handler, nenhum handler o binda como request; (d) Architecture.Tests **13/13**. Flake infra (Testcontainers/Npgsql SSL race) verde no re-run. **Sugestão de follow-up (não feita):** `UpdateTributoRequest` (aninhado em `ConfiguracaoEndpoints.cs`) e ambos os contratos ainda referenciam `FaixaDto` da Application — vazamento residual endereçável junto num contrato de faixa próprio de `Contracts/`.
 - **Escopo:** introduzir um `CreateTributoRequest` em `API/Contracts/` e mapear para o comando no endpoint, parando o vazamento da camada Application no contrato público.
 - **Arquivos:** novo `src/TesouroDireto.API/Contracts/CreateTributoRequest.cs`; `Endpoints/ConfiguracaoEndpoints.cs`.
 - **Risco:** baixo; o JSON de entrada não muda se o request espelhar o comando. Cobrir com teste de integração (tarefa 8).

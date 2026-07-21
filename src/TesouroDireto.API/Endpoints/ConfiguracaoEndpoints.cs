@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.API.Contracts;
 using TesouroDireto.API.Extensions;
 using TesouroDireto.Application.Tributos;
 
@@ -30,10 +31,17 @@ public static class ConfiguracaoEndpoints
         });
 
         app.MapPost("/configuracoes/tributos", async (
-            CreateTributoCommand command,
+            CreateTributoRequest request,
             ISender sender,
             CancellationToken cancellationToken) =>
         {
+            var command = new CreateTributoCommand(
+                request.Nome,
+                request.BaseCalculo,
+                request.TipoCalculo,
+                request.Faixas,
+                request.Ordem,
+                request.Cumulativo);
             var result = await sender.Send(command, cancellationToken);
 
             return result.ToHttpResult(id => Results.Created($"/configuracoes/tributos/{id}", new { Id = id }));
