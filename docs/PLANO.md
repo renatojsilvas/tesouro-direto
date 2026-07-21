@@ -151,7 +151,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** **médio** — toca todas as telas; regressão de UI. Fazer incremental (uma página por vez) e apoiar nos E2E.
 - **Verificação:** E2E web (todas as specs) verde após o refactor; nenhuma página monta HttpClient/`ApiError` local.
 
-### 17. Observabilidade no Web (Serilog/Loki) 🟢
+### 17. Observabilidade no Web (Serilog/Loki) 🟢 ✅ Concluída (2026-07-21)
+> **Feito:** ver item **O2** do anexo (esta tarefa = O2). Serilog+Loki no Web replicando o padrão O1, `CorrelationIdHandler` (`DelegatingHandler`) injetando `X-Correlation-Id` em toda chamada à API, correlação Web→API validada ao vivo no Loki.
 > Detalhado no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), item **O2** (correlação Web→API via `DelegatingHandler`).
 - **Escopo:** configurar Serilog + sink Loki no Web (hoje só logging default), propagando CorrelationId nas chamadas à API para trace end-to-end.
 - **Arquivos:** `src/TesouroDireto.Web/Program.cs`; reuso de `SerilogExtensions`.
@@ -198,7 +199,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - Arquivos: `src/TesouroDireto.API/Extensions/SerilogExtensions.cs`, `src/TesouroDireto.API/appsettings.json`, `infra/grafana/provisioning/datasources/datasources.yml`.
 - Risco: baixo (formato de log local muda; parsing do Loki melhora). Verificação: Loki mostra linhas JSON com `CorrelationId` e **sem** duplicata.
 
-**O2. Correlação ponta-a-ponta Web→API** 🟢 · *(expande tarefa 17)*
+**O2. Correlação ponta-a-ponta Web→API** 🟢 ✅ Concluída (2026-07-21) · *(= tarefa 17)*
+> **Feito:** novo `src/TesouroDireto.Web/Extensions/SerilogExtensions.cs` replicando o padrão O1 (Console `CompactJsonFormatter` + `GrafanaLoki`, enrichers `service`/`environment`/`MachineName`, `Loki:Uri` com fallback `http://localhost:3100`), com `service`/`job=tesouro-direto-web` (distinto de `-api`, mas o `derivedField` `CorrelationId` do Grafana ainda linka os dois). Novo `src/TesouroDireto.Web/Services/CorrelationIdHandler.cs` (`DelegatingHandler`): reusa um `X-Correlation-Id` válido preexistente (mesmo regex `^[a-zA-Z0-9\-]{1,64}$` da API) ou gera `Guid`, injeta o header em **toda** chamada à API, faz `LogContext.PushProperty("CorrelationId", id)` e loga "Chamando API"/"API respondeu {StatusCode}" (agnóstico ao status). Registrado via `.AddHttpMessageHandler<CorrelationIdHandler>()` no client `"TesouroDiretoApi"` existente (cliente tipado adiado p/ tarefa 16); `docker-compose.yml` ganhou `Loki__Uri` no serviço `web`. **Bug pego pelo revisor (real, refutado ao vivo):** o `UseSerilog` do Web foi replicado da API **sem** `.Enrich.FromLogContext()` — a API só o tinha via `appsettings.json` (`Serilog:Enrich:["FromLogContext"]`), que o Web não possui → o `PushProperty` virava no-op e **nenhum** log do Web carregava `CorrelationId` (critérios b/c falhavam, derivedField do Grafana não casava do lado Web). Corrigido adicionando `.Enrich.FromLogContext()` no código do Web. Verificação viva (stack Docker local, imagem web rebuildada): (a) build limpo, `API.Tests` **125/125**, E2E **22/22**; (b) `GET /titulos` → **mesmo** `CorrelationId` (`02c32b3b-…`) nos logs de `service=tesouro-direto-web` **e** `tesouro-direto-api`; (c) POST inválido → `application/problem+json` (tarefa 6) com `correlationId` batendo com o log da API; (d) `docker compose stop loki` + restart do web → Web sobe e responde 200 (sink não-bloqueante). Ver memória `project_fluxo_correlacao_web_api`.
 - Escopo: Serilog+Loki no Web + `DelegatingHandler` que injeta `X-Correlation-Id` nas chamadas à API (hoje só manda `X-Api-Key`).
 - Arquivos: `src/TesouroDireto.Web/Program.cs`, novo `src/TesouroDireto.Web/Services/CorrelationIdHandler.cs`.
 - Risco: baixo (Web passa a depender do Loki no boot — sink não-bloqueante). Verificação: um único `CorrelationId` em Web+API para a mesma ação.

@@ -52,6 +52,7 @@ services:
       - ASPNETCORE_URLS=http://+:8081
       - ApiSettings__BaseUrl=http://app:8080
       - ApiSettings__ApiKey=${API_KEY:-dev-local-key}
+      - Loki__Uri=http://loki:3100
     depends_on:
       app:
         condition: service_healthy
