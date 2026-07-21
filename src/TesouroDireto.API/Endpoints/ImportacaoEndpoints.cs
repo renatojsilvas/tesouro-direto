@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.API.Extensions;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Importacao;
 
@@ -12,18 +13,14 @@ public static class ImportacaoEndpoints
         {
             var result = await sender.Send(new ImportCsvCommand(), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.BadRequest(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
 
         app.MapPost("/importacao/feriados", async (ISender sender, CancellationToken cancellationToken) =>
         {
             var result = await sender.Send(new ImportFeriadosCommand(), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.BadRequest(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
     }
 }

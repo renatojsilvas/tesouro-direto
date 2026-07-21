@@ -235,4 +235,36 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // 14. GET /titulos/preco-atual?nome= vazio -> 400 (Titulo.InvalidNome)
+    [Fact]
+    public async Task GetPrecoAtualByNome_WithEmptyNome_ShouldReturn400()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos/preco-atual?nome=", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidNome");
+    }
+
+    // 15. GET /titulos/precos?nome= vazio -> 400 (Titulo.InvalidNome)
+    [Fact]
+    public async Task GetPrecosByNome_WithEmptyNome_ShouldReturn400()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos/precos?nome=", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidNome");
+    }
 }

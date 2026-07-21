@@ -18,7 +18,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 4 | ✅ Enums como string no JSON (`JsonStringEnumConverter`) — concluída 2026-07-20 | Alto (API/Web) | Baixo | 🟢 |
 | 5 | ✅ API key: falhar em prod se for o default — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
 | 6 | ✅ Exception handler global (ProblemDetails) na API — concluída 2026-07-20 | Médio | Baixo | 🟢 |
-| 7 | Helper `Result`→HTTP (fim do `Contains("NotFound")`) | Médio | Baixo | 🟢 |
+| 7 | ✅ Helper `Result`→HTTP (fim do `Contains("NotFound")`) — concluída 2026-07-20 | Médio | Baixo | 🟢 |
 | 8 | Testes de integração HTTP das rotas | Alto (rede de segurança) | Baixo | 🟡 |
 | 9 | Seed versionado de tributos e feriados | Muito alto (corretude) | Médio | 🟡 |
 | 10 | Job Quartz de feriados | Alto (corretude) | Baixo | 🟢 |
@@ -79,7 +79,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** baixo; muda o formato do corpo de erro 500 (nenhum cliente depende do corpo cru hoje).
 - **Verificação:** endpoint que lança exceção retorna `problem+json` com `traceId`/CorrelationId; 401 passa a ter corpo.
 
-### 7. Helper `Result`→HTTP compartilhado 🟢
+### 7. Helper `Result`→HTTP compartilhado 🟢 ✅ Concluída (2026-07-20)
+> **Feito:** novo `src/TesouroDireto.API/Extensions/ResultExtensions.cs` com `ToHttpResult`/`ToHttpResult<T>(this Result[/<T>], Func<...,IResult> onSuccess)`. Mapa **por estrutura (sufixo)**, não substring: `Error.Code.EndsWith(".NotFound", Ordinal)` → **404**; **todo o resto** → **400**. Deliberadamente **sem** 409/502/500 — assim `Projecao.HttpError`/`Projecao.UrlNotConfigured` (usados no simulador) permanecem 400 como hoje. O `Contains("NotFound")` do PUT foi eliminado; o helper foi aplicado nos **4** `Endpoints/*.cs`, removendo todo o boilerplate `IsSuccess ? … : …` (grep confirma zero `Results.NotFound`/`Results.BadRequest`/`Contains`). Falha sai como `application/problem+json` da tarefa 6: o helper escreve via `IProblemDetailsService.WriteAsync` (herda `correlationId`+`traceId` do `CustomizeProblemDetails`), com `code`/`Detail` no corpo. **Efeito autorizado pelo autor** (decisão registrada): `POST /simulador` e `/simulador/cenarios` passam a **404** para `Titulo.NotFound`/`Projecao.NotFound` (antes 400 p/ qualquer falha) — 2 asserções da suíte atualizadas; e as rotas by-nome (`GET /titulos/preco-atual?nome=`, `/titulos/precos?nome=`) passam a **400** para nome vazio (`Titulo.InvalidNome` = validação → 400, antes 404 incondicional), agora com testes dedicados. Revisor confirmou os 4 critérios por execução real + falsificação ativa (reverter o helper derruba os 3 testes de problem+json; substituir `WriteAsync` por JSON manual derruba correlationId/traceId). Descoberta não-óbvia: no .NET 8 com `AddProblemDetails`, **`Results.Problem` TAMBÉM** dispara o `CustomizeProblemDetails` (a premissa comum de que só `WriteAsync` integra é falsa) — comentário do helper corrigido. Suíte **366/366** (API 125). Ver memória `feedback_result_http_status_map`.
 - **Escopo:** extrair um helper (`results.ToHttp()` / `Match`) que mapeia `Error.Code` → status **por tipo/estrutura do erro**, eliminando o `Error.Code.Contains("NotFound")` do PUT e o boilerplate repetido em cada endpoint.
 - **Arquivos:** novo `src/TesouroDireto.API/Extensions/ResultExtensions.cs`; `Endpoints/*.cs` (todos).
 - **Risco:** mudar o mapeamento pode alterar status codes de alguns endpoints — cobrir com os testes de integração da tarefa 8 antes/junto.
@@ -112,6 +113,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Arquivos:** novo `src/TesouroDireto.Infrastructure/Projecoes/CachedProjecaoMercadoService.cs` + registro em `DependencyInjection.cs`; possivelmente ajuste em `src/TesouroDireto.Application/Simulador/SimularCommandHandler.cs`.
 - **Risco:** **médio** — fallback pode servir projeção velha silenciosamente; logar/sinalizar quando usar fallback. Não misturar com escrita.
 - **Verificação:** teste com `FakeHttpMessageHandler` simulando BCB fora → simulação usa cache/fallback e **não** falha; N simulações = 1 chamada externa dentro do TTL.
+- **Herdado da tarefa 7:** o mapa `Result`→HTTP passou a devolver **404** (era 400) quando `Projecao.NotFound` sobe do `FocusBcbService` (BCB sem dados). Esse caminho depende do BCB por HTTP externo e **não tem teste de integração** hoje. Ao montar o `FakeHttpMessageHandler` desta tarefa, adicionar um caso que force `Projecao.NotFound` e assertar **404 `application/problem+json`** em `POST /simulador` — cobrindo o buraco deixado pela tarefa 7.
 
 ### 12. Índices para filtros comuns 🟢
 - **Escopo:** migration adicionando índice em `data_vencimento` (filtro "vencido") e avaliar índice em `indexador`; revisar a query não-sargável `GetByNomeAsync` (`UPPER(... || EXTRACT(YEAR...))`) — considerar coluna/índice funcional.

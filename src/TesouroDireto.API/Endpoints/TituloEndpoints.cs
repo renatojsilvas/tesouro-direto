@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.API.Extensions;
 using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Application.Titulos;
 
@@ -16,9 +17,7 @@ public static class TituloEndpoints
         {
             var result = await sender.Send(new GetTitulosQuery(indexador, vencido), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.BadRequest(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
 
         app.MapGet("/titulos/{id:guid}/precos", async (
@@ -30,9 +29,7 @@ public static class TituloEndpoints
         {
             var result = await sender.Send(new GetPrecosQuery(id, dataInicio, dataFim), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.NotFound(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
 
         app.MapGet("/titulos/{id:guid}/preco-atual", async (
@@ -42,9 +39,7 @@ public static class TituloEndpoints
         {
             var result = await sender.Send(new GetPrecoAtualQuery(id), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.NotFound(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
 
         app.MapGet("/titulos/preco-atual", async (
@@ -54,9 +49,7 @@ public static class TituloEndpoints
         {
             var result = await sender.Send(new GetPrecoAtualByNomeQuery(nome), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.NotFound(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
 
         app.MapGet("/titulos/precos", async (
@@ -68,9 +61,7 @@ public static class TituloEndpoints
         {
             var result = await sender.Send(new GetPrecosByNomeQuery(nome, dataInicio, dataFim), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.NotFound(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
     }
 }

@@ -76,9 +76,9 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         dto!.ValorInvestido.Should().Be(1000m);
     }
 
-    // 16. POST /simulador TituloId inexistente -> 400
+    // 16. POST /simulador TituloId inexistente -> 404 (Titulo.NotFound via ResultExtensions.ToHttpResult)
     [Fact]
-    public async Task PostSimulador_WithUnknownTituloId_ShouldReturn400()
+    public async Task PostSimulador_WithUnknownTituloId_ShouldReturn404()
     {
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
@@ -89,7 +89,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
             ProjecaoAnual = (decimal?)null
         }, CancellationToken.None);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     // 17. POST /simulador ValorInvestido<=0 -> 400
@@ -136,9 +136,9 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         dtos.Should().Contain(c => c.Nome == "Pessimista");
     }
 
-    // 19. POST /simulador/cenarios inválido -> 400
+    // 19. POST /simulador/cenarios TituloId inexistente -> 404 (Titulo.NotFound via ResultExtensions.ToHttpResult)
     [Fact]
-    public async Task PostSimuladorCenarios_WithUnknownTituloId_ShouldReturn400()
+    public async Task PostSimuladorCenarios_WithUnknownTituloId_ShouldReturn404()
     {
         var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
         {
@@ -152,6 +152,6 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
             }
         }, CancellationToken.None);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
