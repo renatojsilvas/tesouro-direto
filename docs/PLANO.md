@@ -30,6 +30,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🔴 |
 | 17 | Observabilidade no Web (Serilog/Loki)                                          | Médio | Baixo | 🟢 |
 | 18 | Gate de cobertura no CI                                                        | Baixo–Médio | Baixo | 🟢 |
+| 19 | 🔒 Bloquear fallback `dev-local-key` no compose (furo residual da 5)           | **Alto (segurança)** | Baixo | 🟢 |
+| 20 | Formatter do sink Loki + filtro de nível do dashboard (follow-up O1)           | Médio (observabilidade) | Baixo | 🟢 |
 
 ---
 
@@ -168,12 +170,31 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ---
 
+## Follow-ups triados (2026-07-22)
+
+> Tarefas nascidas de riscos residuais / follow-ups registrados nas notas de **Feito** das tarefas 5 e O1 — que não entram sozinhos na fila. Prioridade de execução (fora da ordem numérica): **19 antes de tudo** (segurança), **20 antes do bloco E** (a O9 não pode nascer sobre painel de nível quebrado).
+
+### 19. Bloquear o fallback `dev-local-key` no compose 🔒 🟢
+- **Escopo:** o `docker-compose.yml` usa `${API_KEY:-dev-local-key}` em **dois** pontos (serviço `api` linha 12, serviço `web` linha 54). Se o secret `API_KEY` vier vazio no deploy, a API sobe com `dev-local-key` — que o `ApiKeyGuard` da tarefa 5 **NÃO** bloqueia (seu escopo literal só cobre o default do `appsettings.json`, `CHANGE-ME-IN-PRODUCTION`). Fechar por uma via ou ambas: **(a)** trocar o fallback por `${API_KEY:?defina API_KEY}` (mesmo padrão da tarefa 1/Grafana — aborta o boot do compose sem a env, ver `feedback_compose_required_env_no_fallback`); **(b)** adicionar `dev-local-key` (e afins) à lista de chaves proibidas do `ApiKeyGuard` em prod (`Trim()` + `OrdinalIgnoreCase`, como já feito na 5).
+- **Arquivos:** `docker-compose.yml` (linhas 12 e 54); opcionalmente `src/TesouroDireto.API/Extensions/ApiKeyGuard.cs` + testes.
+- **Risco:** baixo — sem `API_KEY` no `.env`/secret o compose passa a falhar explicitamente (comportamento correto). O `deploy.yml` já injeta o secret `API_KEY` — confirmar antes de mergear para não derrubar o deploy.
+- **Verificação:** `docker compose config` sem `API_KEY` → erro/variável vazia explícita (via `:?`); com env setada, API sobe. Se seguir (b): teste do guard provando que `dev-local-key` aborta o boot em prod. Ver memórias `feedback_apikey_guard_boot_prod`, `feedback_compose_required_env_no_fallback`.
+
+### 20. Formatter do sink Loki + filtro de nível do dashboard 🟢
+- **Escopo:** dois follow-ups da **O1** que ficaram "endereçáveis junto ao O2", mas a O2 fechou sem eles — e ganharam urgência com a **O3** (que passou a emitir Warnings estruturados, exatamente o que os painéis deveriam mostrar) e a **O9** (alertas que consultam nível de log). **(a)** Passar um `textFormatter` (CompactJson) ao sink `GrafanaLoki` para alinhar o formato ao Console (hoje o sink usa o formatter default → `level:"info"` minúsculo/abreviado, `Message`/`MessageTemplate`). **(b) Bug de dashboard:** `infra/grafana/dashboards/tesouro-direto.json` — os painéis "Log Level Over Time" filtram `level = "Information"`/`Warning`/`Error`, mas o Loki emite `level="info"`/`warning`/`error` → painéis **sempre vazios** (verificado ao vivo: `level="Information"`→0, `level="info"`→60). Alinhar o filtro ao valor real (ou ao formato padronizado em (a)).
+- **Arquivos:** `src/TesouroDireto.API/Extensions/SerilogExtensions.cs`, `src/TesouroDireto.Web/Extensions/SerilogExtensions.cs` (se replicar), `infra/grafana/dashboards/tesouro-direto.json`.
+- **Risco:** baixo. Cuidar para a mudança do formatter **não** quebrar o `derivedField` `CorrelationId` do `datasources.yml` (casa `"CorrelationId":"..."` no JSON). **Fazer ANTES do bloco E** — a O9 ("erro alto") não pode nascer sobre painel de nível quebrado.
+- **Verificação:** Loki mostra linhas no mesmo formato JSON do Console; painéis "Log Level Over Time" deixam de ficar vazios (mostram os Warnings da O3); `CorrelationId` continua linkando Web↔API. Ver memórias `feedback_loki_serilog_labels`, `project_status_tarefaO1_logs_json`.
+
+---
+
 ## Fora de escopo por ora (registrar, não fazer)
 
 - Versionamento de API (`/v1`) e Swagger/OpenAPI — melhoria de DX, sem risco operacional imediato.
 - Rate limiting **no nível da aplicação** (já existe no nginx).
 - `VO Taxa` sem invariante e converters `.Value` defensivos (`DataBase`/`PrecoUnitario`) — baixo impacto enquanto os reads passam por Dapper; endereçar se surgir leitura EF desses campos.
 - Cache distribuído (Redis) — só necessário se escalar para múltiplas instâncias da API.
+- Contrato de faixa próprio em `API/Contracts/` (`FaixaRequest`) — hoje `CreateTributoRequest`/`UpdateTributoRequest` (tarefa 15) ainda referenciam o `FaixaDto` da Application (vazamento residual). Baixo impacto: o JSON de entrada não muda; endereçar só se um contrato de faixa próprio for necessário.
 
 ---
 
