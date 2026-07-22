@@ -70,6 +70,30 @@ public sealed class ApiKeyGuardTests
     }
 
     [Fact]
+    public void Validate_Production_WithDevLocalKey_ShouldThrow()
+    {
+        var act = () => ApiKeyGuard.Validate("Production", "dev-local-key");
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Validate_Production_WithDevLocalKeyWhitespaceAndDifferentCase_ShouldThrow()
+    {
+        var act = () => ApiKeyGuard.Validate("Production", "  DEV-LOCAL-KEY  ");
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Validate_Development_WithDevLocalKey_ShouldNotThrow()
+    {
+        var act = () => ApiKeyGuard.Validate("Development", "dev-local-key");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void Validate_Development_WithDefaultKey_ShouldNotThrow()
     {
         var act = () => ApiKeyGuard.Validate("Development", "CHANGE-ME-IN-PRODUCTION");

@@ -9,7 +9,7 @@ services:
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=${DB_PASSWORD:-app123}
       - ASPNETCORE_ENVIRONMENT=Production
       - Loki__Uri=http://loki:3100
-      - ApiKey__Key=${API_KEY:-dev-local-key}
+      - ApiKey__Key=${API_KEY:?API_KEY é obrigatório no .env}
     depends_on:
       db:
         condition: service_healthy
@@ -51,7 +51,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8081
       - ApiSettings__BaseUrl=http://app:8080
-      - ApiSettings__ApiKey=${API_KEY:-dev-local-key}
+      - ApiSettings__ApiKey=${API_KEY:?API_KEY é obrigatório no .env}
       - Loki__Uri=http://loki:3100
     depends_on:
       app:
