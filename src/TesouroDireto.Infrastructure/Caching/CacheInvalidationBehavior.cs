@@ -44,12 +44,5 @@ public sealed class CacheInvalidationBehavior<TRequest, TResponse>(
         }
     }
 
-    private static bool IsSuccess(TResponse response) => response switch
-    {
-        Result r => r.IsSuccess,
-        Result<ImportResult> r => r.IsSuccess,
-        Result<ImportFeriadosResult> r => r.IsSuccess,
-        Result<Guid> r => r.IsSuccess,
-        _ => false
-    };
+    private static bool IsSuccess(TResponse response) => response is IResult r && r.IsSuccess;
 }

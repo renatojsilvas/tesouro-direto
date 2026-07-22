@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Quartz;
+using TesouroDireto.Application.Common.Behaviors;
 using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Importacao;
@@ -40,6 +41,7 @@ public static class DependencyInjection
 
         services.AddMemoryCache();
         services.AddSingleton<MemoryCacheInvalidator>();
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
 
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();

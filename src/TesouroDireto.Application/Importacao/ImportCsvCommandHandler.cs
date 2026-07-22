@@ -31,11 +31,16 @@ public sealed class ImportCsvCommandHandler(
         var precosIgnorados = 0;
         var linhasComErro = 0;
 
-        await foreach (var recordResult in csvImportService.GetRecordsAsync(cancellationToken))
+        await foreach (var csvRecordLine in csvImportService.GetRecordsAsync(cancellationToken))
         {
+            var lineNumber = csvRecordLine.LineNumber;
+            var recordResult = csvRecordLine.Record;
+
             if (recordResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, recordResult.Error.Description);
                 continue;
             }
 
@@ -47,6 +52,8 @@ public sealed class ImportCsvCommandHandler(
             if (tituloResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, tituloResult.Error.Description);
                 continue;
             }
 
@@ -62,6 +69,8 @@ public sealed class ImportCsvCommandHandler(
             if (existingDatesResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, existingDatesResult.Error.Description);
                 continue;
             }
 
@@ -77,6 +86,8 @@ public sealed class ImportCsvCommandHandler(
             if (precoResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, precoResult.Error.Description);
                 continue;
             }
 

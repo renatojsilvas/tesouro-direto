@@ -1,4 +1,5 @@
 using TesouroDireto.Domain.Common;
+using IResult = Microsoft.AspNetCore.Http.IResult;
 
 namespace TesouroDireto.API.Extensions;
 

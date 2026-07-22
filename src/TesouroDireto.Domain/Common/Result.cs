@@ -1,6 +1,6 @@
 namespace TesouroDireto.Domain.Common;
 
-public sealed class Result
+public sealed class Result : IResult
 {
     private readonly Error? _error;
 
@@ -33,7 +33,7 @@ public sealed class Result
     }
 }
 
-public sealed class Result<T>
+public sealed class Result<T> : IResult
 {
     private readonly T? _value;
     private readonly Error? _error;

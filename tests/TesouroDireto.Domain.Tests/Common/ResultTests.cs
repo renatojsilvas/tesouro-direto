@@ -51,4 +51,12 @@ public sealed class ResultTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public void Success_ShouldBeAssignableToIResult()
+    {
+        var result = Result.Success();
+
+        result.Should().BeAssignableTo<IResult>();
+    }
 }
