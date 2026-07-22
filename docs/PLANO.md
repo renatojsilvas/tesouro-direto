@@ -10,26 +10,26 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ## Ordem sugerida (risco × retorno)
 
-| # | Tarefa | Retorno | Risco | Esforço |
-|---|--------|---------|-------|---------|
-| 1 | ✅ Grafana: falhar sem senha (remover `:-admin`) — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
+| # | Tarefa                                                                         | Retorno | Risco | Esforço |
+|---|--------------------------------------------------------------------------------|---------|-------|---------|
+| 1 | ✅ Grafana: falhar sem senha (remover `:-admin`) — concluída 2026-07-19         | Alto (segurança) | Baixo | 🟢 |
 | 2 | ✅ `Indexador` tolerante na persistência (não quebrar EF) — concluída 2026-07-19 | Alto (corretude) | Baixo | 🟢 |
-| 3 | ✅ Healthcheck real com DB check — concluída 2026-07-19 | Alto (operação) | Baixo | 🟢 |
+| 3 | ✅ Healthcheck real com DB check — concluída 2026-07-19                         | Alto (operação) | Baixo | 🟢 |
 | 4 | ✅ Enums como string no JSON (`JsonStringEnumConverter`) — concluída 2026-07-20 | Alto (API/Web) | Baixo | 🟢 |
-| 5 | ✅ API key: falhar em prod se for o default — concluída 2026-07-19 | Alto (segurança) | Baixo | 🟢 |
-| 6 | ✅ Exception handler global (ProblemDetails) na API — concluída 2026-07-20 | Médio | Baixo | 🟢 |
-| 7 | ✅ Helper `Result`→HTTP (fim do `Contains("NotFound")`) — concluída 2026-07-20 | Médio | Baixo | 🟢 |
-| 8 | Testes de integração HTTP das rotas | Alto (rede de segurança) | Baixo | 🟡 |
-| 9 | Seed versionado de tributos e feriados | Muito alto (corretude) | Médio | 🟡 |
-| 10 | Job Quartz de feriados | Alto (corretude) | Baixo | 🟢 |
-| 11 | BCB Focus: cache + fallback | Alto (disponibilidade) | Médio | 🟡 |
-| 12 | Índices para filtros comuns | Médio (performance) | Baixo | 🟢 |
-| 13 | Retry/circuit breaker (Polly) nas integrações | Médio (resiliência) | Médio | 🟡 |
-| 14 | Métricas de negócio/job no Prometheus | Médio (observabilidade) | Baixo | 🟡 |
-| 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21 | Médio (arquitetura) | Baixo | 🟢 |
-| 16 | Cliente tipado no Web (dedup das 5 páginas) | Médio (manutenção) | Médio | 🔴 |
-| 17 | Observabilidade no Web (Serilog/Loki) | Médio | Baixo | 🟢 |
-| 18 | Gate de cobertura no CI | Baixo–Médio | Baixo | 🟢 |
+| 5 | ✅ API key: falhar em prod se for o default — concluída 2026-07-19              | Alto (segurança) | Baixo | 🟢 |
+| 6 | ✅ Exception handler global (ProblemDetails) na API — concluída 2026-07-20      | Médio | Baixo | 🟢 |
+| 7 | ✅ Helper `Result`→HTTP (fim do `Contains("NotFound")`) — concluída 2026-07-20  | Médio | Baixo | 🟢 |
+| 8 | ✅ Testes de integração HTTP das rotas — concluída 2026-07-22                   | Alto (rede de segurança) | Baixo | 🟢 |
+| 9 | Seed versionado de tributos e feriados                                         | Muito alto (corretude) | Médio | 🟡 |
+| 10 | Job Quartz de feriados                                                         | Alto (corretude) | Baixo | 🟢 |
+| 11 | BCB Focus: cache + fallback                                                    | Alto (disponibilidade) | Médio | 🟡 |
+| 12 | Índices para filtros comuns                                                    | Médio (performance) | Baixo | 🟢 |
+| 13 | Retry/circuit breaker (Polly) nas integrações                                  | Médio (resiliência) | Médio | 🟡 |
+| 14 | Métricas de negócio/job no Prometheus                                          | Médio (observabilidade) | Baixo | 🟡 |
+| 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21       | Médio (arquitetura) | Baixo | 🟢 |
+| 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🔴 |
+| 17 | Observabilidade no Web (Serilog/Loki)                                          | Médio | Baixo | 🟢 |
+| 18 | Gate de cobertura no CI                                                        | Baixo–Médio | Baixo | 🟢 |
 
 ---
 
@@ -90,7 +90,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ## Onda 2 — Rede de segurança e correções de fundo
 
-### 8. Testes de integração HTTP das rotas 🟡
+### 8. Testes de integração HTTP das rotas 🟢 ✅ Concluída (2026-07-22)
+> **Feito:** commit `92c69f1` — suíte de integração HTTP em `tests/TesouroDireto.API.Tests/Integration/` sobre `ApiTestFactory` (WebApplicationFactory em env `Testing` + Postgres via Testcontainers, connection string por env var, paralelização desabilitada e cache invalidado no reset — ver `feedback_endpoint_integration_testcontainers`). Cobre as rotas de negócio (`Titulos`, `Tributos`, `Simulador`, `Importacao`, `Auth`, `Health`) mais serialização de enums (`Serialization/EnumSerializationTests`): status, binding, contrato de erro. Bug real de produção corrigido junto (Dapper/`DateOnly` em `PrecoTaxaReadRepository` + `DapperTypeHandlers`). Ampliada depois pelas tarefas 6/7 (`ExceptionHandlerEndpointsTests`, `ResultExtensionsEndpointsTests`). **Verificação (2026-07-22):** `dotnet test` da API **127/127 verde** em 1 execução. É a rede de segurança das tarefas 4, 7, 15, 16.
 - **Escopo:** com `WebApplicationFactory<Program>` (env `Testing`, banco via Testcontainers ou connection real), exercitar as 11 rotas de negócio: status, serialização (inclui enums), binding, contrato de erro. É a rede de segurança para as tarefas 4, 7 e refactors.
 - **Arquivos:** novo `tests/TesouroDireto.API.Tests/Endpoints/*` (seguir o padrão de `Persistence/` com `IAsyncLifetime`).
 - **Risco:** baixo (só adiciona testes). Custo de infra: sobe container Postgres — usar fixture compartilhada (`ICollectionFixture`) para não subir um por classe (ver fragilidade §5.7 do MAPA).
