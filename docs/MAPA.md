@@ -51,24 +51,24 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 | POST | `/simulador` | `SimularCommand` (via `SimularRequest`) | 200/400 |
 | POST | `/simulador/cenarios` | `SimularCenariosCommand` | 200/400 |
 
-**Middleware:** `ApiKeyMiddleware` (header `X-Api-Key`, comparação SHA256 em tempo constante, isenta `/health` e `/metrics`, falha→401 corpo vazio); `CorrelationIdMiddleware` (header `X-Correlation-Id`, valida regex, injeta no LogContext).
+**Middleware:** `ApiKeyMiddleware` (header `X-Api-Key`, comparação SHA256 em tempo constante, isenta `/health` e `/metrics`, falha→401 com corpo `application/problem+json`+`correlationId` desde a tarefa 6); `CorrelationIdMiddleware` (header `X-Correlation-Id`, valida regex, injeta no LogContext **e em `HttpContext.Items`** para leitura no corpo do ProblemDetails).
 
 **Web — Blazor Server** (`src/TesouroDireto.Web`): Razor Components (InteractiveServer) + `HttpClient` nomeado `"TesouroDiretoApi"` (BaseUrl + header `X-Api-Key` de config). Páginas em `Components/Pages/`: `Titulos`, `Historico` (gráfico via JS interop), `Tributos`, `Simulador`, `Cenarios`, `Home`, `About`, `Error`. As pastas `Pages/` e `Services/` estão **vazias** — cada página injeta `IHttpClientFactory` e chama a API direto.
 
 ### Como se conecta
 
-- **API → Application:** único `IPipelineBehavior` registrado é `CacheInvalidationBehavior`. **Não há ValidationBehavior/FluentValidation** — validação vive em cada handler, devolvendo `Result` de falha.
+- **API → Application:** dois `IPipelineBehavior` registrados (ordem = mais externo primeiro): `LoggingBehavior` (Application, tarefa O3 — loga início/fim e captura `Result.IsFailure` como Warning via a interface `IResult` que `Result`/`Result<T>` implementam; nunca lança) e depois `CacheInvalidationBehavior` (Infra — invalida cache em comandos de escrita, testando `response is IResult r && r.IsSuccess`). **Não há ValidationBehavior/FluentValidation** — validação vive em cada handler, devolvendo `Result` de falha.
 - **Web → API:** 100% HTTP, autenticação por `X-Api-Key` compartilhado (Web `ApiSettings:ApiKey` == API `ApiKey:Key`). Blazor server-side → chamada sai do servidor, navegador nunca vê a chave; sem CORS.
 - **Contrato de erro:** falha devolve `{ Code, Description }`; cada página desserializa num record local `ApiError`.
 
 ### Fragilidades
-- **Contratos vazando/duplicados** ✅: `Contracts/` vazio; DTOs inline nos endpoints; `POST /configuracoes/tributos` liga o corpo direto ao `CreateTributoCommand` da Application — **vazamento da camada Application para o contrato HTTP público**.
-- **Sem camada de acesso no Web** ✅: `Web/Services/` vazio; lógica de acesso à API (CreateClient, request anônimo, desserialização, `ApiError`) **duplicada nas 5 páginas**.
-- **Enums só numéricos no JSON** ✅ (ver Verificação #1): sem `JsonStringEnumConverter`. Workaround frágil em `Tributos.razor:336` `ParseEnum` com ordinais hardcoded e fallback silencioso `_ => 0`.
-- **Erro por string-matching** ✅ (Verificação #9): `PUT /configuracoes/tributos/{id}` decide 404 vs 400 com `Error.Code.Contains("NotFound")`.
-- **Sem validação declarativa na borda; sem exception handler global na API** (Web tem `UseExceptionHandler("/Error")`, API não → exceção crua vira 500).
+- **Contratos vazando/duplicados** ✔️ RESOLVIDO parcialmente (tarefa 15): `POST /configuracoes/tributos` agora binda `CreateTributoRequest` (`API/Contracts/`), não mais o `CreateTributoCommand` da Application. Resíduo: `Create/UpdateTributoRequest` ainda referenciam `FaixaDto` da Application — movido para "Fora de escopo por ora" no PLANO.
+- **Sem camada de acesso no Web** ✅ (tarefa 16, pendente): `Web/Services/` vazio; lógica de acesso à API (CreateClient, request anônimo, desserialização, `ApiError`) **duplicada nas 5 páginas**.
+- **Enums só numéricos no JSON** ✔️ RESOLVIDO (tarefa 4): `JsonStringEnumConverter` registrado (aceita string E número); `ParseEnum` hardcoded removido do `Tributos.razor`.
+- **Erro por string-matching** ✔️ RESOLVIDO (tarefa 7, ver acima): o `Error.Code.Contains("NotFound")` do PUT foi eliminado pelo helper `ToHttpResult`.
+- **Sem validação declarativa na borda** — exception handler global ✔️ RESOLVIDO (tarefa 6/O4): `UseExceptionHandler` + `AddProblemDetails` → exceção crua vira `application/problem+json` com `correlationId`/`traceId`; 401 do `ApiKeyMiddleware` também padronizado.
 - **Sem versionamento, sem Swagger/OpenAPI, sem rate limiting** nos endpoints (inclui `POST /importacao`, que dispara download/parse externo). `GET /` retorna `"Hello World!"`; `AllowedHosts: "*"`.
-- **Mapeamento `Result`→HTTP repetido manualmente** em cada endpoint (sem helper), fácil divergir status.
+- **Mapeamento `Result`→HTTP** ✔️ RESOLVIDO (tarefa 7): helper `ToHttpResult` em `Extensions/ResultExtensions.cs`, mapa por estrutura (`.NotFound`→404, resto→400) aplicado nos 4 `Endpoints/*.cs` — fim do `Contains("NotFound")` e do boilerplate por endpoint.
 
 ---
 
@@ -140,13 +140,13 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 
 **Jobs (Quartz.NET):** único job real é `CsvImportJob` — cron `0 0 6 * * ?` (06:00 diário, configurável), `[DisallowConcurrentExecution]`, `WaitForJobsToComplete = true`. Dispara `ImportCsvCommand` e loga resultado. **Feriados NÃO têm job** — só endpoint manual. BCB Focus é sob demanda.
 
-**Startup** (`API/Program.cs`): `ApiKeyGuard.Validate` aborta o boot em prod se `ApiKey:Key` for vazia/default; migrations automáticas em todo ambiente exceto `Testing`. **Healthcheck real:** `AddDbContextCheck<AppDbContext>()` com `/health` + `/health/ready` (readiness, 503 se banco fora) e `/health/live` (liveness, não toca DB). **Sem seed** de tributos/feriados em código (nenhum `HasData`, nenhum `.sql` de produção — só `tests/.../seed.sql`).
+**Startup** (`API/Program.cs`): `ApiKeyGuard.Validate` aborta o boot em prod se `ApiKey:Key` for vazia ou uma chave proibida (`CHANGE-ME-IN-PRODUCTION` **ou `dev-local-key`** desde a tarefa 19; `Trim`+`OrdinalIgnoreCase`); o `docker-compose.yml` usa `${API_KEY:?}` (sem fallback inseguro). Migrations automáticas em todo ambiente exceto `Testing`. **Healthcheck real:** `AddDbContextCheck<AppDbContext>()` com `/health` + `/health/ready` (readiness, 503 se banco fora) e `/health/live` (liveness, não toca DB). **Sem seed** de tributos/feriados em código (nenhum `HasData`, nenhum `.sql` de produção — só `tests/.../seed.sql`).
 
 **Observabilidade:**
-- **Logs:** Serilog Console + `GrafanaLoki` sink com label `job=tesouro-direto-api` fixado no código (`SerilogExtensions.cs`), enrich `FromLogContext`, CorrelationId propagado. (O diretório `Infrastructure/Observability` citado na tarefa **não existe** — instrumentação vive em `API/Extensions`.)
-- **Métricas:** `prometheus-net` (`UseHttpMetrics` + `/metrics`) — só métricas HTTP genéricas, **nenhuma de negócio/job**. `prometheus.yml` scrape `app:8080`.
-- **Grafana:** provisionado em `infra/grafana/` (datasources UID fixo + dashboard). **Loki:** filesystem, retention 30d, compactor com `delete_request_store`.
-- **Web (Blazor):** sem Serilog/Loki e sem métricas — só logging default ASP.NET (ponto cego).
+- **Logs:** Serilog com **CompactJsonFormatter (CLEF) no Console E no sink `GrafanaLoki`** (tarefa O1 + formatter padronizado na tarefa 20), label `job=tesouro-direto-api` e enrichers `service`/`environment`/`MachineName` fixados no código (`API/Extensions/SerilogExtensions.cs`), enrich `FromLogContext`, URI Loki em `Loki:Uri`. Captura de falhas de negócio (sem exceção) via `LoggingBehavior` (MediatR, tarefa O3, em `Application/Common/Behaviors/`) → Warnings estruturados. O campo `level` (`info`/`warning`/`error`) é injetado pelo próprio sink Loki. (O diretório `Infrastructure/Observability` citado na tarefa **não existe**.)
+- **Métricas:** `prometheus-net` (`UseHttpMetrics` + `/metrics`) — só métricas HTTP genéricas, **nenhuma de negócio/job** (tarefas 14/O6/O7/O8 pendentes). `prometheus.yml` scrape `app:8080`.
+- **Grafana:** provisionado em `infra/grafana/` (datasources UID fixo + dashboard; painéis "Logs by Level" corrigidos na tarefa 20 para casar `level=info/warning/error`; painel "Trace by CorrelationId" via `derivedField`). **Loki:** filesystem, retention 30d, compactor com `delete_request_store`. Alertas provisionados: **pendentes (tarefa O9)**.
+- **Web (Blazor):** ✔️ RESOLVIDO (tarefa 17/O2) — Serilog + sink Loki (CLEF, `job=tesouro-direto-web`) + `CorrelationIdHandler` (`DelegatingHandler`) propagando `X-Correlation-Id` à API → trace Web↔API no Grafana. Métricas do Web ainda ausentes.
 
 **Deploy** (`.github/workflows/deploy.yml`): `test` → `e2e` → `deploy` (SSH VPS). `.env` sempre reescrito com `printf`, `git pull`, copia nginx conf, `nginx -t && reload`, `docker compose build --no-cache && up -d`, aguarda `/health`. Migrations rodam no startup do container. Nginx porta 3080: `/`→Web, `/api/`→API, `/grafana/` público, `/prometheus/` restrito a 127.0.0.1.
 
@@ -161,7 +161,7 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 - **Job silencioso em falha** ✅: `CsvImportJob` só faz `LogError`; sem métrica, sem alerta, sem relançar. Fonte fora do ar por dias passa despercebida.
 - **Sem métricas de negócio/job** ✅: nenhum counter/gauge para sucesso/falha do import, linhas processadas, idade do último preço, duração do job. Impossível alertar em Grafana.
 - **Healthcheck raso** ✔️ RESOLVIDO (tarefa 3, 2026-07-19): `AddDbContextCheck` + `/health`/`/health/ready` (503 com banco fora) e `/health/live` (liveness); Docker healthcheck e gates de deploy apontam para `/health/ready`.
-- **Web sem observabilidade** ✅: erros/latência da UI ficam fora do Loki/Grafana.
+- **Web sem observabilidade** ✔️ RESOLVIDO (tarefa 17/O2, 2026-07-21): Serilog+Loki no Web + `CorrelationIdHandler` → logs e CorrelationId da UI entram no Loki/Grafana (trace Web↔API). Resíduo: métricas do Web (latência/erro de render) ainda ausentes.
 - **Grafana exposto publicamente com senha default** ✔️ RESOLVIDO (tarefa 1 + commit `ba3b103`, 2026-07-19): `GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?...}` (boot falha sem o secret, sem fallback `:-admin`) e `/grafana/` restrito por IP no nginx.
 
 ---
@@ -196,11 +196,11 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 
 ## Verificação das fragilidades
 
-Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8. **Status de correção** (coluna final): itens **2, 7 e 8 já foram resolvidos** (tarefas 2, 3 e 1 do PLANO, 2026-07-19); os demais seguem abertos.
+Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8. **Status de correção** (coluna final, atualizado 2026-07-22): itens **1, 2, 7, 8, 9 e 10 resolvidos** (tarefas 4, 2, 3, 1, 7 e 8 do PLANO); seguem **abertos** os itens **3** (BCB cache/fallback — tarefa 11), **4** (seed — tarefa 9), **5** (job de feriados — tarefa 10) e **6** (upsert não-atômico).
 
 | # | Afirmação | Veredito | Evidência |
 |---|-----------|----------|-----------|
-| 1 | Sem `JsonStringEnumConverter` → enums só aceitam número no POST | ✅ CONFIRMADO | Zero ocorrência de `JsonStringEnumConverter`/`AddJsonOptions`/`ConfigureHttpJsonOptions` em `src`. `CreateTributoCommand` bindado direto do body em `ConfiguracaoEndpoints.cs:39`. |
+| 1 | Sem `JsonStringEnumConverter` → enums só aceitam número no POST | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 4) | Era: zero ocorrência de `JsonStringEnumConverter` em `src`. **Corrigido:** `JsonStringEnumConverter` registrado (aceita string E número); binding agora via `CreateTributoRequest` (tarefa 15). |
 | 2 | `Indexador.FromName(v).Value` quebra materialização EF com valor fora da whitelist | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 2) | `Indexador.cs:11-24` (whitelist 4); `Result<T>.Value` lança em falha (`Common/Result.cs:47-48`); usado em `TituloConfiguration.cs:36`. **Corrigido:** `Indexador.FromPersistence` (lossless) na leitura EF. |
 | 3 | Simulador chama BCB Focus ao vivo, sem cache/fallback | ✅ CONFIRMADO | `SimularCommandHandler.cs:40-47` propaga falha sem fallback; `DependencyInjection.cs:82-85` registra sem decorator `Cached*` (contraste com repos, linhas 40-73). |
 | 4 | Nenhum seed de tributos/feriados em produção | ✅ CONFIRMADO | Zero `.HasData(` em `src` (hits anteriores eram `HasDatabaseName`); único `seed.sql` é de teste E2E. |
@@ -208,8 +208,8 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 | 6 | `ix_titulos_tipo_vencimento` é UNIQUE e o upsert não é atômico | ✅ CONFIRMADO | `TituloConfiguration.cs:42-44` `.IsUnique()`; `GetOrCreateTituloAsync` (`ImportCsvCommandHandler.cs:107-132`) é check-then-act sem transação → race sob concorrência (UNIQUE evita duplicata mas lança exceção não tratada). |
 | 7 | Healthcheck raso (`/health` string fixa, não toca banco) | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 3) | `Program.cs:29`; zero `AddHealthChecks`/`AddDbContextCheck`/`MapHealthChecks` em `src`. **Corrigido:** `AddDbContextCheck` + readiness/liveness. |
 | 8 | Grafana público + senha default `admin` | ✅ CONFIRMADO (agravado) → ✔️ RESOLVIDO (tarefa 1) | `nginx/tesouro-direto.conf` `location /grafana/` sem `allow/deny` (vs `/prometheus/` que tem `allow 127.0.0.1; deny all`); `docker-compose.yml:67` `${GRAFANA_PASSWORD:-admin}`. **Exposição pública foi decisão recente e intencional** (commit `67406be`). **Corrigido:** `GRAFANA_PASSWORD:?` (sem fallback) + `/grafana/` restrito por IP (commit `ba3b103`). |
-| 9 | PUT tributos decide 404 vs 400 por `Error.Code.Contains("NotFound")` | ✅ CONFIRMADO | `ConfiguracaoEndpoints.cs:33` — substring match; frágil a rename de código de erro e a colisão acidental. |
-| 10 | Zero teste de integração HTTP nas rotas de negócio | ✅ CONFIRMADO | `WebApplicationFactory` só em 3 testes de middleware (`/`, `/health`, `/metrics`); nenhum bate em `/titulos`, `/simulador`, `/configuracoes/tributos`, `/importacao`. |
+| 9 | PUT tributos decide 404 vs 400 por `Error.Code.Contains("NotFound")` | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 7) | Era: substring match em `ConfiguracaoEndpoints.cs:33`. **Corrigido:** helper `ToHttpResult` mapeia por estrutura (`.EndsWith(".NotFound")`→404), aplicado nos 4 endpoints. |
+| 10 | Zero teste de integração HTTP nas rotas de negócio | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 8) | Era: `WebApplicationFactory` só em 3 testes de middleware. **Corrigido:** suíte `Integration/` (Testcontainers) cobre Titulos/Simulador/Tributos/Importacao/Auth/Health; bug real de prod (Dapper/`DateOnly`) pego no caminho. |
 
 **Conclusão do revisor:** 10/10 confirmadas contra o código real. As demais fragilidades listadas nas seções §1–§5 (sem verificação individual marcada) vêm da leitura dos agentes de mapeamento e são consistentes com o código, mas não passaram pelo passo adversarial explícito.
 
@@ -224,13 +224,13 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 4. ✔️ RESOLVIDO (tarefa 2) **`Indexador` whitelist rígida** → materialização EF quebra com valor inesperado na coluna (§2).
 
 **Segurança / operação:**
-5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1). **Parcial** ✔️ (tarefa 5): boot agora aborta em prod com a chave default/vazia; segue aberto o compartilhamento único e a paridade leitura/escrita.
+5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1). **Parcial** ✔️ (tarefas 5 + 19): boot aborta em prod com chave default/vazia **ou `dev-local-key`**, e o compose falha sem `API_KEY` (sem fallback inseguro); segue aberto o compartilhamento único e a paridade leitura/escrita.
 6. ✔️ RESOLVIDO (tarefa 1) Grafana público com senha default `admin` (§4).
 7. Sem retry/circuit breaker em nenhuma integração externa (§3).
 8. ✔️ RESOLVIDO (tarefa 3) Healthcheck raso não detecta banco fora (§4).
 
 **Qualidade / manutenção:**
-9. Contrato HTTP vazando `CreateTributoCommand`; acesso à API duplicado em 5 páginas Blazor (§1).
-10. Enums só numéricos + `ParseEnum` hardcoded frágil (§1).
-11. Zero teste de integração de endpoint HTTP (§5); sem gate de cobertura.
-12. Observabilidade sem métricas de negócio/job; Web fora do Loki/Grafana (§4).
+9. Contrato HTTP vazando `CreateTributoCommand` ✔️ RESOLVIDO (tarefa 15); acesso à API duplicado em 5 páginas Blazor segue aberto (tarefa 16) (§1).
+10. Enums só numéricos + `ParseEnum` hardcoded frágil ✔️ RESOLVIDO (tarefa 4) (§1).
+11. Zero teste de integração de endpoint HTTP ✔️ RESOLVIDO (tarefa 8); gate de cobertura segue aberto (tarefa 18) (§5).
+12. Observabilidade sem métricas de negócio/job (aberto, tarefas 14/O6–O8); Web no Loki/Grafana ✔️ RESOLVIDO (tarefa 17/O2); logs padronizados e painéis de nível corrigidos (tarefas O1/O3/20) (§4).
