@@ -19,7 +19,8 @@ public static class SerilogExtensions
                 .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter())
                 .WriteTo.GrafanaLoki(
                     lokiUri,
-                    labels: [new LokiLabel { Key = "job", Value = "tesouro-direto-api" }]));
+                    labels: [new LokiLabel { Key = "job", Value = "tesouro-direto-api" }],
+                    textFormatter: new Serilog.Formatting.Compact.CompactJsonFormatter()));
 
         return builder;
     }

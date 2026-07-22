@@ -228,15 +228,15 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `Error` [1m]))",
+          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `error` [1m]))",
           "legendFormat": "Error"
         },
         {
-          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `Warning` [1m]))",
+          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `warning` [1m]))",
           "legendFormat": "Warning"
         },
         {
-          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `Information` [1m]))",
+          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `info` [1m]))",
           "legendFormat": "Information"
         }
       ],
