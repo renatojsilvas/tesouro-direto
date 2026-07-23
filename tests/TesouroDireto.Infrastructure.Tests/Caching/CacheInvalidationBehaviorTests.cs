@@ -81,6 +81,22 @@ public sealed class CacheInvalidationBehaviorTests : IDisposable
     }
 
     [Fact]
+    public async Task SeedTributosCommand_Success_ShouldInvalidateTributos()
+    {
+        var behavior = CreateBehavior<SeedTributosCommand, Result>();
+        SetCacheEntry("tributos:all", _invalidator.GetTributosToken());
+        SetCacheEntry("tributos:ativos", _invalidator.GetTributosToken());
+
+        await behavior.Handle(
+            new SeedTributosCommand(),
+            _ => Task.FromResult(Result.Success()),
+            CancellationToken.None);
+
+        _cache.TryGetValue("tributos:all", out _).Should().BeFalse();
+        _cache.TryGetValue("tributos:ativos", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task UpdateTributoCommand_Success_ShouldInvalidateTributos()
     {
         var behavior = CreateBehavior<UpdateTributoCommand, Result>();
