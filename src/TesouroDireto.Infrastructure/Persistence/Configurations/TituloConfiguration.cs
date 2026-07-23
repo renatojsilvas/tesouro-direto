@@ -46,5 +46,8 @@ public sealed class TituloConfiguration : IEntityTypeConfiguration<Titulo>
         builder.HasIndex(t => new { t.TipoTitulo, t.DataVencimento })
             .IsUnique()
             .HasDatabaseName("ix_titulos_tipo_vencimento");
+
+        builder.HasIndex(t => t.DataVencimento)
+            .HasDatabaseName("ix_titulos_data_vencimento");
     }
 }

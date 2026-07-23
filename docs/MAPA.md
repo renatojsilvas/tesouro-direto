@@ -85,7 +85,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **Simulador / DiasUteis** — objetos de cálculo transitórios, **não persistidos** (sem DbSet).
 
 **Persistência** (`src/TesouroDireto.Infrastructure/Persistence`): `AppDbContext` implementa `IUnitOfWork`; 4 DbSets (Titulos, PrecosTaxas, Tributos, Feriados). Tabelas snake_case:
-- `titulos` (PK uuid `ValueGeneratedNever`; índice único `ix_titulos_tipo_vencimento` em tipo+vencimento)
+- `titulos` (PK uuid `ValueGeneratedNever`; índice único `ix_titulos_tipo_vencimento` em tipo+vencimento; desde a tarefa 12: `ix_titulos_data_vencimento` para filtro "vencido" e `ix_titulos_nome_upper` — índice funcional que torna `GetByNomeAsync` sargável)
 - `precos_taxas` (FK `titulo_id` CASCADE; índice único `ix_precos_taxas_titulo_data`; valores numeric nuláveis)
 - `tributos` + `tributo_faixas` (`OwnsMany`; índice único `ix_tributos_nome`)
 - `feriados` (índice único `ix_feriados_data`)
@@ -105,7 +105,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **VO `Taxa` sem invariante**: `Create` devolve `Taxa` direto (não `Result`), aceita qualquer decimal — inconsistente com os demais VOs.
 - **Invariantes fiscais não protegidas**: `Faixa`/`Tributo` não impedem faixas sobrepostas/lacunas na tabela regressiva — corretude depende do seed correto.
 - **Redundância em `Titulo`**: `indexador`/`paga_juros_semestrais` derivados **e** persistidos; import parcial pode divergir do que o ctor derivaria, sem check de consistência.
-- **Índices ausentes para filtros comuns**: filtro por `indexador` isolado e `data_vencimento` isolado (vencido) varrem tabela; `GetByNomeAsync` usa expressão não-sargável (`UPPER(... || EXTRACT(YEAR...))`).
+- **Índices ausentes para filtros comuns** ✔️ RESOLVIDO (tarefa 12, 2026-07-23): filtro por `data_vencimento` isolado (vencido) varria tabela e `GetByNomeAsync` usava expressão não-sargável (`UPPER(... || EXTRACT(YEAR...))`). **Corrigido:** migration `AddTituloIndexes` — `ix_titulos_data_vencimento` (btree, modelado no EF) + `ix_titulos_nome_upper` (índice funcional via `migrationBuilder.Sql`, expressão idêntica à de `GetByNomeAsync`). EXPLAIN no banco real migrado (402 títulos): `GetByNomeAsync` → Index Scan (22ms→0.08ms em lab de 50k); `GetFilteredAsync vencido=true` (14%) → Index Scan; `vencido=false` (86%) → Seq Scan (escolha correta do planner). **Índice em `indexador` avaliado e REJEITADO**: 4 valores distintos, seletividade ~25%, ganho de só 2× em 50k linhas — não justifica o custo de escrita.
 - **Desvio CQRS**: `TributoReadRepository` devolve entidade em vez de DTO (contraria a convenção do projeto).
 
 ---

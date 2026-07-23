@@ -23,7 +23,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 9 | ✅ Seed versionado de tributos e feriados — concluída 2026-07-22                | Muito alto (corretude) | Médio | 🟡 |
 | 10 | ✅ Job Quartz de feriados — concluída 2026-07-23                                | Alto (corretude) | Baixo | 🟢 |
 | 11 | ✅ BCB Focus: cache + fallback — concluída 2026-07-23                          | Alto (disponibilidade) | Médio | 🟡 |
-| 12 | Índices para filtros comuns                                                    | Médio (performance) | Baixo | 🟢 |
+| 12 | ✅ Índices para filtros comuns — concluída 2026-07-23                          | Médio (performance) | Baixo | 🟢 |
 | 13 | Retry/circuit breaker (Polly) nas integrações                                  | Médio (resiliência) | Médio | 🟡 |
 | 14 | Métricas de negócio/job no Prometheus                                          | Médio (observabilidade) | Baixo | 🟡 |
 | 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21       | Médio (arquitetura) | Baixo | 🟢 |
@@ -35,6 +35,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 21 | Extrair `InitializeDatabaseAsync` para serviço testável (semântica fatal/não-fatal) | Médio (rede de segurança) | Baixo | 🟢 |
 | 22 | `indexador`: coluna `HasMaxLength(20)` pode truncar/estourar valor bruto longo | Baixo (corretude de borda) | Baixo | 🟢 |
 | 23 | Travar por teste que `IProjecaoMercadoService` resolve para o decorator de cache | Médio (rede de segurança) | Baixo | 🟢 |
+| 24 | Teste de integração de `GetByNomeAsync` contra Postgres real (regressão de casamento com o índice funcional) | Médio (rede de segurança) | Baixo | 🟢 |
 
 ---
 
@@ -130,7 +131,10 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Verificação:** teste com `FakeHttpMessageHandler` simulando BCB fora → simulação usa cache/fallback e **não** falha; N simulações = 1 chamada externa dentro do TTL.
 - **Herdado da tarefa 7:** o mapa `Result`→HTTP passou a devolver **404** (era 400) quando `Projecao.NotFound` sobe do `FocusBcbService` (BCB sem dados). Esse caminho depende do BCB por HTTP externo e **não tem teste de integração** hoje. Ao montar o `FakeHttpMessageHandler` desta tarefa, adicionar um caso que force `Projecao.NotFound` e assertar **404 `application/problem+json`** em `POST /simulador` — cobrindo o buraco deixado pela tarefa 7.
 
-### 12. Índices para filtros comuns 🟢
+### 12. Índices para filtros comuns 🟢 ✅ Concluída (2026-07-23)
+> **Feito:** migration `AddTituloIndexes` com **dois** índices em `titulos` — (1) `ix_titulos_data_vencimento` (btree, modelado no EF em `TituloConfiguration`) para o filtro "vencido"; (2) `ix_titulos_nome_upper`, índice **funcional** injetado via `migrationBuilder.Sql` (`CREATE INDEX ... ON titulos (UPPER(tipo_titulo || ' ' || EXTRACT(YEAR FROM data_vencimento)::text))`, com `DROP INDEX IF EXISTS` no `Down`), casando **caractere a caractere** com o WHERE de `GetByNomeAsync` — o que a torna sargável **sem** mudar o SQL do repositório nem o schema além do índice. Índice em `indexador` **avaliado por EXPLAIN e rejeitado** (4 valores distintos, seletividade ~25%, ganho de só 2× em 50k linhas — não paga o custo de escrita). **Decisão fechada sem tocar em `GetByNomeAsync`/`GetFilteredAsync`.**
+> **Verificação (revisor, não vacuosa):** EXPLAIN das duas queries no banco **real migrado** (Postgres 16, 402 títulos) — `GetByNomeAsync` → `Index Scan using ix_titulos_nome_upper` (0.087 ms; 22.0 ms→0.08 ms em lab de 50k, índice usado inclusive no **generic plan** parametrizado `= upper($1)`, caminho real do Dapper); `GetFilteredAsync` `vencido=true` (57/402=14%) → `Index Scan using ix_titulos_data_vencimento`, `vencido=false` (345/402=86%) → Seq Scan (escolha correta do planner). Migration aplica **limpo em banco populado** (402 linhas preservadas, ambos os índices `indisvalid=t`) e é **reversível** (Down remove os dois e preserva dados, re-Up recria). Casamento da expressão confirmado pela normalização do `\d titulos`; índice exercitado no driver Npgsql/Dapper real (`idx_scan` incrementou); sem drift de snapshot (`migrations add` a seco = Up/Down vazios); sem colisão de nome; `CREATE INDEX` sem `CONCURRENTLY` roda dentro da transação da migration (aceitável: catálogo de centenas de linhas, `SHARE lock` de ms). Suíte completa 400/400 verde.
+> **Follow-up triado (não bloqueante):** `GetByNomeAsync` não tem teste de integração com Postgres real — só mocks. Se alguém alterar a expressão SQL do repositório e quebrar o casamento com `ix_titulos_nome_upper`, o índice vira Seq Scan **silenciosamente** (resultado correto, só mais lento) e nenhum teste pega. Consistente com `feedback_integration_tests_for_adapters`. Candidato a virar tarefa própria.
 - **Escopo:** migration adicionando índice em `data_vencimento` (filtro "vencido") e avaliar índice em `indexador`; revisar a query não-sargável `GetByNomeAsync` (`UPPER(... || EXTRACT(YEAR...))`) — considerar coluna/índice funcional.
 - **Arquivos:** nova migration em `src/TesouroDireto.Infrastructure/Persistence/Migrations/`; possivelmente `Repositories/TituloReadRepository.cs`.
 - **Risco:** baixo; migration só adiciona índice. Confirmar impacto de escrita (import) é desprezível no volume atual.
@@ -220,6 +224,13 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Arquivos:** novo teste em `tests/TesouroDireto.API.Tests/` (ou `TesouroDireto.Architecture.Tests/` se o padrão couber); nenhum arquivo de produção muda.
 - **Risco:** muito baixo — só adiciona teste. Cuidar para o teste não depender do host Postgres (Testcontainers) se puder resolver só o `IServiceProvider`.
 - **Verificação:** o teste fica **vermelho** ao reverter o registro do DI para `AddHttpClient<IProjecaoMercadoService, FocusBcbService>` (prova de não-vacuidade obrigatória) e verde no registro atual. Ver memória `project_projecao_cache_fallback`.
+
+### 24. Teste de integração de `GetByNomeAsync` contra Postgres real 🟢 · *(achado do revisor da tarefa 12, 2026-07-23)*
+> **Origem:** achado **adjacente** (não-bloqueante) do revisor da tarefa 12. Hoje `GetByNomeAsync` só é coberto por **mocks** de handler (`GetPrecoAtualByNomeQueryHandlerTests`, `GetPrecosByNomeQueryHandlerTests`, `CachedTituloReadRepositoryTests`); `tests/.../TituloReadRepositoryTests.cs` cobre só `GetFilteredAsync`. O risco é silencioso e específico da tarefa 12: se alguém alterar a expressão SQL do repositório (ex.: `||` → `CONCAT`, um espaço a mais, mudança de cast) e ela deixar de casar com o índice funcional `ix_titulos_nome_upper`, o planner volta a **Seq Scan silenciosamente** — o resultado continua correto, só mais lento, e nenhum teste funcional denuncia. Consistente com a memória `feedback_integration_tests_for_adapters` (adapters com I/O não-trivial precisam de teste de integração real, mock não basta).
+- **Escopo:** teste de integração (Testcontainers Postgres, seguindo o padrão de `TituloReadRepositoryTests` para `GetFilteredAsync`) que insere títulos e valida `GetByNomeAsync`: casamento por nome (case-insensitive, com `.Trim()`), caso não-encontrado (`TituloErrors.NotFound`), e o caso de borda **nome duplicado** (mesmo tipo + mesmo ano, dias diferentes — a expressão do índice não é única). Opcional, se viável sem fragilizar: assertar via `EXPLAIN` que a query usa `ix_titulos_nome_upper` (prova de que o casamento não regrediu) — se o `EXPLAIN` deixar o teste frágil, cobrir só o comportamento funcional.
+- **Arquivos:** `tests/TesouroDireto.API.Tests/Persistence/TituloReadRepositoryTests.cs` (estender); nenhum arquivo de produção muda.
+- **Risco:** muito baixo — só adiciona teste. Reusar a infra de Testcontainers já existente; desabilitar paralelização como os demais testes de endpoint (ver `feedback_endpoint_integration_testcontainers`).
+- **Verificação:** o teste de casamento por nome fica **vermelho** se a expressão SQL do repositório for alterada para não casar mais com o índice (se cobrir o `EXPLAIN`) ou pelo menos se o WHERE quebrar funcionalmente; verde no estado atual. Ver memória `project_status_tarefa12_indices`.
 
 ---
 
