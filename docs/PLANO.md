@@ -21,14 +21,14 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 7 | ✅ Helper `Result`→HTTP (fim do `Contains("NotFound")`) — concluída 2026-07-20  | Médio | Baixo | 🟢 |
 | 8 | ✅ Testes de integração HTTP das rotas — concluída 2026-07-22                   | Alto (rede de segurança) | Baixo | 🟢 |
 | 9 | ✅ Seed versionado de tributos e feriados — concluída 2026-07-22                | Muito alto (corretude) | Médio | 🟡 |
-| 10 | Job Quartz de feriados                                                         | Alto (corretude) | Baixo | 🟢 |
-    | 11 | ✅ BCB Focus: cache + fallback — concluída 2026-07-23                          | Alto (disponibilidade) | Médio | 🟡 |
+| 10 | ✅ Job Quartz de feriados — concluída 2026-07-23                                | Alto (corretude) | Baixo | 🟢 |
+| 11 | ✅ BCB Focus: cache + fallback — concluída 2026-07-23                          | Alto (disponibilidade) | Médio | 🟡 |
 | 12 | Índices para filtros comuns                                                    | Médio (performance) | Baixo | 🟢 |
 | 13 | Retry/circuit breaker (Polly) nas integrações                                  | Médio (resiliência) | Médio | 🟡 |
 | 14 | Métricas de negócio/job no Prometheus                                          | Médio (observabilidade) | Baixo | 🟡 |
 | 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21       | Médio (arquitetura) | Baixo | 🟢 |
 | 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🔴 |
-| 17 | Observabilidade no Web (Serilog/Loki)                                          | Médio | Baixo | 🟢 |
+| 17 | ✅ Observabilidade no Web (Serilog/Loki) — concluída 2026-07-21                 | Médio | Baixo | 🟢 |
 | 18 | Gate de cobertura no CI                                                        | Baixo–Médio | Baixo | 🟢 |
 | 19 | ✅ 🔒 Bloquear fallback `dev-local-key` no compose — concluída 2026-07-22       | **Alto (segurança)** | Baixo | 🟢 |
 | 20 | ✅ Formatter do sink Loki + filtro de nível do dashboard — concluída 2026-07-22 | Médio (observabilidade) | Baixo | 🟢 |
