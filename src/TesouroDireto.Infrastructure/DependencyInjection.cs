@@ -94,6 +94,7 @@ public static class DependencyInjection
         });
 
         var cronSchedule = configuration["CsvImport:CronSchedule"] ?? "0 0 6 * * ?";
+        var feriadosCronSchedule = configuration["Feriados:CronSchedule"] ?? "0 0 6 1 12 ?";
 
         services.AddQuartz(q =>
         {
@@ -103,6 +104,13 @@ public static class DependencyInjection
                 .ForJob(jobKey)
                 .WithIdentity("csv-import-trigger")
                 .WithCronSchedule(cronSchedule));
+
+            var feriadoJobKey = new JobKey("feriado-import");
+            q.AddJob<FeriadoImportJob>(opts => opts.WithIdentity(feriadoJobKey));
+            q.AddTrigger(opts => opts
+                .ForJob(feriadoJobKey)
+                .WithIdentity("feriado-import-trigger")
+                .WithCronSchedule(feriadosCronSchedule));
         });
         services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
