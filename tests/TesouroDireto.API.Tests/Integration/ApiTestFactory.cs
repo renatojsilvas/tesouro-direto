@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
 using TesouroDireto.Infrastructure.Caching;
 using TesouroDireto.Infrastructure.Persistence;
+using TesouroDireto.Infrastructure.Projecoes;
 
 namespace TesouroDireto.API.Tests.Integration;
 
@@ -34,6 +37,16 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16-alpine")
         .Build();
+
+    /// <summary>
+    /// Responder do BCB Focus injetável por teste (tarefa 11). Plugado como o
+    /// <see cref="HttpMessageHandler"/> primário do <see cref="FocusBcbService"/> via
+    /// <see cref="ConfigureWebHost"/> — cada teste que precisa simular o BCB seta esta
+    /// propriedade antes de disparar a request. <c>null</c> (estado após
+    /// <see cref="ResetAsync"/>) faz o handler lançar, para nunca disparar uma chamada de
+    /// rede real por acidente num teste que esqueceu de configurar o responder.
+    /// </summary>
+    public Func<HttpRequestMessage, HttpResponseMessage>? BcbResponder { get; set; }
 
     public async Task InitializeAsync()
     {
@@ -107,11 +120,6 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         Environment.SetEnvironmentVariable(FeriadoImportUrlEnvVar, null);
     }
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.UseEnvironment("Testing");
-    }
-
     /// <summary>
     /// Client HTTP com o header X-Api-Key já preenchido com uma chave válida.
     /// </summary>
@@ -152,6 +160,49 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         invalidator.InvalidatePrecos();
         invalidator.InvalidateTributos();
         invalidator.InvalidateFeriados();
+        invalidator.InvalidateProjecoes();
+
+        // Isolamento entre testes: sem BcbResponder configurado, o BcbResponderHandler
+        // lança em vez de deixar um teste anterior "vazar" resposta para o próximo.
+        BcbResponder = null;
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Testing");
+
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            // FocusBcb:CacheTtl é lido pelo CachedProjecaoMercadoService a cada chamada
+            // (via IConfiguration, não capturado antes do Build()), então dá para
+            // encurtar só no host de teste sem o truque de env var usado para a
+            // connection string. TTL curto permite testar expiração sem esperar 6h de
+            // verdade; MaxFallbackAge fica no default de produção (7 dias).
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FocusBcb:CacheTtl"] = "00:00:02"
+            });
+        });
+
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddHttpClient<FocusBcbService>()
+                .ConfigurePrimaryHttpMessageHandler(() => new BcbResponderHandler(() => BcbResponder));
+        });
+    }
+
+    private sealed class BcbResponderHandler(Func<Func<HttpRequestMessage, HttpResponseMessage>?> responderAccessor)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var responder = responderAccessor()
+                ?? throw new InvalidOperationException(
+                    "ApiTestFactory.BcbResponder não foi configurado para este teste.");
+
+            return Task.FromResult(responder(request));
+        }
     }
 }
 

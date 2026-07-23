@@ -93,6 +93,9 @@ public sealed class SimularCenariosCommandHandler(
             resultado.TotalTributos,
             resultado.ValorLiquido,
             resultado.RendimentoLiquido,
-            cupons);
+            cupons,
+            // Cenários não consultam o serviço de projeção (ProjecaoAnual vem sempre do
+            // request, por cenário) — não há projeção "utilizada" a sinalizar aqui.
+            null);
     }
 }

@@ -71,8 +71,7 @@ public sealed class SimularCommandHandlerTests
         SetupTitulo(titulo);
         SetupDiasUteis(252);
         _projecaoService.GetProjecaoAsync(Indexador.Selic, Arg.Any<CancellationToken>())
-            .Returns(Result<ProjecaoMercado>.Success(
-                new ProjecaoMercado("Selic", new DateOnly(2024, 1, 1), 13.75m, 13.75m)));
+            .Returns(Result<ProjecaoMercado>.Success(CreateProjecao("Selic", 13.75m)));
 
         var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 0.10m, null);
 
@@ -112,6 +111,13 @@ public sealed class SimularCommandHandlerTests
 
         result.IsFailure.Should().BeTrue();
     }
+
+    // ObtidaEmUtc/Origem são obrigatórios em ProjecaoMercado de propósito (ver
+    // comentário no record): este helper só existe para não repetir os dois
+    // argumentos "neutros" em cada teste que não se importa com eles.
+    private static ProjecaoMercado CreateProjecao(string indicador, decimal valorAnual) =>
+        new(indicador, new DateOnly(2024, 1, 1), valorAnual, valorAnual,
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero), OrigemProjecao.Bcb);
 
     private static Titulo CreateTitulo(TipoTitulo tipoTitulo, DateOnly vencimento)
     {

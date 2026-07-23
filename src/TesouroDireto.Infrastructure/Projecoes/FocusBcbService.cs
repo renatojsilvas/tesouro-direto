@@ -40,8 +40,21 @@ public sealed class FocusBcbService(
         {
             response = await httpClient.GetAsync(requestUrl, cancellationToken);
         }
-        catch (HttpRequestException ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Cancelamento pedido por quem chamou é legítimo — não é uma falha do BCB,
+            // então não deve virar HttpError nem disparar fallback de cache.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Catch amplo de propósito: cobre não só HttpRequestException, mas também
+            // o que a resiliência (Polly, tarefa 13) pode lançar em cima do mesmo
+            // GetAsync — BrokenCircuitException (circuito aberto) e
+            // TimeoutRejectedException/TaskCanceledException (timeout de política, não
+            // cancelamento do chamador). Sem isso, essas exceções escapariam para o
+            // handler global (500 sem fallback), justo o caso que este decorator existe
+            // para cobrir.
             logger.LogError(ex, "Failed to fetch projection from BCB Focus API for {Indexador}", indexador.Name);
             return ProjecaoErrors.HttpError;
         }
@@ -66,11 +79,18 @@ public sealed class FocusBcbService(
 
         var entry = odata.Value[0];
 
+        // ObtidaEmUtc/Origem aqui são só o valor inicial "cru" do fetch. O
+        // CachedProjecaoMercadoService (decorator registrado como IProjecaoMercadoService
+        // no DI) sempre recarimba ObtidaEmUtc com o próprio TimeProvider antes de
+        // cachear/devolver — então este UtcNow só é o valor final para quem consome o
+        // FocusBcbService diretamente (hoje, só os testes unitários dele).
         return new ProjecaoMercado(
             entry.Indicador,
             DateOnly.Parse(entry.Data),
             entry.Media,
-            entry.Mediana);
+            entry.Mediana,
+            DateTimeOffset.UtcNow,
+            OrigemProjecao.Bcb);
     }
 
     private static string BuildRequestUrl(string baseUrl, Indexador indexador)

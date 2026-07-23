@@ -1,7 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Application.Simulador;
 using TesouroDireto.Domain.Titulos;
 using TesouroDireto.Infrastructure.Persistence;
@@ -12,6 +16,14 @@ namespace TesouroDireto.API.Tests.Integration;
 public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLifetime
 {
     private readonly HttpClient _client = factory.CreateAuthenticatedClient();
+
+    // O JsonSerializerOptions default de HttpContent.ReadFromJsonAsync não conhece o
+    // JsonStringEnumConverter registrado só no lado do servidor (ConfigureHttpJsonOptions
+    // em Program.cs) — precisa ser espelhado aqui para desserializar ProjecaoUtilizadaDto.Origem.
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     public Task InitializeAsync() => factory.ResetAsync();
 
@@ -153,5 +165,104 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         }, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // Tarefa 11 — cache + fallback do BCB Focus. Testes abaixo controlam a resposta
+    // simulada do BCB via factory.BcbResponder (ver ApiTestFactory.ConfigureWebHost).
+
+    private const string SelicSuccessJson = """
+        {
+          "value": [{
+            "Indicador": "Selic",
+            "Data": "2026-01-01",
+            "Media": 12.5,
+            "Mediana": 12.5
+          }]
+        }
+        """;
+
+    private const string EmptyValueJson = """{"value": []}""";
+
+    private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json) =>
+        new(statusCode) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+
+    // 20. BCB responde {"value":[]} -> 404 application/problem+json (buraco herdado da tarefa 7)
+    [Fact]
+    public async Task PostSimulador_WhenBcbReturnsEmptyValue_ShouldReturn404ProblemJson()
+    {
+        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
+        factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, EmptyValueJson);
+
+        var response = await _client.PostAsJsonAsync("/simulador", new
+        {
+            TituloId = tituloId,
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 10m,
+            ProjecaoAnual = (decimal?)null
+        }, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+    }
+
+    // 21. BCB responde 500 com cache frio -> 400 application/problem+json
+    [Fact]
+    public async Task PostSimulador_WhenBcbFailsAndCacheIsCold_ShouldReturn400ProblemJson()
+    {
+        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2032, 1, 1));
+        factory.BcbResponder = _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty);
+
+        var response = await _client.PostAsJsonAsync("/simulador", new
+        {
+            TituloId = tituloId,
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 6m,
+            ProjecaoAnual = (decimal?)null
+        }, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+    }
+
+    // 22. 1ª chamada OK, BCB cai, 2ª chamada após o TTL (2s no host de teste) -> 200 com
+    // ProjecaoUtilizada.Origem == CacheFallback
+    [Fact]
+    public async Task PostSimulador_WhenBcbFailsAfterTtlExpires_ShouldFallBackToLastKnownGood()
+    {
+        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2033, 1, 1));
+
+        object RequestBody() => new
+        {
+            TituloId = tituloId,
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 10m,
+            ProjecaoAnual = (decimal?)null
+        };
+
+        factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, SelicSuccessJson);
+
+        var firstResponse = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstDto = await firstResponse.Content
+            .ReadFromJsonAsync<SimulacaoResultadoDto>(JsonOptions, CancellationToken.None);
+        firstDto!.ProjecaoUtilizada.Should().NotBeNull();
+        firstDto.ProjecaoUtilizada!.Origem.Should().Be(OrigemProjecao.Bcb);
+
+        factory.BcbResponder = _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty);
+
+        // FocusBcb:CacheTtl é encurtado para 2s só no host de teste (ver ApiTestFactory).
+        await Task.Delay(TimeSpan.FromSeconds(3), CancellationToken.None);
+
+        var secondResponse = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondDto = await secondResponse.Content
+            .ReadFromJsonAsync<SimulacaoResultadoDto>(JsonOptions, CancellationToken.None);
+        secondDto!.ProjecaoUtilizada.Should().NotBeNull();
+        secondDto.ProjecaoUtilizada!.Origem.Should().Be(OrigemProjecao.CacheFallback);
+        secondDto.ProjecaoUtilizada!.ValorAnual.Should().Be(firstDto.ProjecaoUtilizada!.ValorAnual);
     }
 }

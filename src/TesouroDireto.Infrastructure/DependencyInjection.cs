@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using Quartz;
 using TesouroDireto.Application.Common.Behaviors;
@@ -88,10 +90,24 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromMinutes(5);
         });
 
-        services.AddHttpClient<IProjecaoMercadoService, FocusBcbService>(client =>
+        // FocusBcbService.cs deixa de ser exposto diretamente como IProjecaoMercadoService:
+        // o decorator de cache (CachedProjecaoMercadoService, tarefa 11) é quem responde
+        // por IProjecaoMercadoService, com FocusBcbService como colaborador interno.
+        services.AddHttpClient<FocusBcbService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
         });
+
+        services.TryAddSingleton(TimeProvider.System);
+
+        services.AddScoped<IProjecaoMercadoService>(sp =>
+            new CachedProjecaoMercadoService(
+                sp.GetRequiredService<FocusBcbService>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<MemoryCacheInvalidator>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<IConfiguration>(),
+                sp.GetRequiredService<ILogger<CachedProjecaoMercadoService>>()));
 
         var cronSchedule = configuration["CsvImport:CronSchedule"] ?? "0 0 6 * * ?";
         var feriadosCronSchedule = configuration["Feriados:CronSchedule"] ?? "0 0 6 1 12 ?";

@@ -38,6 +38,7 @@ public sealed class SimularCommandHandler(
         var diasCorridos = titulo.DataVencimento.Value.DayNumber - request.DataCompra.DayNumber;
 
         var projecaoAnual = request.ProjecaoAnual;
+        ProjecaoMercado? projecaoUtilizada = null;
         if (projecaoAnual is null && titulo.Indexador != Indexador.Prefixado)
         {
             var projecaoResult = await projecaoService.GetProjecaoAsync(titulo.Indexador, cancellationToken);
@@ -46,6 +47,7 @@ public sealed class SimularCommandHandler(
                 return projecaoResult.Error;
             }
 
+            projecaoUtilizada = projecaoResult.Value;
             projecaoAnual = projecaoResult.Value.MedianaAnual;
         }
 
@@ -79,10 +81,10 @@ public sealed class SimularCommandHandler(
             return simulacaoResult.Error;
         }
 
-        return MapToDto(simulacaoResult.Value);
+        return MapToDto(simulacaoResult.Value, projecaoUtilizada);
     }
 
-    private static SimulacaoResultadoDto MapToDto(SimulacaoResultado resultado)
+    private static SimulacaoResultadoDto MapToDto(SimulacaoResultado resultado, ProjecaoMercado? projecaoUtilizada)
     {
         var tributos = resultado.TributosAplicados
             .Select(t => new TributoAplicadoDto(t.Nome, t.Base, t.Aliquota, t.Valor))
@@ -92,6 +94,14 @@ public sealed class SimularCommandHandler(
             .Select(c => new FluxoCupomDto(c.Data, c.ValorBruto, c.DiasUteis))
             .ToList();
 
+        var projecaoDto = projecaoUtilizada is null
+            ? null
+            : new ProjecaoUtilizadaDto(
+                projecaoUtilizada.MedianaAnual,
+                projecaoUtilizada.DataReferencia,
+                projecaoUtilizada.ObtidaEmUtc,
+                projecaoUtilizada.Origem);
+
         return new SimulacaoResultadoDto(
             resultado.ValorInvestido,
             resultado.ValorBruto,
@@ -100,6 +110,7 @@ public sealed class SimularCommandHandler(
             resultado.TotalTributos,
             resultado.ValorLiquido,
             resultado.RendimentoLiquido,
-            cupons);
+            cupons,
+            projecaoDto);
     }
 }
