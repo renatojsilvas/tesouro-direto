@@ -39,6 +39,7 @@ public sealed class CacheInvalidationBehavior<TRequest, TResponse>(
                 break;
             case CreateTributoCommand:
             case UpdateTributoCommand:
+            case SeedTributosCommand:
                 invalidator.InvalidateTributos();
                 break;
         }
