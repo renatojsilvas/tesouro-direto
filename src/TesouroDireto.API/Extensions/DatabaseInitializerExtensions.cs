@@ -35,7 +35,13 @@ public static class DatabaseInitializerExtensions
         // Feriados: só no primeiro boot (tabela vazia). NÃO-FATAL (tarefa 10/Quartz refaz).
         var feriadoRead = sp.GetRequiredService<IFeriadoReadRepository>();
         var datas = await feriadoRead.GetAllDatasAsync(CancellationToken.None);
-        if (datas.IsSuccess && datas.Value.Count == 0)
+        if (datas.IsFailure)
+        {
+            logger.LogWarning(
+                "Checagem de feriados no boot falhou (seguindo sem importar): {Code} {Description}",
+                datas.Error.Code, datas.Error.Description);
+        }
+        else if (datas.Value.Count == 0)
         {
             var import = await sender.Send(new ImportFeriadosCommand());
             if (import.IsFailure)
