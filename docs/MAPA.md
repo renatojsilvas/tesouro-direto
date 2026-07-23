@@ -140,7 +140,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 
 **Jobs (Quartz.NET):** único job real é `CsvImportJob` — cron `0 0 6 * * ?` (06:00 diário, configurável), `[DisallowConcurrentExecution]`, `WaitForJobsToComplete = true`. Dispara `ImportCsvCommand` e loga resultado. **Feriados NÃO têm job** — só endpoint manual. BCB Focus é sob demanda.
 
-**Startup** (`API/Program.cs`): `ApiKeyGuard.Validate` aborta o boot em prod se `ApiKey:Key` for vazia ou uma chave proibida (`CHANGE-ME-IN-PRODUCTION` **ou `dev-local-key`** desde a tarefa 19; `Trim`+`OrdinalIgnoreCase`); o `docker-compose.yml` usa `${API_KEY:?}` (sem fallback inseguro). Migrations automáticas em todo ambiente exceto `Testing`. **Healthcheck real:** `AddDbContextCheck<AppDbContext>()` com `/health` + `/health/ready` (readiness, 503 se banco fora) e `/health/live` (liveness, não toca DB). **Sem seed** de tributos/feriados em código (nenhum `HasData`, nenhum `.sql` de produção — só `tests/.../seed.sql`).
+**Startup** (`API/Program.cs`): `ApiKeyGuard.Validate` aborta o boot em prod se `ApiKey:Key` for vazia ou uma chave proibida (`CHANGE-ME-IN-PRODUCTION` **ou `dev-local-key`** desde a tarefa 19; `Trim`+`OrdinalIgnoreCase`); o `docker-compose.yml` usa `${API_KEY:?}` (sem fallback inseguro). Migrations automáticas em todo ambiente exceto `Testing`. **Healthcheck real:** `AddDbContextCheck<AppDbContext>()` com `/health` + `/health/ready` (readiness, 503 se banco fora) e `/health/live` (liveness, não toca DB). **Seed no boot** (tarefa 9): `InitializeDatabaseAsync` (`API/Extensions/`) migra → semeia tributos IOF/IR via `SeedTributosCommand` idempotente (fonte `TributosPadrao`, validada pelo domínio; FATAL em falha) → importa feriados da ANBIMA só no 1º boot se a tabela estiver vazia (não-fatal). Guard de `Testing` (early-return).
 
 **Observabilidade:**
 - **Logs:** Serilog com **CompactJsonFormatter (CLEF) no Console E no sink `GrafanaLoki`** (tarefa O1 + formatter padronizado na tarefa 20), label `job=tesouro-direto-api` e enrichers `service`/`environment`/`MachineName` fixados no código (`API/Extensions/SerilogExtensions.cs`), enrich `FromLogContext`, URI Loki em `Loki:Uri`. Captura de falhas de negócio (sem exceção) via `LoggingBehavior` (MediatR, tarefa O3, em `Application/Common/Behaviors/`) → Warnings estruturados. O campo `level` (`info`/`warning`/`error`) é injetado pelo próprio sink Loki. (O diretório `Infrastructure/Observability` citado na tarefa **não existe**.)
@@ -155,7 +155,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). CorrelationId flui header → LogContext → Loki → derivedField no Grafana. Prometheus scrape `app:8080` → Grafana (UIDs fixos).
 
 ### Fragilidades
-- **Sem seed de tributos (IOF/IR) e feriados em produção** ✅ (Verificação #4): deploy em banco novo sobe com tabelas vazias → Simulador quebra até popular manualmente. Estado manual não versionado nem reproduzível (agravado: Postgres ignora senha/estado se o volume já existe).
+- **Sem seed de tributos (IOF/IR) e feriados em produção** ✔️ RESOLVIDO (tarefa 9, 2026-07-22): `InitializeDatabaseAsync` no boot semeia tributos (idempotente, via domínio, FATAL em falha) e importa feriados da ANBIMA no 1º boot (não-fatal). Verificado ao vivo: banco novo → `POST /simulador` 200. Bug de cache stale (24h) achado e corrigido no caminho. Refresh contínuo de feriados segue na tarefa 10.
 - **Feriados sem agendamento** ✅ (Verificação #5): só endpoint manual, sem Quartz. Feriados do próximo ano não entram sozinhos → distorce dias úteis → distorce todas as projeções do Simulador.
 - **Lock apenas intra-instância** ⚠️: `[DisallowConcurrentExecution]` + RAMJobStore (in-memory). Multi-instância ou cron concomitante a `POST /importacao` manual → sem lock distribuído. Idempotência real vem de `existingDates.Contains(DataBase)`, mas `GetOrCreateTitulo` não é atômico — depende da constraint única `ix_titulos_tipo_vencimento` (ver Verificação #6).
 - **Job silencioso em falha** ✅: `CsvImportJob` só faz `LogError`; sem métrica, sem alerta, sem relançar. Fonte fora do ar por dias passa despercebida.
@@ -196,14 +196,14 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 
 ## Verificação das fragilidades
 
-Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8. **Status de correção** (coluna final, atualizado 2026-07-22): itens **1, 2, 7, 8, 9 e 10 resolvidos** (tarefas 4, 2, 3, 1, 7 e 8 do PLANO); seguem **abertos** os itens **3** (BCB cache/fallback — tarefa 11), **4** (seed — tarefa 9), **5** (job de feriados — tarefa 10) e **6** (upsert não-atômico).
+Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8. **Status de correção** (coluna final, atualizado 2026-07-22): itens **1, 2, 4, 7, 8, 9 e 10 resolvidos** (tarefas 4, 2, 9, 3, 1, 7 e 8 do PLANO); seguem **abertos** os itens **3** (BCB cache/fallback — tarefa 11), **5** (job de feriados — tarefa 10) e **6** (upsert não-atômico).
 
 | # | Afirmação | Veredito | Evidência |
 |---|-----------|----------|-----------|
 | 1 | Sem `JsonStringEnumConverter` → enums só aceitam número no POST | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 4) | Era: zero ocorrência de `JsonStringEnumConverter` em `src`. **Corrigido:** `JsonStringEnumConverter` registrado (aceita string E número); binding agora via `CreateTributoRequest` (tarefa 15). |
 | 2 | `Indexador.FromName(v).Value` quebra materialização EF com valor fora da whitelist | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 2) | `Indexador.cs:11-24` (whitelist 4); `Result<T>.Value` lança em falha (`Common/Result.cs:47-48`); usado em `TituloConfiguration.cs:36`. **Corrigido:** `Indexador.FromPersistence` (lossless) na leitura EF. |
 | 3 | Simulador chama BCB Focus ao vivo, sem cache/fallback | ✅ CONFIRMADO | `SimularCommandHandler.cs:40-47` propaga falha sem fallback; `DependencyInjection.cs:82-85` registra sem decorator `Cached*` (contraste com repos, linhas 40-73). |
-| 4 | Nenhum seed de tributos/feriados em produção | ✅ CONFIRMADO | Zero `.HasData(` em `src` (hits anteriores eram `HasDatabaseName`); único `seed.sql` é de teste E2E. |
+| 4 | Nenhum seed de tributos/feriados em produção | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 9) | Era: zero `.HasData(` em `src`, único `seed.sql` de teste. **Corrigido:** `InitializeDatabaseAsync` semeia tributos (via `SeedTributosCommand` idempotente) + importa feriados no 1º boot; verificado ao vivo em banco novo. |
 | 5 | Import de feriados sem job Quartz (só endpoint manual) | ✅ CONFIRMADO | `DependencyInjection.cs:87-96` só registra `JobKey("csv-import")`; sem `FeriadoImportJob`; caminho único é `ImportacaoEndpoints.cs:19-25`. |
 | 6 | `ix_titulos_tipo_vencimento` é UNIQUE e o upsert não é atômico | ✅ CONFIRMADO | `TituloConfiguration.cs:42-44` `.IsUnique()`; `GetOrCreateTituloAsync` (`ImportCsvCommandHandler.cs:107-132`) é check-then-act sem transação → race sob concorrência (UNIQUE evita duplicata mas lança exceção não tratada). |
 | 7 | Healthcheck raso (`/health` string fixa, não toca banco) | ✅ CONFIRMADO → ✔️ RESOLVIDO (tarefa 3) | `Program.cs:29`; zero `AddHealthChecks`/`AddDbContextCheck`/`MapHealthChecks` em `src`. **Corrigido:** `AddDbContextCheck` + readiness/liveness. |
@@ -218,7 +218,7 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 ## Fragilidades priorizadas (síntese)
 
 **Bloqueiam operação / corretude:**
-1. **Sem seed versionado de tributos e feriados** → Simulador quebra em banco novo (§4).
+1. **Sem seed versionado de tributos e feriados** ✔️ RESOLVIDO (tarefa 9): seed no boot (tributos idempotente + feriados no 1º boot) → Simulador funciona em banco novo (§4).
 2. **Feriados sem job agendado** → dias úteis e projeções degradam silenciosamente (§4).
 3. **BCB Focus ao vivo, sem cache nem fallback** → simulador acoplado à disponibilidade do BCB (§3).
 4. ✔️ RESOLVIDO (tarefa 2) **`Indexador` whitelist rígida** → materialização EF quebra com valor inesperado na coluna (§2).
