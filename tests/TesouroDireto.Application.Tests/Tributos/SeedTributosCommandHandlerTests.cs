@@ -49,6 +49,23 @@ public sealed class SeedTributosCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenAddAsyncFails_ShouldReturnFailureAndNotSave()
+    {
+        var error = new Error("Tributo.AddFailed", "boom");
+        _readRepo.GetAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Result<IReadOnlyCollection<Tributo>>.Success([]));
+        _writeRepo.AddAsync(Arg.Any<Tributo>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Failure(error));
+
+        var result = await _handler.Handle(new SeedTributosCommand(), CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(error);
+        await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _writeRepo.Received(1).AddAsync(Arg.Any<Tributo>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Handle_WhenReadFails_ShouldReturnFailure()
     {
         var error = new Error("Tributo.ReadFailed", "boom");
