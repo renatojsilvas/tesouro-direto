@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.EntityFrameworkCore;
 using Prometheus;
 using TesouroDireto.API.Endpoints;
 using TesouroDireto.API.Extensions;
@@ -40,12 +39,7 @@ var app = builder.Build();
 
 ApiKeyGuard.Validate(app.Configuration, app.Environment);
 
-if (!app.Environment.IsEnvironment("Testing"))
-{
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
-}
+await app.InitializeDatabaseAsync();
 
 app.UseExceptionHandler();
 
