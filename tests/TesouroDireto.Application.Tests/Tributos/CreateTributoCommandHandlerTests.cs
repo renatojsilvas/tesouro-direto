@@ -11,11 +11,12 @@ public sealed class CreateTributoCommandHandlerTests
 {
     private readonly ITributoWriteRepository _writeRepo = Substitute.For<ITributoWriteRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly CreateTributoCommandHandler _handler;
 
     public CreateTributoCommandHandlerTests()
     {
-        _handler = new CreateTributoCommandHandler(_writeRepo, _unitOfWork);
+        _handler = new CreateTributoCommandHandler(_writeRepo, _unitOfWork, _metrics);
 
         _writeRepo.AddAsync(Arg.Any<Tributo>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
@@ -33,6 +34,7 @@ public sealed class CreateTributoCommandHandlerTests
         result.Value.Should().NotBeEmpty();
         await _writeRepo.Received(1).AddAsync(Arg.Any<Tributo>(), Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        _metrics.Received(1).RecordTributoConfigChange("create");
     }
 
     [Fact]
@@ -45,6 +47,7 @@ public sealed class CreateTributoCommandHandlerTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Tributo.InvalidNome");
+        _metrics.DidNotReceive().RecordTributoConfigChange(Arg.Any<string>());
     }
 
     [Fact]

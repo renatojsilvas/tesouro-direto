@@ -16,6 +16,7 @@ public sealed class ImportCsvCommandHandlerTests
     private readonly ITituloWriteRepository _tituloWriteRepository = Substitute.For<ITituloWriteRepository>();
     private readonly IPrecoTaxaWriteRepository _precoTaxaWriteRepository = Substitute.For<IPrecoTaxaWriteRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly ImportCsvCommandHandler _handler;
 
     public ImportCsvCommandHandlerTests()
@@ -25,7 +26,8 @@ public sealed class ImportCsvCommandHandlerTests
             _tituloWriteRepository,
             _precoTaxaWriteRepository,
             _unitOfWork,
-            Substitute.For<ILogger<ImportCsvCommandHandler>>());
+            Substitute.For<ILogger<ImportCsvCommandHandler>>(),
+            _metrics);
 
         _tituloWriteRepository
             .AddAsync(Arg.Any<Titulo>(), Arg.Any<CancellationToken>())
@@ -63,6 +65,13 @@ public sealed class ImportCsvCommandHandlerTests
         result.IsSuccess.Should().BeTrue();
         result.Value.TitulosCriados.Should().Be(1);
         result.Value.PrecosInseridos.Should().Be(1);
+
+        // O8: importação sempre retorna sucesso (erros viram contadores) — deve
+        // marcar ImportSucceeded() e reportar as contagens de preços processados.
+        _metrics.Received(1).ImportSucceeded();
+        _metrics.Received(1).RecordPricesProcessed("inserted", 1);
+        _metrics.Received(1).RecordPricesProcessed("skipped", 0);
+        _metrics.Received(1).RecordPricesProcessed("error", 0);
     }
 
     [Fact]
@@ -159,7 +168,8 @@ public sealed class ImportCsvCommandHandlerTests
             _tituloWriteRepository,
             _precoTaxaWriteRepository,
             _unitOfWork,
-            logger);
+            logger,
+            _metrics);
 
         // LineNumbers propositalmente não-sequenciais (3 e 6), simulando linhas em
         // branco puladas pelo parser real entre os registros inválidos — prova que o

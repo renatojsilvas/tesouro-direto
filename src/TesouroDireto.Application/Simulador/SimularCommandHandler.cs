@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Application.Titulos;
@@ -14,11 +15,26 @@ public sealed class SimularCommandHandler(
     IDiasUteisService diasUteisService,
     IProjecaoMercadoService projecaoService,
     ITributoReadRepository tributoRepository,
-    IFeriadoReadRepository feriadoRepository) : IRequestHandler<SimularCommand, Result<SimulacaoResultadoDto>>
+    IFeriadoReadRepository feriadoRepository,
+    IBusinessMetrics metrics) : IRequestHandler<SimularCommand, Result<SimulacaoResultadoDto>>
 {
     private static readonly SimuladorService Simulador = new();
 
     public async Task<Result<SimulacaoResultadoDto>> Handle(SimularCommand request, CancellationToken cancellationToken)
+    {
+        var indexador = "unknown";
+        var result = await ExecuteAsync(request, i => indexador = i, cancellationToken);
+        metrics.RecordSimulation(indexador, result.IsSuccess ? "success" : "failure");
+        if (result.IsFailure)
+        {
+            metrics.RecordSimulationFailure(result.Error.Code);
+        }
+
+        return result;
+    }
+
+    private async Task<Result<SimulacaoResultadoDto>> ExecuteAsync(
+        SimularCommand request, Action<string> reportIndexador, CancellationToken cancellationToken)
     {
         var tituloResult = await tituloRepository.GetByIdAsync(request.TituloId, cancellationToken);
         if (tituloResult.IsFailure)
@@ -27,6 +43,7 @@ public sealed class SimularCommandHandler(
         }
 
         var titulo = tituloResult.Value;
+        reportIndexador(titulo.Indexador.Name);
 
         var duResult = await diasUteisService.CalcularDiasUteisAsync(
             request.DataCompra, titulo.DataVencimento.Value, cancellationToken);

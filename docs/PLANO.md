@@ -25,7 +25,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 11 | ✅ BCB Focus: cache + fallback — concluída 2026-07-23                          | Alto (disponibilidade) | Médio | 🟡 |
 | 12 | ✅ Índices para filtros comuns — concluída 2026-07-23                          | Médio (performance) | Baixo | 🟢 |
 | 13 | Retry/circuit breaker (Polly) nas integrações                                  | Médio (resiliência) | Médio | 🟡 |
-| 14 | Métricas de negócio/job no Prometheus                                          | Médio (observabilidade) | Baixo | 🟡 |
+| 14 | ✅ Métricas de negócio/job no Prometheus — concluída 2026-07-24                | Médio (observabilidade) | Baixo | 🟡 |
 | 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21       | Médio (arquitetura) | Baixo | 🟢 |
 | 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🔴 |
 | 17 | ✅ Observabilidade no Web (Serilog/Loki) — concluída 2026-07-21                 | Médio | Baixo | 🟢 |
@@ -154,8 +154,9 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ## Onda 3 — Observabilidade, arquitetura e manutenção
 
-### 14. Métricas de negócio/job no Prometheus 🟡
-> **Expandido** no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), camada 3 (itens **O6/O7** — os 6 eventos de negócio definidos + alertas). Ver também `docs/analises/observabilidade.md`.
+### 14. Métricas de negócio/job no Prometheus 🟡 ✅ Concluída (2026-07-24)
+> **Feito (via O8):** as 6 séries de negócio + painel de frescor foram entregues no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), item **O8** — ver o detalhe (e a memória `project_status_tarefaO8_metricas_negocio`) lá.
+> **Expandido** no [Anexo — Observabilidade](#anexo--observabilidade-em-3-camadas), camada 3 (item **O8** — os 6 eventos de negócio definidos + alertas em O9). Ver também `docs/analises/observabilidade.md`.
 - **Escopo:** expor counters/gauges: sucesso/falha do import, linhas processadas, **idade do último preço importado**, duração do job. Permite alertar em Grafana sobre "import falhou"/"dados velhos".
 - **Arquivos:** `src/TesouroDireto.Infrastructure/CsvImport/CsvImportJob.cs`, `ImportCsvCommandHandler.cs`; painel em `infra/grafana/dashboards/`.
 - **Risco:** baixo. Cuidar de nomes de métrica estáveis.
@@ -338,7 +339,9 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ### Camada 3 — Métricas de negócio (medem se o produto funciona)
 
-**O8. Instrumentar os eventos de negócio** 🟡 · *(expande tarefa 14)*
+**O8. Instrumentar os eventos de negócio** 🟡 ✅ Concluída (2026-07-24) · *(expande tarefa 14)*
+> **Feito (branch `improvements`, 428/428):** port **`IBusinessMetrics`** (`Application/Common/Interfaces/`) + impl **`BusinessMetrics`** (`Infrastructure/Observability/`, **default registry** do prometheus-net, já scrapeado por `MapMetrics()`). Como a Application **não pode referenciar Infra** (Architecture.Tests), a instrumentação passa pela **porta** (padrão ports & adapters já usado por `ICsvImportService`/`IProjecaoMercadoService`; **rejeitados**: helper estático chamado direto da App = viola Clean Arch; pipeline behavior = não enxerga contexto interno do handler — `indexador`/`kind`/`reason`). As 6 séries da tabela abaixo, instrumentadas em `ImportCsvCommandHandler`, `CsvImportJob`, `SimularCommandHandler` (refatorado p/ **saída única** preservando os early-returns) e `Create/UpdateTributoCommandHandler`. **Cardinalidade travada** — todo label é conjunto fechado: `reason` = `Error.Code` (literal estático; inclui `Projecao.HttpError`, o motivo de indisponibilidade do BCB da tarefa 11), `indexador` = `titulo.Indexador.Name` (Selic/Prefixado/IPCA/IGPM/`unknown`), `kind`∈{inserted,skipped,error}, `op`∈{create,update}, `outcome`∈{success,failure}; **nunca** ID/nome/`Error.Description`. **Testes:** 11 unitários (`BusinessMetricsTests`, delta no registry global) + 2 comportamentais de simulação (E3/E4 via mock) + **3 de integração** (`MetricsEndpointTests`, host real via Testcontainers) que disparam simulação-falha / import / create-tributo e **scrapeiam `/metrics`** provando as séries com labels escopados — fecha o critério "E1–E4 visíveis em /metrics com labels corretos". Painel **"Frescor do último preço"** (`time() - import_last_success_timestamp_seconds`, thresholds 24h/48h) + 5 companheiros em `infra/grafana/dashboards/tesouro-direto.json` (uid fixo `prometheus`). **Ciclo executor→revisor com falsificação por mutação** (inverter `outcome`; trocar `Error.Code`→`Description`; `create`→`update` → testes vermelhos; revertidas). Sem alertas (fica para **O9**). Ver memória `project_status_tarefaO8_metricas_negocio` e `feedback_metricas_prometheus_nomes`.
+
 Helper `BusinessMetrics` em `src/TesouroDireto.Infrastructure/Observability/`. 4 essenciais (E1–E4) + 2 complementares:
 
 | Métrica | Tipo | Labels | Onde | Mede |

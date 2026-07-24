@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NSubstitute;
+using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Application.Simulador;
@@ -18,12 +19,13 @@ public sealed class SimularCommandHandlerTests
     private readonly IProjecaoMercadoService _projecaoService = Substitute.For<IProjecaoMercadoService>();
     private readonly ITributoReadRepository _tributoRepo = Substitute.For<ITributoReadRepository>();
     private readonly IFeriadoReadRepository _feriadoRepo = Substitute.For<IFeriadoReadRepository>();
+    private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly SimularCommandHandler _handler;
 
     public SimularCommandHandlerTests()
     {
         _handler = new SimularCommandHandler(
-            _tituloRepo, _diasUteisService, _projecaoService, _tributoRepo, _feriadoRepo);
+            _tituloRepo, _diasUteisService, _projecaoService, _tributoRepo, _feriadoRepo, _metrics);
 
         _tributoRepo.GetAtivosOrdenadosAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<Tributo>>.Success(Array.Empty<Tributo>()));
@@ -48,6 +50,47 @@ public sealed class SimularCommandHandlerTests
         result.Value.ValorBruto.Should().BeGreaterThan(10_000m);
         await _projecaoService.DidNotReceive()
             .GetProjecaoAsync(Arg.Any<Indexador>(), Arg.Any<CancellationToken>());
+    }
+
+    // O8: prova E3 — sucesso registra simulations_total{indexador,outcome="success"}
+    // e nunca simulation_failures_total.
+    [Fact]
+    public async Task Handle_Success_ShouldRecordSimulationSuccess()
+    {
+        var titulo = CreateTitulo(TipoTitulo.TesouroPrefixado, new DateOnly(2025, 1, 2));
+        SetupTitulo(titulo);
+        SetupDiasUteis(252);
+
+        var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 12m, null);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _metrics.Received(1).RecordSimulation("Prefixado", "success");
+        _metrics.DidNotReceive().RecordSimulationFailure(Arg.Any<string>());
+    }
+
+    // O8: prova E4 — falha por projeção indisponível (BCB fora + cache frio) registra
+    // simulations_total{indexador="Selic",outcome="failure"} e
+    // simulation_failures_total{reason=Error.Code}, nunca a Description (cardinalidade).
+    [Fact]
+    public async Task Handle_ProjecaoIndisponivel_ShouldRecordSimulationFailureWithErrorCode()
+    {
+        var titulo = CreateTitulo(TipoTitulo.TesouroSelic, new DateOnly(2025, 1, 2));
+        SetupTitulo(titulo);
+        SetupDiasUteis(252);
+        _projecaoService.GetProjecaoAsync(Indexador.Selic, Arg.Any<CancellationToken>())
+            .Returns(Result<ProjecaoMercado>.Failure(
+                new Error("Projecao.HttpError", "BCB indisponível e sem cache válido.")));
+
+        var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 0.10m, null);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Projecao.HttpError");
+        _metrics.Received(1).RecordSimulation("Selic", "failure");
+        _metrics.Received(1).RecordSimulationFailure("Projecao.HttpError");
     }
 
     [Fact]

@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddSingleton<MemoryCacheInvalidator>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(MetricsBehavior<,>));
+        services.AddSingleton<IBusinessMetrics, BusinessMetrics>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
 
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();

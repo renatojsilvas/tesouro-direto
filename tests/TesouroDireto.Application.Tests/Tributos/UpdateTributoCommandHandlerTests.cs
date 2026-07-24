@@ -12,11 +12,12 @@ public sealed class UpdateTributoCommandHandlerTests
     private readonly ITributoReadRepository _readRepo = Substitute.For<ITributoReadRepository>();
     private readonly ITributoWriteRepository _writeRepo = Substitute.For<ITributoWriteRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly UpdateTributoCommandHandler _handler;
 
     public UpdateTributoCommandHandlerTests()
     {
-        _handler = new UpdateTributoCommandHandler(_readRepo, _writeRepo, _unitOfWork);
+        _handler = new UpdateTributoCommandHandler(_readRepo, _writeRepo, _unitOfWork, _metrics);
 
         _writeRepo.UpdateAsync(Arg.Any<Tributo>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
@@ -41,6 +42,7 @@ public sealed class UpdateTributoCommandHandlerTests
         tributo.Faixas.Should().HaveCount(1);
         tributo.Faixas.First().Aliquota.Should().Be(20m);
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        _metrics.Received(1).RecordTributoConfigChange("update");
     }
 
     [Fact]
@@ -55,6 +57,7 @@ public sealed class UpdateTributoCommandHandlerTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Tributo.NotFound");
+        _metrics.DidNotReceive().RecordTributoConfigChange(Arg.Any<string>());
     }
 
     [Fact]

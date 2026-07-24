@@ -14,7 +14,8 @@ public sealed class ImportCsvCommandHandler(
     ITituloWriteRepository tituloWriteRepository,
     IPrecoTaxaWriteRepository precoTaxaWriteRepository,
     IUnitOfWork unitOfWork,
-    ILogger<ImportCsvCommandHandler> logger)
+    ILogger<ImportCsvCommandHandler> logger,
+    IBusinessMetrics metrics)
     : IRequestHandler<ImportCsvCommand, Result<ImportResult>>
 {
     private const int BatchSize = 1000;
@@ -111,6 +112,11 @@ public sealed class ImportCsvCommandHandler(
         logger.LogInformation(
             "CSV import completed: {TitulosCriados} titulos created, {PrecosInseridos} precos inserted, {PrecosIgnorados} skipped, {LinhasComErro} errors",
             result.TitulosCriados, result.PrecosInseridos, result.PrecosIgnorados, result.LinhasComErro);
+
+        metrics.ImportSucceeded();
+        metrics.RecordPricesProcessed("inserted", result.PrecosInseridos);
+        metrics.RecordPricesProcessed("skipped", result.PrecosIgnorados);
+        metrics.RecordPricesProcessed("error", result.LinhasComErro);
 
         return result;
     }
