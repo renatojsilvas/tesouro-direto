@@ -36,6 +36,10 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 22 | `indexador`: coluna `HasMaxLength(20)` pode truncar/estourar valor bruto longo | Baixo (corretude de borda) | Baixo | 🟢 |
 | 23 | Travar por teste que `IProjecaoMercadoService` resolve para o decorator de cache | Médio (rede de segurança) | Baixo | 🟢 |
 | 24 | Teste de integração de `GetByNomeAsync` contra Postgres real (regressão de casamento com o índice funcional) | Médio (rede de segurança) | Baixo | 🟢 |
+| 25 | Log de agendamento dos jobs Quartz no boot (débito compartilhado csv-import + feriado-import) | Baixo (observabilidade) | Baixo | 🟢 |
+| 26 | Teste de integração: `NotFound` do BCB com `lkg` quente no cache de projeção | Baixo (rede de segurança) | Baixo | 🟢 |
+| 27 | Teste de `OperationCanceledException` do chamador no `CachedProjecaoMercadoService` | Baixo (rede de segurança) | Baixo | 🟢 |
+| 28 | Estabilizar o teste de expiração timing-based (candidato a flake) do cache de projeção | Médio (anti-flake CI) | Baixo | 🟢 |
 
 ---
 
@@ -233,6 +237,34 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Arquivos:** `tests/TesouroDireto.API.Tests/Persistence/TituloReadRepositoryTests.cs` (estender); nenhum arquivo de produção muda.
 - **Risco:** muito baixo — só adiciona teste. Reusar a infra de Testcontainers já existente; desabilitar paralelização como os demais testes de endpoint (ver `feedback_endpoint_integration_testcontainers`).
 - **Verificação:** o teste de casamento por nome fica **vermelho** se a expressão SQL do repositório for alterada para não casar mais com o índice (se cobrir o `EXPLAIN`) ou pelo menos se o WHERE quebrar funcionalmente; verde no estado atual. Ver memória `project_status_tarefa12_indices`.
+
+### 25. Log de agendamento dos jobs Quartz no boot 🟢 · *(nota de Feito da tarefa 10, triado 2026-07-23)*
+> **Origem:** lacuna pré-existente registrada na nota de Feito da tarefa 10 — **nenhum** job Quartz do projeto (nem o `CsvImportJob` de referência, nem o novo `FeriadoImportJob`) loga o *agendamento* no boot; só o *disparo/execução*. O critério "log do disparo agendado" da tarefa 10 (linha 119) foi satisfeito pelo log de execução, mas o agendamento em si (que cron, próximo disparo) fica invisível até o job rodar. Débito **compartilhado** pelos dois jobs.
+- **Escopo:** ao registrar os jobs no `AddQuartz`, logar no boot o agendamento de cada um — `JobKey`, expressão cron efetiva e (se viável) o próximo disparo calculado. Aplicar aos **dois** jobs (`csv-import`, `feriado-import`) por um caminho comum (ex.: `ISchedulerListener`/`IJobListener` ou log no start do scheduler), não duplicando linha a linha.
+- **Arquivos:** `src/TesouroDireto.Infrastructure/DependencyInjection.cs` (bloco `AddQuartz`); possivelmente um listener em `src/TesouroDireto.Infrastructure/` + registro.
+- **Risco:** muito baixo — só adiciona logging no boot; não altera o disparo nem a idempotência dos jobs.
+- **Verificação:** subir a API e ver, **antes do primeiro disparo**, uma linha de log por job com `JobKey` + cron + próximo disparo (`csv-import` e `feriado-import`). Ver `project_status_tarefa10_feriados_job`.
+
+### 26. Teste de integração: `NotFound` do BCB com `lkg` quente 🟢 · *(gap de cobertura da tarefa 11, triado 2026-07-23)*
+> **Origem:** gap de cobertura (baixo) registrado na nota de Feito da tarefa 11 — o caminho `Projecao.NotFound` **com a entrada `lkg` (last-known-good) quente** só é exercitado no teste **unitário** do `CachedProjecaoMercadoService`. No host de integração HTTP, o `ResetAsync` do `ApiTestFactory` sempre **esfria** o cache entre testes, então nunca há `lkg` quente quando o BCB devolve `NotFound` — a interação real (cache quente + resposta 200 sem dados) não é coberta ponta-a-ponta.
+- **Escopo:** teste de integração que primeiro aquece o `lkg` de um indexador (resposta BCB válida) e, na chamada seguinte, força o BCB a devolver `{"value":[]}` (→ `Projecao.NotFound`), assertando o comportamento correto (404 `application/problem+json`, **sem** servir o `lkg` — o fallback é só para `HttpError`, não `NotFound`). Ajustar o reset para permitir preservar o cache neste cenário específico sem vazar estado para os demais testes.
+- **Arquivos:** `tests/TesouroDireto.API.Tests/` (suíte de integração da tarefa 11 + `ApiTestFactory`).
+- **Risco:** muito baixo — só teste. Cuidar para o cenário de cache quente não contaminar outros testes (isolamento do reset).
+- **Verificação:** o teste fica **vermelho** se o fallback passar a servir o `lkg` no caso `NotFound` (regressão), e verde no estado atual. Ver `project_projecao_cache_fallback`, `project_status_tarefa11_cache_fallback`.
+
+### 27. Teste de `OperationCanceledException` do chamador no cache de projeção 🟢 · *(gap de cobertura da tarefa 11, triado 2026-07-23)*
+> **Origem:** gap de cobertura (baixo) da tarefa 11 — o `catch` alargado do `FocusBcbService`/`CachedProjecaoMercadoService` re-lança apenas o **cancelamento do chamador** (o resto vira `HttpError`), mas essa propagação foi verificada **só manualmente** pelo revisor, sem teste no CI. Uma regressão que passe a engolir o `OperationCanceledException` do chamador (transformando-o em `HttpError` + fallback silencioso) não seria detectada.
+- **Escopo:** teste provando que, ao cancelar o `CancellationToken` do chamador, a chamada propaga `OperationCanceledException` (ou `TaskCanceledException`) **em vez** de virar `Projecao.HttpError`/fallback. Distinguir do cancelamento *interno* (timeout do typed client), que deve continuar virando `HttpError`.
+- **Arquivos:** `tests/TesouroDireto.API.Tests/` (unitário do `CachedProjecaoMercadoService` e/ou `FocusBcbService`, no padrão dos 7 unitários existentes da tarefa 11).
+- **Risco:** muito baixo — só teste.
+- **Verificação:** teste verde no estado atual; **vermelho** se o `catch` passar a capturar o cancelamento do chamador. Ver `project_projecao_cache_fallback`.
+
+### 28. Estabilizar o teste de expiração timing-based do cache de projeção 🟢 · *(gap de cobertura da tarefa 11, triado 2026-07-23)*
+> **Origem:** gap de cobertura (baixo) da tarefa 11 — o teste de **integração** de expiração usa `Task.Delay(3s)` contra um TTL de 2s para provar que a entrada expira. É **timing-based** (depende de wall-clock), logo candidato a **flake** sob carga de CI. O corte de idade real já é provado de forma determinística no unitário (via `TimeProvider`/`FakeTimeProvider`); só o teste de integração ainda depende do relógio.
+- **Escopo:** tornar o teste determinístico — injetar um `TimeProvider` controlável também no host de integração (avançar o tempo em vez de dormir) **ou** tornar o TTL injetável/curtíssimo no cenário de teste sem `Task.Delay`. Remover a dependência de `Task.Delay` do caminho de expiração.
+- **Arquivos:** `tests/TesouroDireto.API.Tests/` (teste de integração de expiração da tarefa 11 + fiação do `TimeProvider` no `ApiTestFactory`).
+- **Risco:** muito baixo — só teste; melhora estabilidade do CI.
+- **Verificação:** o teste de expiração deixa de depender de wall-clock (sem `Task.Delay`), roda estável em execuções repetidas e sob paralelização. Ver `project_projecao_cache_fallback`.
 
 ---
 
