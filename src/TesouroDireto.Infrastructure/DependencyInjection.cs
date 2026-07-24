@@ -18,6 +18,7 @@ using TesouroDireto.Application.Tributos;
 using TesouroDireto.Infrastructure.Caching;
 using TesouroDireto.Infrastructure.CsvImport;
 using TesouroDireto.Infrastructure.Feriados;
+using TesouroDireto.Infrastructure.Observability;
 using TesouroDireto.Infrastructure.Persistence;
 using TesouroDireto.Infrastructure.Persistence.Repositories;
 using TesouroDireto.Infrastructure.Projecoes;
@@ -44,6 +45,7 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddSingleton<MemoryCacheInvalidator>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(MetricsBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
 
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();
