@@ -1,0 +1,88 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using TesouroDireto.Domain.Titulos;
+using TesouroDireto.Infrastructure.Persistence;
+
+namespace TesouroDireto.API.Tests.Integration;
+
+/// <summary>
+/// Prova, ponta a ponta (host real via Program.cs), que a instrumentação O7
+/// (UseHttpClientMetrics) está plugada no typed client FocusBcbService: uma simulação
+/// que de fato chama o BCB (via factory.BcbResponder) precisa deixar uma série
+/// httpclient_request_duration_seconds rotulada por client="FocusBcbService" em /metrics.
+/// Os clients de import (CSV/Feriados) não fazem I/O em Testing (URL " " força o branch
+/// "não configurada" em ApiTestFactory), então só o BCB serve para provar a métrica aqui.
+/// </summary>
+[Collection("api")]
+public sealed class HttpClientMetricsEndpointTests(ApiTestFactory factory) : IAsyncLifetime
+{
+    private readonly HttpClient _client = factory.CreateAuthenticatedClient();
+
+    // /metrics é isento de ApiKey (ApiKey:ExcludedPaths) — cliente sem header.
+    private readonly HttpClient _metricsClient = factory.CreateClient();
+
+    public Task InitializeAsync() => factory.ResetAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    private const string SelicSuccessJson = """
+        {
+          "value": [{
+            "Indicador": "Selic",
+            "Data": "2026-01-01",
+            "Media": 12.5,
+            "Mediana": 12.5
+          }]
+        }
+        """;
+
+    private async Task<Guid> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
+    {
+        var id = Guid.Empty;
+
+        await factory.SeedAsync(async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var titulo = Titulo.Create(tipoTitulo, DataVencimento.Create(dataVencimento).Value).Value;
+            await db.Titulos.AddAsync(titulo);
+            await db.SaveChangesAsync();
+            id = titulo.Id;
+        });
+
+        return id;
+    }
+
+    [Fact]
+    public async Task Metrics_AfterSimulacaoCallsBcb_ShouldExposeFocusBcbServiceHttpClientDuration()
+    {
+        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
+
+        factory.BcbResponder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SelicSuccessJson, Encoding.UTF8, "application/json")
+        };
+
+        var response = await _client.PostAsJsonAsync("/simulador", new
+        {
+            TituloId = tituloId,
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 10m,
+            ProjecaoAnual = (decimal?)null
+        }, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var metricsResponse = await _metricsClient.GetAsync("/metrics", CancellationToken.None);
+        metricsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await metricsResponse.Content.ReadAsStringAsync(CancellationToken.None);
+
+        // Ordem dos labels na exposição Prometheus não é garantida — exige client="FocusBcbService"
+        // dentro das chaves da MESMA série, por linha.
+        body.Should().MatchRegex("httpclient_request_duration_seconds[^\\n{]*\\{[^\\n}]*client=\"FocusBcbService\"");
+    }
+}

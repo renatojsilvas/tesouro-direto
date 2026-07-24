@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Prometheus;
 using Quartz;
 using TesouroDireto.Application.Common.Behaviors;
 using TesouroDireto.Application.Common.Interfaces;
@@ -85,12 +86,14 @@ public static class DependencyInjection
         services.AddHttpClient<ICsvImportService, CsvImportService>(client =>
         {
             client.Timeout = TimeSpan.FromMinutes(10);
-        });
+        })
+        .UseHttpClientMetrics();
 
         services.AddHttpClient<IFeriadoImportService, FeriadoImportService>(client =>
         {
             client.Timeout = TimeSpan.FromMinutes(5);
-        });
+        })
+        .UseHttpClientMetrics();
 
         // FocusBcbService.cs deixa de ser exposto diretamente como IProjecaoMercadoService:
         // o decorator de cache (CachedProjecaoMercadoService, tarefa 11) é quem responde
@@ -98,7 +101,8 @@ public static class DependencyInjection
         services.AddHttpClient<FocusBcbService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
-        });
+        })
+        .UseHttpClientMetrics();
 
         services.TryAddSingleton(TimeProvider.System);
 
