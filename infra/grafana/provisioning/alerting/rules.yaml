@@ -1,0 +1,274 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: tesouro-alertas
+    folder: TesouroDireto
+    interval: 1m
+    rules:
+      # 1 - Dado velho / frescor (E1). Threshold 48h, com gate de dia útil (BRT)
+      # para não disparar falso positivo no domingo de manhã (Tesouro não
+      # publica preço no fim de semana). day_of_week opera em UTC; "-3*3600"
+      # desloca para BRT (UTC-3). 1-5 = seg-sex.
+      # Gate adicional de hora (hour(...)>=9): sem ele, toda segunda de
+      # madrugada (00:00-06:00 BRT) o gate de dia já está aberto mas a idade
+      # ainda reflete a sexta 06:00 (~66h > 48h) -> falso positivo recorrente
+      # todo início de semana, até o import das 06:00 resetar. Exigir hora
+      # BRT >= 9 mata essa janela e preserva o disparo real: se o import de
+      # segunda (06:00) falhar, às 09:00 a idade é ~75h e a regra dispara.
+      # Nota: day_of_week()/hour() exigem instant vector, não scalar; por
+      # isso "time()-3*3600" é envolvido em vector(...) (sem isso a expr é
+      # PromQL inválida e a regra erraria em toda avaliação).
+      - uid: td-frescor-dado
+        title: "Dado velho (frescor > 48h útil)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "(time() - max(import_last_success_timestamp_seconds{job=\"tesouro-direto-api\"})) and on() (day_of_week(vector(time()-3*3600))>=1) and on() (day_of_week(vector(time()-3*3600))<=5) and on() (hour(vector(time()-3*3600))>=9)"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [172800]
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Preço do Tesouro sem atualização há mais de 48h úteis"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 2 - App down: target não respondendo aos scrapes do Prometheus.
+      # noDataState: Alerting porque o target sumir do Prometheus também é
+      # incidente (não deve ficar em silêncio).
+      - uid: td-app-down
+        title: "App down (target não respondendo)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "up{job=\"tesouro-direto-api\"}"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: eq
+                    params: [0]
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "O Prometheus não está conseguindo fazer scrape do target tesouro-direto-api"
+        noDataState: Alerting
+        execErrState: Alerting
+
+      # 2b - DB/readiness down. Gauge exposto via ForwardToPrometheus() sobre
+      # o AddDbContextCheck<AppDbContext> (O5/O9). Série confirmada ao vivo:
+      # aspnetcore_healthcheck_status{name="AppDbContext"} (0=Unhealthy,
+      # 0.5=Degraded, 1=Healthy). for: 1m porque readiness é sinal rápido.
+      - uid: td-db-readiness-down
+        title: "DB/readiness down"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "aspnetcore_healthcheck_status{job=\"tesouro-direto-api\",name=\"AppDbContext\"}"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: eq
+                    params: [0]
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health check do banco de dados (readiness) está falhando"
+        noDataState: Alerting
+        execErrState: Alerting
+
+      # 3 - 5xx alto: razão 5xx/total > 5%, com guarda de volume mínimo
+      # (> 0.05 rps) para não disparar sobre 1 request isolado.
+      - uid: td-http-5xx-alto
+        title: "Taxa de erro 5xx alta"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "(sum(rate(http_request_duration_seconds_count{job=\"tesouro-direto-api\",code=~\"5..\"}[5m])) / sum(rate(http_request_duration_seconds_count{job=\"tesouro-direto-api\"}[5m]))) and on() (sum(rate(http_request_duration_seconds_count{job=\"tesouro-direto-api\"}[5m])) > 0.05)"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Mais de 5% das respostas HTTP são 5xx nos últimos 5m (com tráfego mínimo)"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 4 - p95 alto: latência global p95 > 1.5s por 10m. Threshold folgado
+      # de propósito (endpoint /simulador chama o BCB e é naturalmente mais
+      # lento). Escopo mínimo: p95 global, sem separar por rota.
+      - uid: td-http-p95-alto
+        title: "Latência p95 alta"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"tesouro-direto-api\"}[5m])) by (le))"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1.5]
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 de latência HTTP acima de 1.5s nos últimos 10m"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 5 - Falha de import (E2). Qualquer incremento de outcome="failure"
+      # em 6h. Counter só incrementa quando um run falha, então não há
+      # falso positivo de fim de semana (nenhum gate necessário).
+      - uid: td-import-falha
+        title: "Falha de import (E2)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "increase(import_runs_total{job=\"tesouro-direto-api\",outcome=\"failure\"}[6h])"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Import de CSV falhou nas últimas 6h"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 6 - Simulador degradado (E4). Foco no motivo Projecao.HttpError (BCB
+      # indisponível, tarefa 11). Sinal absoluto (>=3 falhas em 15m) em vez
+      # de razão, porque o tráfego de simulação é esparso.
+      - uid: td-simulador-degradado
+        title: "Simulador degradado (BCB indisponível)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              expr: "increase(simulation_failures_total{job=\"tesouro-direto-api\",reason=\"Projecao.HttpError\"}[15m])"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gte
+                    params: [3]
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "3 ou mais falhas de simulação por indisponibilidade do BCB (Projecao.HttpError) em 15m"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 6b (complementar, opcional) - razão global de falhas do simulador,
+      # para degradações não-BCB. Guarda de volume: exige pelo menos 5
+      # simulações no período para a razão não ser ruidosa sobre poucos
+      # pontos (mesmo racional que levou a regra 6 a usar contagem absoluta,
+      # aqui aplicado como piso mínimo de amostras para o ratio).
+      - uid: td-simulador-falha-ratio
+        title: "Simulador - taxa de falhas alta (ratio)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "(sum(rate(simulation_failures_total{job=\"tesouro-direto-api\"}[10m])) / sum(rate(simulations_total{job=\"tesouro-direto-api\"}[10m]))) and on() (sum(increase(simulations_total{job=\"tesouro-direto-api\"}[10m])) >= 5)"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.2]
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taxa de falha de simulação acima de 20% (com volume mínimo de amostras) em 10m"
+        noDataState: OK
+        execErrState: Alerting
