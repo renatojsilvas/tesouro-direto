@@ -173,11 +173,48 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** baixo; o JSON de entrada não muda se o request espelhar o comando. Cobrir com teste de integração (tarefa 8).
 - **Verificação:** `POST /configuracoes/tributos` mantém o mesmo contrato; mudança interna no comando não altera o request.
 
-### 16. Cliente tipado no Web (dedup das 5 páginas) 🔴
-- **Escopo:** criar um `TesouroApiClient` em `Web/Services/` encapsulando `CreateClient`, montagem de request, desserialização e `ApiError`; refatorar as 5 páginas para usá-lo.
-- **Arquivos:** novo `src/TesouroDireto.Web/Services/TesouroApiClient.cs`; `Components/Pages/{Titulos,Historico,Tributos,Simulador,Cenarios}.razor`.
+### 16. Cliente tipado no Web (dedup das 5 páginas) 🔴 — decomposta em 16a–16f
+> **Decomposta (2026-07-25)** em uma tarefa de infra (**16a**) + 5 migrações de página comportamento-preservantes (**16b–16f**), uma página por sessão/PR, cada uma com o **E2E completo verde** como gate. Ordem: read-only primeiro (Titulos, Historico), depois as de escrita com `ApiError` (Tributos, Simulador, Cenarios). O client nomeado `"TesouroDiretoApi"` e o `CorrelationIdHandler` (O2) **coexistem** com o typed client durante a migração; a remoção do registro nomeado acontece no **16f**, quando nenhuma página o referencia. A execução vem em sessões próprias, uma a uma.
+- **Escopo (guarda-chuva):** criar um `TesouroApiClient` em `Web/Services/` encapsulando `CreateClient`, montagem de request, desserialização e `ApiError`; refatorar as 5 páginas para usá-lo.
+- **Arquivos:** novo `src/TesouroDireto.Web/Services/TesouroApiClient.cs`; `Components/Pages/{Titulos,Historico,Tributos,Simulador,Cenarios}.razor`; `src/TesouroDireto.Web/Program.cs`.
 - **Risco:** **médio** — toca todas as telas; regressão de UI. Fazer incremental (uma página por vez) e apoiar nos E2E.
-- **Verificação:** E2E web (todas as specs) verde após o refactor; nenhuma página monta HttpClient/`ApiError` local.
+- **Verificação:** E2E web (todas as specs) verde após cada subtarefa; nenhuma página monta HttpClient/`ApiError` local ao final.
+
+#### 16a. Criar `TesouroApiClient` (sem migrar páginas) 🟢
+- **Escopo:** novo typed client encapsulando `CreateClient`, montagem de request, (de)serialização JSON e o mapeamento de resposta não-2xx para um `ApiError` **compartilhado** (extraído dos 3 `record ApiError` duplicados em Tributos/Simulador/Cenarios). Superfície: `GetAsync<T>` (lista/objeto) e `PostAsync`/`PutAsync` retornando um resultado que carrega sucesso+payload **ou** `ApiError` (espelhando o que as páginas fazem hoje). Registrar via `AddHttpClient<TesouroApiClient>(...)` reusando `ApiSettings:BaseUrl` e **mantendo `.AddHttpMessageHandler<CorrelationIdHandler>()`** (a correlação O2 continua fluindo). **Nenhuma página é alterada** — o client nomeado `"TesouroDiretoApi"` permanece registrado em paralelo.
+- **Arquivos:** novo `src/TesouroDireto.Web/Services/TesouroApiClient.cs`; `ApiError` como tipo público em `Web/Services/`; `src/TesouroDireto.Web/Program.cs` (registro do typed client).
+- **Risco:** baixo — código sem consumidor até o 16b; não toca UI. Cuidar de o typed client e o nomeado coexistirem (mesmo `BaseUrl` + mesmo handler) para permitir a migração incremental.
+- **Verificação:** build limpo; **E2E completo verde** (comportamento inalterado — nenhuma página migrada); `grep` mostra o typed client registrado e o `CorrelationIdHandler` ainda no pipeline.
+
+#### 16b. Migrar `Titulos` (read-only) 🟢
+- **Escopo:** trocar `@inject IHttpClientFactory` + `CreateClient` por `@inject TesouroApiClient`; listagem via `GetAsync<List<TituloItem>>` com a query string de filtros preservada. Comportamento e tratamento de erro atuais preservados.
+- **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Titulos.razor`.
+- **Risco:** baixo — página read-only, superfície GET pura; primeira migração valida o caminho de leitura.
+- **Verificação:** **E2E completo verde** (`titulos.spec.ts` incluído — filtros e listagem reais); a página não instancia `HttpClient`/`IHttpClientFactory`.
+
+#### 16c. Migrar `Historico` (read-only + gráfico) 🟢
+- **Escopo:** migrar para `TesouroApiClient` (`GetAsync` para `titulos` e para o histórico de `precos`). **Não quebrar o gráfico** JS (`IJSRuntime`, `OnAfterRenderAsync` — ver `feedback_blazor_onafterrender_js`).
+- **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Historico.razor`.
+- **Risco:** baixo–médio — o render do gráfico depende dos dados carregados; garantir que o timing de carga não mudou.
+- **Verificação:** **E2E completo verde** (`historico.spec.ts` — gráfico renderiza com dados reais, `waitForFunction` — ver `feedback_blazor_signalr_waitforfunction`).
+
+#### 16d. Migrar `Tributos` (GET + POST/PUT + ApiError) 🟢
+- **Escopo:** listagem via `GetAsync`, criar/editar via `PostAsync`/`PutAsync` usando o resultado do client; **remover** o `record ApiError` local (~:349) e a desserialização manual de erro em favor do `ApiError` compartilhado do 16a (a mensagem exibida continua vindo de `ApiError.Description`).
+- **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Tributos.razor`.
+- **Risco:** médio — primeira página de escrita; valida o caminho POST/PUT + a superfície de erro do client.
+- **Verificação:** **E2E completo verde** (`tributos.spec.ts` — `should create a new tributo` e edição); a página não tem `ApiError` local nem desserialização manual de erro.
+
+#### 16e. Migrar `Simulador` (GET + POST + ApiError) 🟢
+- **Escopo:** listagem via `GetAsync<List<TituloItem>>("titulos?vencido=false")`, simular via `PostAsync("simulador", …)`; **remover** o `record ApiError` local (~:288) em favor do compartilhado.
+- **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Simulador.razor`.
+- **Risco:** médio — caminho POST com corpo de simulação + superfície de erro.
+- **Verificação:** **E2E completo verde** (`simulador.spec.ts` — submeter e validar valores); a página não tem `ApiError` local.
+
+#### 16f. Migrar `Cenarios` + limpeza final 🟢
+- **Escopo:** migrar `Cenarios.razor` (`PostAsync("simulador/cenarios", …)`, **remover** o `record ApiError` local ~:283). **Limpeza final:** remover o registro do client nomeado `"TesouroDiretoApi"` do `Program.cs` (agora sem consumidores), mantendo `AddTransient<CorrelationIdHandler>()` e o `.AddHttpMessageHandler` no typed client. **`grep` antes de remover** para confirmar zero consumidores.
+- **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Cenarios.razor`; `src/TesouroDireto.Web/Program.cs` (remoção do client nomeado).
+- **Risco:** médio — última migração + remoção do registro nomeado; se alguma página ainda o referenciar, quebra. `grep` obrigatório antes.
+- **Verificação:** **E2E completo verde** (todas as specs, `cenarios.spec.ts` incluído); `grep` no repo: zero `CreateClient("TesouroDiretoApi")`, zero `IHttpClientFactory` em páginas, zero `record ApiError` em `Pages/`; só o typed client registrado.
 
 ### 17. Observabilidade no Web (Serilog/Loki) 🟢 ✅ Concluída (2026-07-21)
 > **Feito:** ver item **O2** do anexo (esta tarefa = O2). Serilog+Loki no Web replicando o padrão O1, `CorrelationIdHandler` (`DelegatingHandler`) injetando `X-Correlation-Id` em toda chamada à API, correlação Web→API validada ao vivo no Loki.
