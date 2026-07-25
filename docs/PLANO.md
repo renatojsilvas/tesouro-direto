@@ -33,17 +33,15 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 19 | ✅ 🔒 Bloquear fallback `dev-local-key` no compose — concluída 2026-07-22       | **Alto (segurança)** | Baixo | 🟢 |
 | 20 | ✅ Formatter do sink Loki + filtro de nível do dashboard — concluída 2026-07-22 | Médio (observabilidade) | Baixo | 🟢 |
 | 21 | ✅ Extrair `InitializeDatabaseAsync` para serviço testável (semântica fatal/não-fatal) — concluída 2026-07-23 | Médio (rede de segurança) | Baixo | 🟢 |
-| 22 | `indexador`: coluna `HasMaxLength(20)` pode truncar/estourar valor bruto longo | Baixo (corretude de borda) | Baixo | 🟢 |
 | 23 | Travar por teste que `IProjecaoMercadoService` resolve para o decorator de cache | Médio (rede de segurança) | Baixo | 🟢 |
 | 24 | Teste de integração de `GetByNomeAsync` contra Postgres real (regressão de casamento com o índice funcional) | Médio (rede de segurança) | Baixo | 🟢 |
-| 25 | Log de agendamento dos jobs Quartz no boot (débito compartilhado csv-import + feriado-import) | Baixo (observabilidade) | Baixo | 🟢 |
-| 26 | Teste de integração: `NotFound` do BCB com `lkg` quente no cache de projeção | Baixo (rede de segurança) | Baixo | 🟢 |
-| 27 | Teste de `OperationCanceledException` do chamador no `CachedProjecaoMercadoService` | Baixo (rede de segurança) | Baixo | 🟢 |
-| 28 | Estabilizar o teste de expiração timing-based (candidato a flake) do cache de projeção | Médio (anti-flake CI) | Baixo | 🟢 |
+| 26-28 | Hardening dos testes do `CachedProjecaoMercadoService` (NotFound c/ lkg quente + cancelamento do chamador + expiração determinística) | Médio (rede de segurança) | Baixo | 🟢 |
 | 29 | Excluir `/health*` e `/metrics` do `UseHttpMetrics` (não inflar o denominador da regra de 5xx) | Baixo–Médio (precisão de alerta) | Baixo | 🟢 |
 | 30 | 🔒 Cadastrar secrets `TELEGRAM_*` (habilita a entrega dos alertas O9) — *operacional* | Alto (operação/alertas) | Baixo | 🟢 |
 | 31 | e2e ao vivo dos alertas O9 em staging (readiness/frescor → Firing → resolve) — *verificação* | Médio (confiança) | Baixo | 🟢 |
-| 32 | `TesouroDireto.Web` fora do gate de cobertura (sem teste no `.sln`; achado da 18) | Médio (rede de segurança) | Baixo | 🟢 |
+| 32 | `TesouroDireto.Web` fora do gate de cobertura (**última de código antes da 33**; achado da 18) | Médio (rede de segurança) | Baixo | 🟢 |
+| 33 | OpenAPI/Swagger na API (documentação de contrato / DX) — *promovida de Fora de escopo* | Baixo–Médio (DX) | Baixo | 🟢 |
+| 34 | Remover TODOS os comentários do código (**última do ciclo**) | Baixo (higiene) | Baixo | 🟢 |
 
 ---
 
@@ -247,6 +245,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ## Follow-ups triados (2026-07-22)
 
+> **Fila de execução (ordem fechada, 2026-07-25):** **30 → 31 → 23 → 29 → 26-28 → 24 → 32 → 33 → 34.** Vale para todos os follow-ups abaixo (seções 2026-07-22, 2026-07-24 e 2026-07-25), fora da numeração. Nesta sessão de manutenção: **22** e **25** saíram para [Fora de escopo por ora](#fora-de-escopo-por-ora-registrar-não-fazer); **26, 27 e 28** foram fundidas na tarefa **26-28**; **33** (OpenAPI) e **34** (remover comentários) foram criadas — a **34** fecha o ciclo.
+
 > Tarefas nascidas de riscos residuais / follow-ups registrados nas notas de **Feito** das tarefas 5 e O1 — que não entram sozinhos na fila. Prioridade de execução (fora da ordem numérica): **19 antes de tudo** (segurança), **20 antes do bloco E** (a O9 não pode nascer sobre painel de nível quebrado).
 
 ### 19. Bloquear o fallback `dev-local-key` no compose 🔒 🟢 ✅ Concluída (2026-07-22)
@@ -272,13 +272,6 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** baixo — refactor sem mudança de comportamento; a própria rede de segurança são os testes novos. Cuidar para não acoplar o serviço ao `IHost` inteiro.
 - **Verificação:** testes provando a semântica: (1) `SeedTributosCommand` falho → boot **aborta** (exceção propaga); (2) import de feriados falho → boot **segue** (só loga); (3) `Testing` → early-return (não migra/semeia). Suíte da tarefa 8 intacta; boot real em banco novo ainda semeia. Ver memórias `feedback_integration_tests_for_adapters`, `project_status_tarefa9_seed`.
 
-### 22. `indexador`: coluna `HasMaxLength(20)` vs valor bruto longo 🟢 · *(risco residual da tarefa 2, triado 2026-07-23)*
-> **Origem:** risco residual anotado na nota de Feito da tarefa 2. A tarefa 2 tornou a **leitura** EF tolerante (`Indexador.FromPersistence`, lossless — preserva o nome bruto fora da whitelist), mas a **coluna** `indexador` continua `HasMaxLength(20)`. Um valor bruto exótico e longo (>20 chars) na **escrita** (import) faria o EF/Postgres truncar ou lançar — o caminho tolerante de leitura não protege a gravação. Impacto real hoje é baixo (a whitelist real tem nomes curtos; reads passam por Dapper), mas é uma borda não coberta.
-- **Escopo:** decidir e aplicar uma das vias: (a) alargar a coluna (`HasMaxLength` maior ou remover o limite) via migration, alinhando ao maior nome plausível da fonte; **e/ou** (b) validar/truncar explicitamente o comprimento na escrita, devolvendo `Result` de falha em vez de deixar o EF estourar. Cobrir com teste de materialização/round-trip de valor longo fora da whitelist.
-- **Arquivos:** `src/TesouroDireto.Infrastructure/Persistence/Configurations/TituloConfiguration.cs`; nova migration em `src/TesouroDireto.Infrastructure/Persistence/Migrations/` (se via (a)); teste em `tests/TesouroDireto.API.Tests/Persistence/` (segue o padrão Testcontainers da tarefa 2).
-- **Risco:** baixo — migration só altera tipo de coluna (widening é seguro). Confirmar que nenhum índice depende do tamanho.
-- **Verificação:** escrever/ler um `Titulo` com `indexador` bruto >20 chars **sem truncar nem lançar**; suíte de Persistence verde. Ver memória `feedback_vo_whitelist_fragile`, `feedback_indexador_frompersistence_split`.
-
 ### 23. Travar por teste que `IProjecaoMercadoService` resolve para o decorator 🟢 · *(achado do revisor da tarefa 11, 2026-07-23)*
 > **Origem:** achado de severidade **média** do revisor da tarefa 11, encontrado ao reverter o DI para provar não-vacuidade. O registro correto é `AddHttpClient<FocusBcbService>()` + `AddScoped<IProjecaoMercadoService>(... new CachedProjecaoMercadoService(...))`. Se isso regredir para o registro antigo (`AddHttpClient<IProjecaoMercadoService, FocusBcbService>`), acontecem **duas** coisas silenciosas ao mesmo tempo: (1) o cache/fallback some do caminho de produção; (2) o `BcbResponderHandler` fake do `ApiTestFactory` — plugado via `ConfigureTestServices(s => s.AddHttpClient<FocusBcbService>()...)` — **deixa de interceptar**, porque o client nomeado passa a se chamar `IProjecaoMercadoService`. Os testes de integração então batem na **API real do BCB em produção**, sem erro de compilação e sem asserção que denuncie. O revisor observou exatamente isso ao vivo (chamadas reais para `olinda.bcb.gov.br` por alguns segundos).
 - **Escopo:** teste que resolve `IProjecaoMercadoService` do container real e asserta que a instância é `CachedProjecaoMercadoService` (não `FocusBcbService`). Complementar: assertar que o `HttpClient` tipado do `FocusBcbService` mantém `Timeout=30s`. Avaliar se cabe em `TesouroDireto.Architecture.Tests` (hoje é NetArchTest sobre namespaces/dependências, não sobre o container) ou num teste de composição do DI em `tests/TesouroDireto.API.Tests/` usando o `ApiTestFactory` — provavelmente o segundo.
@@ -293,33 +286,14 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** muito baixo — só adiciona teste. Reusar a infra de Testcontainers já existente; desabilitar paralelização como os demais testes de endpoint (ver `feedback_endpoint_integration_testcontainers`).
 - **Verificação:** o teste de casamento por nome fica **vermelho** se a expressão SQL do repositório for alterada para não casar mais com o índice (se cobrir o `EXPLAIN`) ou pelo menos se o WHERE quebrar funcionalmente; verde no estado atual. Ver memória `project_status_tarefa12_indices`.
 
-### 25. Log de agendamento dos jobs Quartz no boot 🟢 · *(nota de Feito da tarefa 10, triado 2026-07-23)*
-> **Origem:** lacuna pré-existente registrada na nota de Feito da tarefa 10 — **nenhum** job Quartz do projeto (nem o `CsvImportJob` de referência, nem o novo `FeriadoImportJob`) loga o *agendamento* no boot; só o *disparo/execução*. O critério "log do disparo agendado" da tarefa 10 (linha 119) foi satisfeito pelo log de execução, mas o agendamento em si (que cron, próximo disparo) fica invisível até o job rodar. Débito **compartilhado** pelos dois jobs.
-- **Escopo:** ao registrar os jobs no `AddQuartz`, logar no boot o agendamento de cada um — `JobKey`, expressão cron efetiva e (se viável) o próximo disparo calculado. Aplicar aos **dois** jobs (`csv-import`, `feriado-import`) por um caminho comum (ex.: `ISchedulerListener`/`IJobListener` ou log no start do scheduler), não duplicando linha a linha.
-- **Arquivos:** `src/TesouroDireto.Infrastructure/DependencyInjection.cs` (bloco `AddQuartz`); possivelmente um listener em `src/TesouroDireto.Infrastructure/` + registro.
-- **Risco:** muito baixo — só adiciona logging no boot; não altera o disparo nem a idempotência dos jobs.
-- **Verificação:** subir a API e ver, **antes do primeiro disparo**, uma linha de log por job com `JobKey` + cron + próximo disparo (`csv-import` e `feriado-import`). Ver `project_status_tarefa10_feriados_job`.
-
-### 26. Teste de integração: `NotFound` do BCB com `lkg` quente 🟢 · *(gap de cobertura da tarefa 11, triado 2026-07-23)*
-> **Origem:** gap de cobertura (baixo) registrado na nota de Feito da tarefa 11 — o caminho `Projecao.NotFound` **com a entrada `lkg` (last-known-good) quente** só é exercitado no teste **unitário** do `CachedProjecaoMercadoService`. No host de integração HTTP, o `ResetAsync` do `ApiTestFactory` sempre **esfria** o cache entre testes, então nunca há `lkg` quente quando o BCB devolve `NotFound` — a interação real (cache quente + resposta 200 sem dados) não é coberta ponta-a-ponta.
-- **Escopo:** teste de integração que primeiro aquece o `lkg` de um indexador (resposta BCB válida) e, na chamada seguinte, força o BCB a devolver `{"value":[]}` (→ `Projecao.NotFound`), assertando o comportamento correto (404 `application/problem+json`, **sem** servir o `lkg` — o fallback é só para `HttpError`, não `NotFound`). Ajustar o reset para permitir preservar o cache neste cenário específico sem vazar estado para os demais testes.
-- **Arquivos:** `tests/TesouroDireto.API.Tests/` (suíte de integração da tarefa 11 + `ApiTestFactory`).
-- **Risco:** muito baixo — só teste. Cuidar para o cenário de cache quente não contaminar outros testes (isolamento do reset).
-- **Verificação:** o teste fica **vermelho** se o fallback passar a servir o `lkg` no caso `NotFound` (regressão), e verde no estado atual. Ver `project_projecao_cache_fallback`, `project_status_tarefa11_cache_fallback`.
-
-### 27. Teste de `OperationCanceledException` do chamador no cache de projeção 🟢 · *(gap de cobertura da tarefa 11, triado 2026-07-23)*
-> **Origem:** gap de cobertura (baixo) da tarefa 11 — o `catch` alargado do `FocusBcbService`/`CachedProjecaoMercadoService` re-lança apenas o **cancelamento do chamador** (o resto vira `HttpError`), mas essa propagação foi verificada **só manualmente** pelo revisor, sem teste no CI. Uma regressão que passe a engolir o `OperationCanceledException` do chamador (transformando-o em `HttpError` + fallback silencioso) não seria detectada.
-- **Escopo:** teste provando que, ao cancelar o `CancellationToken` do chamador, a chamada propaga `OperationCanceledException` (ou `TaskCanceledException`) **em vez** de virar `Projecao.HttpError`/fallback. Distinguir do cancelamento *interno* (timeout do typed client), que deve continuar virando `HttpError`.
-- **Arquivos:** `tests/TesouroDireto.API.Tests/` (unitário do `CachedProjecaoMercadoService` e/ou `FocusBcbService`, no padrão dos 7 unitários existentes da tarefa 11).
-- **Risco:** muito baixo — só teste.
-- **Verificação:** teste verde no estado atual; **vermelho** se o `catch` passar a capturar o cancelamento do chamador. Ver `project_projecao_cache_fallback`.
-
-### 28. Estabilizar o teste de expiração timing-based do cache de projeção 🟢 · *(gap de cobertura da tarefa 11, triado 2026-07-23)*
-> **Origem:** gap de cobertura (baixo) da tarefa 11 — o teste de **integração** de expiração usa `Task.Delay(3s)` contra um TTL de 2s para provar que a entrada expira. É **timing-based** (depende de wall-clock), logo candidato a **flake** sob carga de CI. O corte de idade real já é provado de forma determinística no unitário (via `TimeProvider`/`FakeTimeProvider`); só o teste de integração ainda depende do relógio.
-- **Escopo:** tornar o teste determinístico — injetar um `TimeProvider` controlável também no host de integração (avançar o tempo em vez de dormir) **ou** tornar o TTL injetável/curtíssimo no cenário de teste sem `Task.Delay`. Remover a dependência de `Task.Delay` do caminho de expiração.
-- **Arquivos:** `tests/TesouroDireto.API.Tests/` (teste de integração de expiração da tarefa 11 + fiação do `TimeProvider` no `ApiTestFactory`).
-- **Risco:** muito baixo — só teste; melhora estabilidade do CI.
-- **Verificação:** o teste de expiração deixa de depender de wall-clock (sem `Task.Delay`), roda estável em execuções repetidas e sob paralelização. Ver `project_projecao_cache_fallback`.
+### 26-28. Hardening dos testes do `CachedProjecaoMercadoService` 🟢 · *(gaps de cobertura da tarefa 11, triados 2026-07-23; fundidos 2026-07-25)*
+> **Origem:** três gaps de cobertura (baixo) registrados na nota de Feito da tarefa 11, **fundidos numa só tarefa** (sessão de manutenção 2026-07-25) por tocarem o mesmo alvo (`CachedProjecaoMercadoService` + o host de integração da tarefa 11) e compartilharem a fiação de teste (`ApiTestFactory`/`TimeProvider`) — mergeiam num único PR. Os três critérios seguem independentes.
+- **Critério (a) — `NotFound` do BCB com `lkg` quente:** o caminho `Projecao.NotFound` **com a entrada `lkg` (last-known-good) quente** só é exercitado no teste **unitário**. No host de integração, o `ResetAsync` do `ApiTestFactory` sempre **esfria** o cache entre testes, então nunca há `lkg` quente quando o BCB devolve `NotFound`. Teste de integração que aquece o `lkg` de um indexador (resposta BCB válida) e, na chamada seguinte, força `{"value":[]}` (→ `Projecao.NotFound`), assertando **404 `application/problem+json`** e que o `lkg` **não** é servido (o fallback é só para `HttpError`, não `NotFound`). Isolar o reset para não vazar estado para os demais testes.
+- **Critério (b) — cancelamento do chamador:** o `catch` alargado do `FocusBcbService`/`CachedProjecaoMercadoService` re-lança **só** o cancelamento do chamador (o resto vira `HttpError`), mas isso foi verificado **só manualmente** pelo revisor. Teste provando que, ao cancelar o `CancellationToken` do chamador, propaga `OperationCanceledException`/`TaskCanceledException` **em vez** de virar `Projecao.HttpError`/fallback silencioso — distinguindo do cancelamento *interno* (timeout do typed client), que deve continuar virando `HttpError`.
+- **Critério (c) — expiração determinística sem `Task.Delay`:** o teste de **integração** de expiração usa `Task.Delay(3s)` contra TTL de 2s — timing-based (wall-clock), candidato a **flake** sob carga de CI. Tornar determinístico injetando um `TimeProvider` controlável também no host de integração (avançar o tempo em vez de dormir) **ou** TTL injetável/curtíssimo sem `Task.Delay`. O corte de idade já é provado de forma determinística no unitário (`FakeTimeProvider`); só o de integração ainda depende do relógio.
+- **Arquivos:** `tests/TesouroDireto.API.Tests/` (suíte de integração + unitários da tarefa 11; `ApiTestFactory` + fiação do `TimeProvider`); nenhum arquivo de produção muda.
+- **Risco:** muito baixo — só testes; (c) melhora a estabilidade do CI. Cuidar para o cenário de cache quente de (a) não contaminar outros testes (isolamento do reset).
+- **Verificação:** (a) fica **vermelho** se o fallback passar a servir o `lkg` no caso `NotFound`; (b) **vermelho** se o `catch` passar a capturar o cancelamento do chamador; (c) o teste de expiração deixa de depender de wall-clock (sem `Task.Delay`), estável em execuções repetidas e sob paralelização. Ver `project_projecao_cache_fallback`, `project_status_tarefa11_cache_fallback`.
 
 ---
 
@@ -349,6 +323,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Verificação:** readiness e frescor observados em **Firing→Resolved** no Grafana e notificação recebida no Telegram; o gate de fim de semana confirmado (sem falso alarme em sáb/dom/segunda de madrugada). Depende da tarefa 30. Ver `project_status_tarefaO9_alertas`.
 
 ### 32. `TesouroDireto.Web` fora do gate de cobertura 🟢 · *(achado do revisor da tarefa 18, 2026-07-25)*
+> **Nota (2026-07-25):** é a **ÚLTIMA tarefa de código** do ciclo antes da 33 (OpenAPI) e da 34 (limpeza de comentários). **Escopo mínimo fechado:** bUnit cobrindo o `TesouroApiClient` + **1–2 componentes críticos**, **re-medir** a cobertura com o Web no universo e **reajustar o threshold** para o **floor do novo medido** (tende a cair). Não expandir além disso.
 > **Origem:** achado do revisor da tarefa 18 (reportado ao usuário; decisão: **documentar + follow-up**, não expandir escopo agora). O gate de cobertura (tarefa 18) mede só os assemblies que o `dotnet test` sobre o `.sln` instrumenta — **API, Application, Domain, Infrastructure** (merged 94.64%). O `TesouroDireto.Web` (Blazor) **não entra** no numerador nem no denominador: **nenhum projeto de teste no `.sln` o exercita**, e o único que o cobre (`TesouroDireto.E2E.Tests`) roda em Docker num job `e2e` separado, fora do `dotnet test` que alimenta o gate. Efeito: ~186 linhas `.cs` (inclui o `TesouroApiClient` da tarefa 16) + ~1580 linhas `.razor` das 5 páginas ficam **sem sinal** de cobertura — quebrar o client ou uma página sem teste não é flagado. Não é regressão (o Web nunca teve teste unitário); é uma lacuna pré-existente tornada explícita. Já documentada em `scripts/coverage-gate.py` (docstring) e no comentário do step em `deploy.yml`.
 - **Escopo:** decidir e aplicar uma via: (a) criar `TesouroDireto.Web.Tests` (unit/bUnit — casa com o débito "sem testes de componente Blazor" já anotado no MAPA §5) e incluir no `.sln` para o `dotnet test`/gate passar a instrumentar o Web; **e/ou** (b) coletar cobertura do `E2E.Tests` e mesclar no gate. Ao trazer o Web para a medição, **re-medir e re-ajustar o threshold** (tende a **cair**, pois o Web entra com cobertura baixa) — o piso do gate deve refletir o novo universo.
 - **Arquivos:** novo `tests/TesouroDireto.Web.Tests/` + entrada no `TesouroDireto.sln`; possivelmente `scripts/coverage-gate.py` (se mudar o universo) e `.github/workflows/deploy.yml` (threshold).
@@ -357,14 +332,52 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ---
 
+## Follow-ups triados (2026-07-25)
+
+> Tarefas de fechamento do ciclo, triadas na sessão de manutenção de 2026-07-25. A **33** é a documentação de contrato (Swagger/OpenAPI, **promovida** de "Fora de escopo"); a **34** é a limpeza final de comentários e **encerra o ciclo**. Ordem na fila: `… → 32 → 33 → 34` (ver o topo da seção de follow-ups). São feitas **depois** de toda a fila de código (32 é a última de código antes da 33).
+
+### 33. OpenAPI/Swagger na API 🟢 · *(promovida de "Fora de escopo", triada 2026-07-25)*
+> **Origem:** item **promovido** de "Fora de escopo por ora" na sessão de 2026-07-25. Hoje a API não expõe documentação de contrato (MAPA §70: "sem Swagger/OpenAPI"; `GET /` retorna `"Hello World!"`). Sem risco operacional, mas o contrato HTTP (rotas de `Titulos`/`Tributos`/`Simulador`/`Importacao`/`Auth`, DTOs de `API/Contracts/`, enums como string da tarefa 4, mapa `Result`→status da tarefa 7) só é descobrível lendo o código. **Penúltima tarefa do ciclo** (antes da 34).
+- **Escopo:** expor um documento OpenAPI + UI de exploração na API Minimal. Decidir a via (Swashbuckle vs `Microsoft.AspNetCore.OpenApi` nativo do .NET 8 + Scalar/SwaggerUI) e documentar os endpoints de negócio com seus contratos de request/response e códigos de status. Refletir os enums como string (tarefa 4) e o `application/problem+json` (tarefas 6/7). Respeitar a política de exposição por ambiente/ApiKey (não expor cru em produção se for decisão de segurança).
+- **Arquivos:** `src/TesouroDireto.API/Program.cs` (registro do gerador + UI); `src/TesouroDireto.API/TesouroDireto.API.csproj` (pacote); eventualmente anotações nos `Endpoints/*.cs`.
+- **Risco:** baixo — só adiciona documentação/rota. Cuidar da exposição em produção (autenticação/ambiente) e de não conflitar com o `GET /` atual.
+- **Verificação:** `/swagger` (ou equivalente) e `/openapi.json` respondem; o documento lista as rotas de negócio com contratos e status corretos; enums aparecem como string. Ver MAPA §70, memórias `feedback_api_contracts_request_dto`, `feedback_api_enums_numeric`, `feedback_result_http_status_map`.
+
+### 34. Remover TODOS os comentários do código 🟢 · *(triada 2026-07-25 — **última do ciclo**)*
+> **Origem:** higiene final do ciclo de melhorias, triada em 2026-07-25. Depois de todo o trabalho das ondas 1–3 + observabilidade, o código acumulou comentários explicativos que viram ruído/dívida de manutenção — a intenção deve estar no nome e na estrutura, não em comentário. **Última tarefa do ciclo**, feita só depois de 32 e 33.
+- **Escopo:** remover **todos** os comentários de código do `src/` (`//`, `/* */`), deixando o código auto-explicativo. Onde um comentário carregava informação real (invariante fiscal, armadilha de PromQL/DI, decisão não-óbvia), **transformar em código** (nome melhor, teste ou extração) em vez de só apagar. **Antes da varredura**, definir e registrar a política sobre `///` (XML doc) — se ficam ou saem.
+- **Arquivos:** varredura em `src/` (todos os projetos); nenhuma mudança de comportamento.
+- **Risco:** baixo em runtime (comentário não executa), mas **médio de regressão de conhecimento** se apagar um comentário que documentava uma decisão sutil sem preservá-la em código/teste. Fazer por revisão, não `sed` cego. Rodar a suíte completa depois (deve seguir verde sem diff de comportamento).
+- **Verificação:** `grep` de comentários no `src/` retorna vazio (respeitada a política de `///` definida no escopo); suíte completa verde; nenhuma decisão não-óbvia perdida (checar no diff que armadilhas viraram código/teste). Ver memória `feedback_just_do_it` (não sobre-explicar).
+
+---
+
 ## Fora de escopo por ora (registrar, não fazer)
 
-- Versionamento de API (`/v1`) e Swagger/OpenAPI — melhoria de DX, sem risco operacional imediato.
+- Versionamento de API (`/v1`) — melhoria de DX, sem risco operacional imediato. (Swagger/OpenAPI foi **promovido** à tarefa 33.)
 - Rate limiting **no nível da aplicação** (já existe no nginx).
 - `VO Taxa` sem invariante e converters `.Value` defensivos (`DataBase`/`PrecoUnitario`) — baixo impacto enquanto os reads passam por Dapper; endereçar se surgir leitura EF desses campos.
 - Cache distribuído (Redis) — só necessário se escalar para múltiplas instâncias da API.
 - Contrato de faixa próprio em `API/Contracts/` (`FaixaRequest`) — hoje `CreateTributoRequest`/`UpdateTributoRequest` (tarefa 15) ainda referenciam o `FaixaDto` da Application (vazamento residual). Baixo impacto: o JSON de entrada não muda; endereçar só se um contrato de faixa próprio for necessário.
 - **Corrida de dois pods no boot** (follow-up (b) da tarefa 9) — quando duas instâncias sobem ao mesmo tempo, o seed/migração do pod perdedor recebe uma `DbUpdateException` crua do `SaveChangesAsync` em vez de um `Result.Failure` estruturado. **Motivo de ficar fora de escopo:** o efeito final já é correto — o pod perdedor não sobe e a constraint única (`ix_titulos_tipo_vencimento`, `ix_tributos_nome`) barra a duplicata (mesma proteção da Verificação #6 do MAPA); tratar isso bem exigiria **lock distribuído** (advisory lock no Postgres ou leader election), desproporcional ao deploy **single-instance** atual do VPS. Reavaliar junto do cache distribuído (Redis), sob a mesma condição: escalar para múltiplas instâncias da API.
+
+### Tarefas rebaixadas para fora de escopo (2026-07-25)
+
+> Movidas da fila ativa (eram as tarefas **22** e **25**) na sessão de manutenção de 2026-07-25 — **motivo: borda teórica de impacto baixo / conforto de log — decisão de corte do ciclo, 2026-07-25**. Texto original preservado; reavaliar e repromover se o impacto real subir.
+
+#### 22. `indexador`: coluna `HasMaxLength(20)` vs valor bruto longo 🟢 · *(risco residual da tarefa 2, triado 2026-07-23 · fora de escopo 2026-07-25)*
+> **Origem:** risco residual anotado na nota de Feito da tarefa 2. A tarefa 2 tornou a **leitura** EF tolerante (`Indexador.FromPersistence`, lossless — preserva o nome bruto fora da whitelist), mas a **coluna** `indexador` continua `HasMaxLength(20)`. Um valor bruto exótico e longo (>20 chars) na **escrita** (import) faria o EF/Postgres truncar ou lançar — o caminho tolerante de leitura não protege a gravação. Impacto real hoje é baixo (a whitelist real tem nomes curtos; reads passam por Dapper), mas é uma borda não coberta.
+- **Escopo:** decidir e aplicar uma das vias: (a) alargar a coluna (`HasMaxLength` maior ou remover o limite) via migration, alinhando ao maior nome plausível da fonte; **e/ou** (b) validar/truncar explicitamente o comprimento na escrita, devolvendo `Result` de falha em vez de deixar o EF estourar. Cobrir com teste de materialização/round-trip de valor longo fora da whitelist.
+- **Arquivos:** `src/TesouroDireto.Infrastructure/Persistence/Configurations/TituloConfiguration.cs`; nova migration em `src/TesouroDireto.Infrastructure/Persistence/Migrations/` (se via (a)); teste em `tests/TesouroDireto.API.Tests/Persistence/` (segue o padrão Testcontainers da tarefa 2).
+- **Risco:** baixo — migration só altera tipo de coluna (widening é seguro). Confirmar que nenhum índice depende do tamanho.
+- **Verificação:** escrever/ler um `Titulo` com `indexador` bruto >20 chars **sem truncar nem lançar**; suíte de Persistence verde. Ver memória `feedback_vo_whitelist_fragile`, `feedback_indexador_frompersistence_split`.
+
+#### 25. Log de agendamento dos jobs Quartz no boot 🟢 · *(nota de Feito da tarefa 10, triado 2026-07-23 · fora de escopo 2026-07-25)*
+> **Origem:** lacuna pré-existente registrada na nota de Feito da tarefa 10 — **nenhum** job Quartz do projeto (nem o `CsvImportJob` de referência, nem o novo `FeriadoImportJob`) loga o *agendamento* no boot; só o *disparo/execução*. O critério "log do disparo agendado" da tarefa 10 foi satisfeito pelo log de execução, mas o agendamento em si (que cron, próximo disparo) fica invisível até o job rodar. Débito **compartilhado** pelos dois jobs.
+- **Escopo:** ao registrar os jobs no `AddQuartz`, logar no boot o agendamento de cada um — `JobKey`, expressão cron efetiva e (se viável) o próximo disparo calculado. Aplicar aos **dois** jobs (`csv-import`, `feriado-import`) por um caminho comum (ex.: `ISchedulerListener`/`IJobListener` ou log no start do scheduler), não duplicando linha a linha.
+- **Arquivos:** `src/TesouroDireto.Infrastructure/DependencyInjection.cs` (bloco `AddQuartz`); possivelmente um listener em `src/TesouroDireto.Infrastructure/` + registro.
+- **Risco:** muito baixo — só adiciona logging no boot; não altera o disparo nem a idempotência dos jobs.
+- **Verificação:** subir a API e ver, **antes do primeiro disparo**, uma linha de log por job com `JobKey` + cron + próximo disparo (`csv-import` e `feriado-import`). Ver `project_status_tarefa10_feriados_job`.
 
 ---
 
