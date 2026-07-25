@@ -29,7 +29,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21       | Médio (arquitetura) | Baixo | 🟢 |
 | 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🟢 |
 | 17 | ✅ Observabilidade no Web (Serilog/Loki) — concluída 2026-07-21                 | Médio | Baixo | 🟢 |
-| 18 | Gate de cobertura no CI                                                        | Baixo–Médio | Baixo | 🟢 |
+| 18 | ✅ Gate de cobertura no CI (threshold 94% = floor do medido 94.64%) — concluída 2026-07-25 | Baixo–Médio | Baixo | 🟢 |
 | 19 | ✅ 🔒 Bloquear fallback `dev-local-key` no compose — concluída 2026-07-22       | **Alto (segurança)** | Baixo | 🟢 |
 | 20 | ✅ Formatter do sink Loki + filtro de nível do dashboard — concluída 2026-07-22 | Médio (observabilidade) | Baixo | 🟢 |
 | 21 | ✅ Extrair `InitializeDatabaseAsync` para serviço testável (semântica fatal/não-fatal) — concluída 2026-07-23 | Médio (rede de segurança) | Baixo | 🟢 |
@@ -43,6 +43,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 29 | Excluir `/health*` e `/metrics` do `UseHttpMetrics` (não inflar o denominador da regra de 5xx) | Baixo–Médio (precisão de alerta) | Baixo | 🟢 |
 | 30 | 🔒 Cadastrar secrets `TELEGRAM_*` (habilita a entrega dos alertas O9) — *operacional* | Alto (operação/alertas) | Baixo | 🟢 |
 | 31 | e2e ao vivo dos alertas O9 em staging (readiness/frescor → Firing → resolve) — *verificação* | Médio (confiança) | Baixo | 🟢 |
+| 32 | `TesouroDireto.Web` fora do gate de cobertura (sem teste no `.sln`; achado da 18) | Médio (rede de segurança) | Baixo | 🟢 |
 
 ---
 
@@ -235,9 +236,10 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** baixo. Ver memória `feedback_loki_serilog_labels` (labels no código, não JSON).
 - **Verificação:** logs do Web aparecem no Loki com label do serviço; CorrelationId conecta UI→API no Grafana.
 
-### 18. Gate de cobertura no CI 🟢
+### 18. Gate de cobertura no CI 🟢 ✅ Concluída (2026-07-25)
+> **Feito:** branch `improvements` (aguardando commit). **Medição primeiro (como pedido):** rodada a suíte completa com `--collect:"XPlat Code Coverage" ... Format=opencover` → cobertura de linha **merged 94.64% (2611/2759)** sobre `src/` (excl. Migrations), união entre os 5 relatórios (sem dupla contagem de assemblies compartilhados). Por assembly: API 99.03%, Domain 96.43%, Infrastructure 96.06%, Application 88.71%. **Threshold = floor(94.64) = 94%** (não quebra o build de hoje). **Via escolhida — sem ferramenta nova:** o Sonar scan já é condicional (`if SONAR_TOKEN != ''`, host `localhost:9000`) e o `sonarqube-scan-action` **não** reprova por quality gate sem o `sonarqube-quality-gate-action` (que seria ação nova) — logo o gate confiável é parsear o opencover que o pipeline **já produz**. Novo `scripts/coverage-gate.py` (só stdlib do Python, pré-instalado no `ubuntu-latest`) faz o merge por união e sai com código 1 se `linha < threshold`. No `deploy.yml`, job `test`: o `dotnet test` ganhou `--results-directory ./test-results/coverage` e um step `Coverage gate` roda o script `--threshold 94` **antes** do Sonar. **Revisor (não conseguiu refutar o gate):** (a) gate passa no estado atual (rc 0, 94.64%≥94); (b) não-vacuidade — rodando só `Domain.Tests`+`Application.Tests` a cobertura cai para **88.94%** e o gate **reprova** (rc 1), suíte completa passa; (c) threshold 94 = floor(94.64); pasta vazia/inexistente → rc 2 (não passa vacuamente); merge por união não superestima (chave por linha); `test-results/` gitignored + VM efêmera do CI = sem relatório stale. **Achado do revisor reportado ao usuário (decisão: documentar + follow-up):** `TesouroDireto.Web` (Blazor) está **fora do universo medido** — não por exclusão no script (que só filtra `src/`+Migrations), mas porque **nenhum projeto de teste no `.sln` o exercita** (o `E2E.Tests` roda em Docker num job à parte). O número 94.64% descreve API+Application+Domain+Infrastructure, **não** o Web. Gap documentado no `scripts/coverage-gate.py` (docstring), no `deploy.yml` (comentário do step) e virou a **tarefa 32**.
 - **Escopo:** reprovar o build se a cobertura cair abaixo de um limite (via coverlet threshold ou quality gate do SonarQube já existente).
-- **Arquivos:** `.github/workflows/deploy.yml` e/ou `sonar-project.properties` / `Directory.Build.props`.
+- **Arquivos:** `.github/workflows/deploy.yml`, novo `scripts/coverage-gate.py`.
 - **Risco:** baixo; pode quebrar o pipeline inicialmente — começar com threshold no nível atual e subir.
 - **Verificação:** PR que reduz cobertura abaixo do limite falha o job `test`.
 
@@ -345,6 +347,13 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Arquivos:** nenhum de produção (é verificação); exercita `infra/grafana/provisioning/alerting/*.yaml`.
 - **Risco:** nenhum no código; exige ambiente Docker completo — provavelmente **manual** em staging (não em subagent, dado o histórico de travamento no docker pesado).
 - **Verificação:** readiness e frescor observados em **Firing→Resolved** no Grafana e notificação recebida no Telegram; o gate de fim de semana confirmado (sem falso alarme em sáb/dom/segunda de madrugada). Depende da tarefa 30. Ver `project_status_tarefaO9_alertas`.
+
+### 32. `TesouroDireto.Web` fora do gate de cobertura 🟢 · *(achado do revisor da tarefa 18, 2026-07-25)*
+> **Origem:** achado do revisor da tarefa 18 (reportado ao usuário; decisão: **documentar + follow-up**, não expandir escopo agora). O gate de cobertura (tarefa 18) mede só os assemblies que o `dotnet test` sobre o `.sln` instrumenta — **API, Application, Domain, Infrastructure** (merged 94.64%). O `TesouroDireto.Web` (Blazor) **não entra** no numerador nem no denominador: **nenhum projeto de teste no `.sln` o exercita**, e o único que o cobre (`TesouroDireto.E2E.Tests`) roda em Docker num job `e2e` separado, fora do `dotnet test` que alimenta o gate. Efeito: ~186 linhas `.cs` (inclui o `TesouroApiClient` da tarefa 16) + ~1580 linhas `.razor` das 5 páginas ficam **sem sinal** de cobertura — quebrar o client ou uma página sem teste não é flagado. Não é regressão (o Web nunca teve teste unitário); é uma lacuna pré-existente tornada explícita. Já documentada em `scripts/coverage-gate.py` (docstring) e no comentário do step em `deploy.yml`.
+- **Escopo:** decidir e aplicar uma via: (a) criar `TesouroDireto.Web.Tests` (unit/bUnit — casa com o débito "sem testes de componente Blazor" já anotado no MAPA §5) e incluir no `.sln` para o `dotnet test`/gate passar a instrumentar o Web; **e/ou** (b) coletar cobertura do `E2E.Tests` e mesclar no gate. Ao trazer o Web para a medição, **re-medir e re-ajustar o threshold** (tende a **cair**, pois o Web entra com cobertura baixa) — o piso do gate deve refletir o novo universo.
+- **Arquivos:** novo `tests/TesouroDireto.Web.Tests/` + entrada no `TesouroDireto.sln`; possivelmente `scripts/coverage-gate.py` (se mudar o universo) e `.github/workflows/deploy.yml` (threshold).
+- **Risco:** baixo — só adiciona testes/instrumentação; cuidar para o threshold não subir artificialmente nem o gate ficar vacuoso ao incluir um assembly grande e pouco coberto.
+- **Verificação:** o gate passa a contar linhas de `src/TesouroDireto.Web` (numerador e denominador crescem); threshold reajustado ao novo medido (floor); prova de não-vacuidade repetida. Ver `feedback_vo_whitelist_fragile` (regra de não excluir sem reportar), MAPA §5 (bUnit).
 
 ---
 

@@ -181,7 +181,7 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 
 ### Como se conecta
 
-**CI gateia deploy:** `test` (dotnet test + cobertura opencover + SonarQube condicional; tem service container postgres 5432 **aparentemente não consumido**) → `e2e` (`docker-compose.e2e.yml` + seed.sql via psql + Playwright chromium; E2E vermelho bloqueia deploy) → `deploy` (SSH). Ambiente E2E efêmero (db postgres:16 + app + web). `seed.sql` idempotente (TRUNCATE+INSERT): 7 títulos, preços, IOF+IR, feriados 2024-2025 — independente das migrations. Testes de integração de Infrastructure moram fisicamente em **API.Tests**, não em Infrastructure.Tests.
+**CI gateia deploy:** `test` (dotnet test + cobertura opencover + **gate de cobertura** que reprova o job se a linha cair abaixo de **94%** — tarefa 18, via `scripts/coverage-gate.py` sobre o opencover; mede API/Application/Domain/Infrastructure, **não** o Web — + SonarQube condicional; tem service container postgres 5432 **aparentemente não consumido**) → `e2e` (`docker-compose.e2e.yml` + seed.sql via psql + Playwright chromium; E2E vermelho bloqueia deploy) → `deploy` (SSH). Ambiente E2E efêmero (db postgres:16 + app + web). `seed.sql` idempotente (TRUNCATE+INSERT): 7 títulos, preços, IOF+IR, feriados 2024-2025 — independente das migrations. Testes de integração de Infrastructure moram fisicamente em **API.Tests**, não em Infrastructure.Tests.
 
 ### Fragilidades
 - **Zero teste de integração HTTP nas 11 rotas de negócio** ✅ (Verificação #10): `WebApplicationFactory` só nos 3 testes de middleware (batem em `/` e `/health`). Rotas reais cobertas só por handlers unitários (repos mockados) + E2E via Blazor. Bug de roteamento/serialização (ex.: enums numéricos) passaria despercebido.
@@ -189,7 +189,7 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 - **Flakiness inerente do Blazor Server**: `retries: 2` + hacks `waitForTimeout(1000)` "if Blazor missed the event".
 - **Adapters de I/O sem integração real**: FocusBcb só com `FakeHttpMessageHandler`; `CsvImportService` **sem teste dedicado** (só mockado no handler).
 - **Infrastructure.Tests só cobre Caching**; resto testado a partir de API.Tests (placement inconsistente).
-- **Sem gate de cobertura** (coleta mas não reprova build); **sem testes de componente Blazor (bUnit)**.
+- **Sem gate de cobertura** ✔️ RESOLVIDO (tarefa 18, 2026-07-25): `scripts/coverage-gate.py` parseia o opencover já produzido e **reprova o job `test`** se a linha cair abaixo de **94%** (= floor do medido 94.64%; sem ferramenta nova). Cobre API/Application/Domain/Infrastructure; **`TesouroDireto.Web` fica fora** (nenhum teste no `.sln` o exercita) → **tarefa 32**. **Ainda sem testes de componente Blazor (bUnit)** — casa com a tarefa 32.
 - **Drift de schema seed↔migrations**: `seed.sql` define schema manualmente em paralelo às migrations — mudança numa migration sem atualizar seed quebra E2E silenciosamente.
 
 ---
@@ -232,5 +232,5 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 **Qualidade / manutenção:**
 9. Contrato HTTP vazando `CreateTributoCommand` ✔️ RESOLVIDO (tarefa 15); acesso à API duplicado em 5 páginas Blazor segue aberto (tarefa 16) (§1).
 10. Enums só numéricos + `ParseEnum` hardcoded frágil ✔️ RESOLVIDO (tarefa 4) (§1).
-11. Zero teste de integração de endpoint HTTP ✔️ RESOLVIDO (tarefa 8); gate de cobertura segue aberto (tarefa 18) (§5).
+11. Zero teste de integração de endpoint HTTP ✔️ RESOLVIDO (tarefa 8); gate de cobertura ✔️ RESOLVIDO (tarefa 18, threshold 94%; Web fora → tarefa 32) (§5).
 12. Observabilidade: métricas por caso de uso (O6) e por dependência externa (O7) ✔️ RESOLVIDAS (2026-07-23); **métricas de negócio** ✔️ RESOLVIDAS (tarefas 14/O8, 2026-07-24); Web no Loki/Grafana ✔️ RESOLVIDO (tarefa 17/O2); logs padronizados e painéis de nível corrigidos (tarefas O1/O3/20) (§4).
