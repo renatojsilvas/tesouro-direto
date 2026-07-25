@@ -126,7 +126,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **Camadas:** ports em Application, adapters em Infrastructure, cálculo puro em Domain. Cache é infra pura via pipeline behavior.
 
 ### Fragilidades
-- **Resiliência ausente** ✅: nenhum typed client tem Polly/retry/circuit breaker — só timeout. Indisponibilidade transitória de BCB/ANBIMA/Tesouro falha a operação inteira.
+- **Resiliência ausente** ✔️ RESOLVIDO (tarefa 13, 2026-07-25): Era: nenhum typed client tinha Polly/retry/circuit breaker — só timeout; indisponibilidade transitória de BCB/ANBIMA/Tesouro falhava a operação inteira. **Corrigido:** `AddResilienceHandler` (`Microsoft.Extensions.Http.Resilience`) nos 3 clients — retry+backoff+attempt-timeout nos 3, mais circuit breaker **só** no `FocusBcbService` (nos batch CSV/feriados o CB seria config morta: chamados 1×/dia e 1×/ano nunca acumulam amostras na janela). Timeouts aninhados dentro do `HttpClient.Timeout` de cada client (BCB total 25s < 30s; CSV/feriados ≈194s < 600s/300s). O `catch` dos dois imports foi alargado para o `TimeoutRejectedException` do Polly (só no caminho até-headers, dentro do `GetAsync`) — a fragilidade separada "exceção durante o **streaming do corpo** (após headers OK)" continua aberta.
 - **BCB Focus sem cache e sem fallback** ✔️ RESOLVIDO (tarefa 11, 2026-07-23): Era: `IProjecaoMercadoService` **não** era embrulhado por cache — cada simulação sem `ProjecaoAnual` era 1 chamada ao vivo; BCB fora → simulação inteira falhava; acoplava disponibilidade do simulador à do BCB e não escalava (N simulações = N chamadas). **Corrigido:** `CachedProjecaoMercadoService` decora `IProjecaoMercadoService` — entrada "fresh" por indexador (TTL 6h) evita bater no BCB a cada simulação; entrada "lkg" (7 dias) serve de fallback só quando o BCB devolve `Projecao.HttpError`, nunca silencioso (log + campo `Origem` na resposta). Limitação aceita: `lkg` em memória, zera em restart/deploy.
 - **Parsing frágil**: `DateOnly.Parse(entry.Data)` sem cultura explícita; indicador de inflação por igualdade de enum (novo indexador → `$filter` vazio, NotFound silencioso); `FeriadoImportService` depende de posições fixas de coluna e formato BIFF (migração para `.xlsx` quebra); `CsvParserHelper` exige 8 colunas/`pt-BR` fixos, `StripTrailingYear` mutila título terminando em 4 dígitos.
 - **Robustez de rede/memória**: XLS inteiro em `MemoryStream` sem limite; exceção durante streaming do corpo (após headers OK) não capturada; desserialização do BCB sem try/catch (JSON malformado → `JsonException` crua).
@@ -226,7 +226,7 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 **Segurança / operação:**
 5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1). **Parcial** ✔️ (tarefas 5 + 19): boot aborta em prod com chave default/vazia **ou `dev-local-key`**, e o compose falha sem `API_KEY` (sem fallback inseguro); segue aberto o compartilhamento único e a paridade leitura/escrita.
 6. ✔️ RESOLVIDO (tarefa 1) Grafana público com senha default `admin` (§4).
-7. Sem retry/circuit breaker em nenhuma integração externa (§3).
+7. ✔️ RESOLVIDO (tarefa 13) Sem retry/circuit breaker em nenhuma integração externa → `AddResilienceHandler` nos 3 typed clients (retry+timeout nos 3, circuit breaker só no BCB) (§3).
 8. ✔️ RESOLVIDO (tarefa 3) Healthcheck raso não detecta banco fora (§4).
 
 **Qualidade / manutenção:**

@@ -74,8 +74,23 @@ public sealed class CsvImportService(
         {
             return await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (HttpRequestException ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Cancelamento pedido por quem chamou (ex.: shutdown do Quartz) é legítimo —
+            // não é uma falha do download, então propaga limpo em vez de virar degradação
+            // graciosa.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Catch amplo de propósito (mesmo padrão de FocusBcbService.cs): cobre não só
+            // HttpRequestException, mas também o que a resiliência (tarefa 13) pode lançar
+            // em cima do mesmo GetAsync — TimeoutRejectedException (AttemptTimeout de 45s
+            // esgotado após os retries) e, no futuro, BrokenCircuitException. O timeout do
+            // Polly cancela um CancellationToken INTERNO dele (não o cancellationToken do
+            // chamador), então TaskCanceledException/OperationCanceledException gerada por
+            // ele NÃO passa no filtro do catch acima e cai aqui — degradação graciosa em
+            // vez de exceção não tratada subindo para o handler/job.
             logger.LogError(ex, "Failed to download CSV from {Url}", uri);
             return null;
         }

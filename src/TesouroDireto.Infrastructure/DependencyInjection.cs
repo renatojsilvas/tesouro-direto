@@ -4,8 +4,10 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Polly;
 using Prometheus;
 using Quartz;
 using TesouroDireto.Application.Common.Behaviors;
@@ -88,13 +90,15 @@ public static class DependencyInjection
         {
             client.Timeout = TimeSpan.FromMinutes(10);
         })
-        .UseHttpClientMetrics();
+        .UseHttpClientMetrics()
+        .AddBatchImportResilienceHandler(configuration, "csv-import-resilience", "Resilience:CsvImport");
 
         services.AddHttpClient<IFeriadoImportService, FeriadoImportService>(client =>
         {
             client.Timeout = TimeSpan.FromMinutes(5);
         })
-        .UseHttpClientMetrics();
+        .UseHttpClientMetrics()
+        .AddBatchImportResilienceHandler(configuration, "feriado-import-resilience", "Resilience:FeriadoImport");
 
         // FocusBcbService.cs deixa de ser exposto diretamente como IProjecaoMercadoService:
         // o decorator de cache (CachedProjecaoMercadoService, tarefa 11) é quem responde
@@ -103,7 +107,8 @@ public static class DependencyInjection
         {
             client.Timeout = TimeSpan.FromSeconds(30);
         })
-        .UseHttpClientMetrics();
+        .UseHttpClientMetrics()
+        .AddFocusBcbResilienceHandler(configuration);
 
         services.TryAddSingleton(TimeProvider.System);
 
@@ -138,5 +143,98 @@ public static class DependencyInjection
         services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
         return services;
+    }
+
+    /// <summary>
+    /// Pipeline de resiliência COMPLETO (tarefa 13) para o client do BCB Focus:
+    /// TotalTimeout → Retry → CircuitBreaker → AttemptTimeout, na mesma ordem usada pelo
+    /// AddStandardResilienceHandler padrão do próprio pacote — explícito aqui porque os
+    /// clients de import (CSV/Feriados, ver <see cref="AddBatchImportResilienceHandler"/>)
+    /// não têm circuit breaker. Retry só cobre transitório/5xx/408/timeout via
+    /// <see cref="HttpClientResiliencePredicates.IsTransient"/> (nunca 4xx de negócio).
+    ///
+    /// Extraído como método de extensão público (em vez de inline no AddInfrastructure)
+    /// para que os testes de resiliência montem exatamente o mesmo pipeline de produção
+    /// via um <see cref="IHttpClientBuilder"/> próprio, só trocando IConfiguration e o
+    /// HttpMessageHandler primário — evita duplicar a configuração e o risco de drift.
+    ///
+    /// Conta com os valores default (produção): 3 tentativas x 6s (AttemptTimeout) + ~1.5s
+    /// de backoff (0.5s + 1s, sem contar jitter) ≈ 19.5s ≤ TotalTimeout 25s ≤
+    /// HttpClient.Timeout 30s (ver client em AddInfrastructure).
+    /// </summary>
+    public static IHttpResiliencePipelineBuilder AddFocusBcbResilienceHandler(
+        this IHttpClientBuilder builder, IConfiguration configuration)
+    {
+        return builder.AddResilienceHandler("focus-bcb-resilience", pipeline =>
+        {
+            var section = configuration.GetSection("Resilience:FocusBcb");
+
+            var totalTimeout = section.GetValue<TimeSpan?>("TotalTimeout") ?? TimeSpan.FromSeconds(25);
+            var retryMaxAttempts = section.GetValue<int?>("Retry:MaxAttempts") ?? 2;
+            var retryBaseDelay = section.GetValue<TimeSpan?>("Retry:BaseDelay") ?? TimeSpan.FromSeconds(0.5);
+            var failureRatio = section.GetValue<double?>("CircuitBreaker:FailureRatio") ?? 0.5;
+            var minimumThroughput = section.GetValue<int?>("CircuitBreaker:MinimumThroughput") ?? 10;
+            var samplingDuration = section.GetValue<TimeSpan?>("CircuitBreaker:SamplingDuration") ?? TimeSpan.FromSeconds(30);
+            var breakDuration = section.GetValue<TimeSpan?>("CircuitBreaker:BreakDuration") ?? TimeSpan.FromSeconds(15);
+            var attemptTimeout = section.GetValue<TimeSpan?>("AttemptTimeout") ?? TimeSpan.FromSeconds(6);
+
+            pipeline
+                .AddTimeout(new HttpTimeoutStrategyOptions { Timeout = totalTimeout })
+                .AddRetry(new HttpRetryStrategyOptions
+                {
+                    MaxRetryAttempts = retryMaxAttempts,
+                    BackoffType = DelayBackoffType.Exponential,
+                    UseJitter = true,
+                    Delay = retryBaseDelay,
+                    ShouldHandle = static args =>
+                        ValueTask.FromResult(HttpClientResiliencePredicates.IsTransient(args.Outcome))
+                })
+                .AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+                {
+                    FailureRatio = failureRatio,
+                    MinimumThroughput = minimumThroughput,
+                    SamplingDuration = samplingDuration,
+                    BreakDuration = breakDuration,
+                    ShouldHandle = static args =>
+                        ValueTask.FromResult(HttpClientResiliencePredicates.IsTransient(args.Outcome))
+                })
+                .AddTimeout(new HttpTimeoutStrategyOptions { Timeout = attemptTimeout });
+        });
+    }
+
+    /// <summary>
+    /// Pipeline de resiliência dos clients de import batch (CSV/Tesouro Transparente e
+    /// XLS/ANBIMA, tarefa 13): Retry → AttemptTimeout, SEM circuit breaker e SEM total
+    /// timeout — são jobs diários (não simulações interativas), e o corpo da resposta
+    /// (streaming via HttpCompletionOption.ResponseHeadersRead) já fica limitado pelo
+    /// HttpClient.Timeout configurado em AddInfrastructure (10min CSV / 5min feriados).
+    ///
+    /// Conta com os valores default (produção): 4 tentativas x 45s (AttemptTimeout) + ~14s
+    /// de backoff (2s + 4s + 8s, sem contar jitter) ≈ 194s, folgado dentro dos dois
+    /// HttpClient.Timeout acima.
+    /// </summary>
+    public static IHttpResiliencePipelineBuilder AddBatchImportResilienceHandler(
+        this IHttpClientBuilder builder, IConfiguration configuration, string pipelineName, string configSection)
+    {
+        return builder.AddResilienceHandler(pipelineName, pipeline =>
+        {
+            var section = configuration.GetSection(configSection);
+
+            var retryMaxAttempts = section.GetValue<int?>("Retry:MaxAttempts") ?? 3;
+            var retryBaseDelay = section.GetValue<TimeSpan?>("Retry:BaseDelay") ?? TimeSpan.FromSeconds(2);
+            var attemptTimeout = section.GetValue<TimeSpan?>("AttemptTimeout") ?? TimeSpan.FromSeconds(45);
+
+            pipeline
+                .AddRetry(new HttpRetryStrategyOptions
+                {
+                    MaxRetryAttempts = retryMaxAttempts,
+                    BackoffType = DelayBackoffType.Exponential,
+                    UseJitter = true,
+                    Delay = retryBaseDelay,
+                    ShouldHandle = static args =>
+                        ValueTask.FromResult(HttpClientResiliencePredicates.IsTransient(args.Outcome))
+                })
+                .AddTimeout(new HttpTimeoutStrategyOptions { Timeout = attemptTimeout });
+        });
     }
 }

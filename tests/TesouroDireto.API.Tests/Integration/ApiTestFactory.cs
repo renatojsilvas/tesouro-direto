@@ -39,6 +39,24 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         .Build();
 
     /// <summary>
+    /// Overrides de config (tarefa 13 — resiliência) aplicados por cima dos defaults de
+    /// teste abaixo (CacheTtl curto etc.) em <see cref="ConfigureWebHost"/>. Usado por
+    /// testes que precisam de host PRÓPRIO (não a fixture "api" compartilhada, injetada
+    /// via <see cref="ApiCollection"/>) — ex.: o teste de circuit breaker do BCB, que
+    /// precisa de um <c>MinimumThroughput</c> baixo, deliberadamente frágil, e não pode
+    /// arriscar vazar um circuito aberto para os outros ~10 arquivos de teste que também
+    /// usam o BCB através da fixture compartilhada.
+    ///
+    /// Propriedade (não parâmetro de construtor) de propósito: xUnit exige um único
+    /// construtor público em tipos usados como <c>ICollectionFixture</c> e o instancia
+    /// via reflection sem parâmetros — precisa ficar sem overloads. Setar via
+    /// object initializer ANTES de <see cref="InitializeAsync"/> (o host só é
+    /// efetivamente construído no primeiro acesso a <c>Services</c>, dentro dele).
+    /// </summary>
+    public IReadOnlyDictionary<string, string?> ConfigOverrides { get; init; } =
+        new Dictionary<string, string?>();
+
+    /// <summary>
     /// Responder do BCB Focus injetável por teste (tarefa 11). Plugado como o
     /// <see cref="HttpMessageHandler"/> primário do <see cref="FocusBcbService"/> via
     /// <see cref="ConfigureWebHost"/> — cada teste que precisa simular o BCB seta esta
@@ -178,10 +196,27 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
             // encurtar só no host de teste sem o truque de env var usado para a
             // connection string. TTL curto permite testar expiração sem esperar 6h de
             // verdade; MaxFallbackAge fica no default de produção (7 dias).
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            //
+            // Resiliência (tarefa 13): retry do BCB com delay quase zero (testes rápidos) e
+            // circuit breaker com MinimumThroughput alto o bastante para nunca abrir por
+            // acidente nos ~10 arquivos de teste que compartilham esta fixture — o resto
+            // dos parâmetros fica nos defaults de produção definidos em
+            // AddFocusBcbResilienceHandler. ConfigOverrides (setado só por hosts isolados
+            // como o teste de circuit breaker, via object initializer) vence em caso de
+            // colisão de chave.
+            var defaults = new Dictionary<string, string?>
             {
-                ["FocusBcb:CacheTtl"] = "00:00:02"
-            });
+                ["FocusBcb:CacheTtl"] = "00:00:02",
+                ["Resilience:FocusBcb:Retry:BaseDelay"] = "00:00:00.050",
+                ["Resilience:FocusBcb:CircuitBreaker:MinimumThroughput"] = "1000"
+            };
+
+            foreach (var (key, value) in ConfigOverrides)
+            {
+                defaults[key] = value;
+            }
+
+            config.AddInMemoryCollection(defaults);
         });
 
         builder.ConfigureTestServices(services =>
