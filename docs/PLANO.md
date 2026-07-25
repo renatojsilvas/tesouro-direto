@@ -40,6 +40,9 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 26 | Teste de integração: `NotFound` do BCB com `lkg` quente no cache de projeção | Baixo (rede de segurança) | Baixo | 🟢 |
 | 27 | Teste de `OperationCanceledException` do chamador no `CachedProjecaoMercadoService` | Baixo (rede de segurança) | Baixo | 🟢 |
 | 28 | Estabilizar o teste de expiração timing-based (candidato a flake) do cache de projeção | Médio (anti-flake CI) | Baixo | 🟢 |
+| 29 | Excluir `/health*` e `/metrics` do `UseHttpMetrics` (não inflar o denominador da regra de 5xx) | Baixo–Médio (precisão de alerta) | Baixo | 🟢 |
+| 30 | 🔒 Cadastrar secrets `TELEGRAM_*` (habilita a entrega dos alertas O9) — *operacional* | Alto (operação/alertas) | Baixo | 🟢 |
+| 31 | e2e ao vivo dos alertas O9 em staging (readiness/frescor → Firing → resolve) — *verificação* | Médio (confiança) | Baixo | 🟢 |
 
 ---
 
@@ -266,6 +269,33 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Arquivos:** `tests/TesouroDireto.API.Tests/` (teste de integração de expiração da tarefa 11 + fiação do `TimeProvider` no `ApiTestFactory`).
 - **Risco:** muito baixo — só teste; melhora estabilidade do CI.
 - **Verificação:** o teste de expiração deixa de depender de wall-clock (sem `Task.Delay`), roda estável em execuções repetidas e sob paralelização. Ver `project_projecao_cache_fallback`.
+
+---
+
+## Follow-ups triados (2026-07-24 — pós-O9)
+
+> Riscos residuais / pendências registrados na nota de **Feito** da **O9** (alertas), triados na sessão de manutenção de 2026-07-24. As três foram escolhidas pelo autor para virar tarefa (ver `feedback_triagem_followups_feito`). A **29** é código; a **30** e a **31** são operacionais/verificação (dependem de ambiente e de ação no GitHub/VPS), registradas aqui para rastreio.
+
+### 29. Excluir `/health*` e `/metrics` do `UseHttpMetrics` 🟢 · *(follow-up da O9, triado 2026-07-24)*
+> **Origem:** follow-up gerado na nota de Feito da **O9**. A regra de alerta `td-http-5xx-alto` mede a razão `5xx/total` do `http_requests_total` (server-side, `UseHttpMetrics`). Hoje `/health`, `/health/live`, `/health/ready` e `/metrics` **entram nessa contagem** — o `ExcludedPaths` do `appsettings.json` só é consumido pelo `ApiKeyMiddleware`, não pelo middleware de métricas. Em app de baixo tráfego, o polling de healthcheck/scrape do Prometheus infla o **denominador** e **dilui** a razão de erro, podendo mascarar um incidente real de 5xx nas rotas de negócio.
+- **Escopo:** excluir os paths de infra (`/health*`, `/metrics`) da instrumentação `UseHttpMetrics` (o prometheus-net aceita configurar os endpoints/predicados contados). Conferir que a exclusão **não** afeta as séries distintas `httpclient_request_duration_seconds` (O7, client-side) nem `mediatr_request_duration_seconds` (O6) — só o `http_request*` server-side. Opcional: reavaliar o threshold da regra depois que o denominador ficar limpo.
+- **Arquivos:** `src/TesouroDireto.API/Program.cs` (config do `UseHttpMetrics`); eventualmente reusar a lista de `ExcludedPaths` do `appsettings.json`.
+- **Risco:** baixo — só reduz o que é contado; nenhuma rota de negócio sai da métrica. Não mexer nas regras de alerta além do denominador.
+- **Verificação:** após bater em `/health` e `/metrics`, `http_requests_total` **não** conta esses paths; a regra `td-http-5xx-alto` passa a medir só tráfego de negócio. Ver `project_status_tarefaO9_alertas`, `feedback_metricas_prometheus_nomes`.
+
+### 30. Cadastrar os secrets `TELEGRAM_*` (entrega dos alertas) 🔒 🟢 · *(pendência operacional da O9, triado 2026-07-24)*
+> **Origem:** pendência operacional (ii) da **O9**. As 8 regras de alerta estão provisionadas e o contact point Telegram já lê `${TELEGRAM_BOT_TOKEN}`/`${TELEGRAM_CHAT_ID}`, mas os secrets **não estão cadastrados**. Sem eles: (a) o serviço `grafana` do `docker-compose.yml` usa `${VAR:?}` → o boot **aborta** se as envs estiverem ausentes; (b) mesmo subindo, os alertas disparam mas **não entregam** no Telegram. **Não-código** — ação no GitHub e no VPS.
+- **Escopo:** criar `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` nos GitHub Secrets do repositório e garantir que o bloco `printf` do `.env` no `deploy.yml` os escreve no VPS (mesmo padrão de `API_KEY`/`GRAFANA_PASSWORD`, ver `feedback_deploy_env_always_update`). Confirmar que o serviço `grafana` do compose os injeta.
+- **Arquivos:** GitHub Secrets (ação manual); conferir `.github/workflows/deploy.yml` (bloco `printf` do `.env`) e `docker-compose.yml` (serviço `grafana`). Nenhum código de aplicação muda.
+- **Risco:** cadastrar **antes** do próximo deploy — com `${VAR:?}` no compose, um secret ausente derruba o boot do Grafana no VPS. Ver `feedback_compose_required_env_no_fallback`.
+- **Verificação:** deploy sobe o Grafana sem abortar; disparar um alerta de teste (ou parar o DB em staging — tarefa 31) entrega a mensagem no chat do Telegram. Ver `project_status_tarefaO9_alertas`, `reference_vps_deploy`.
+
+### 31. e2e ao vivo dos alertas O9 em staging 🟢 · *(pendência de verificação da O9, triado 2026-07-24)*
+> **Origem:** pendência operacional (i) da **O9** — o e2e ao vivo na stack completa **não foi rodado** (os subagents travaram no docker pesado; a O9 foi verificada **analiticamente** — YAML parseia, provisioning carrega em Grafana isolado). Falta exercitar o caminho fim-a-fim numa stack real, incluindo o **weekend-gate** do frescor.
+- **Escopo:** em staging com a stack completa de pé, validar ponta-a-ponta: (a) `docker compose stop db` → `td-db-readiness-down` vai a **Firing** (via `aspnetcore_healthcheck_status==0`) e **resolve** ao subir o DB; (b) forjar/adiantar `import_last_success_timestamp_seconds` para dado velho → `td-frescor-dado` dispara **respeitando** o gate de dia+hora BRT (não falsear no fim de semana / segunda de madrugada); (c) confirmar a **entrega no Telegram** (depende da tarefa 30). Registrar as observações.
+- **Arquivos:** nenhum de produção (é verificação); exercita `infra/grafana/provisioning/alerting/*.yaml`.
+- **Risco:** nenhum no código; exige ambiente Docker completo — provavelmente **manual** em staging (não em subagent, dado o histórico de travamento no docker pesado).
+- **Verificação:** readiness e frescor observados em **Firing→Resolved** no Grafana e notificação recebida no Telegram; o gate de fim de semana confirmado (sem falso alarme em sáb/dom/segunda de madrugada). Depende da tarefa 30. Ver `project_status_tarefaO9_alertas`.
 
 ---
 
