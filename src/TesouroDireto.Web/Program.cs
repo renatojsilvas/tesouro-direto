@@ -11,12 +11,6 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddTransient<CorrelationIdHandler>();
 
-builder.Services.AddHttpClient("TesouroDiretoApi", client =>
-{
-    client.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"]!);
-    client.DefaultRequestHeaders.Add("X-Api-Key", builder.Configuration["ApiSettings:ApiKey"]);
-}).AddHttpMessageHandler<CorrelationIdHandler>();
-
 builder.Services.AddHttpClient<TesouroApiClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"]!);
