@@ -1,6 +1,7 @@
 @page "/historico"
 @rendermode InteractiveServer
-@inject IHttpClientFactory HttpClientFactory
+@using TesouroDireto.Web.Services
+@inject TesouroApiClient Api
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -114,8 +115,7 @@ else if (!loading && selectedTituloId != "")
     {
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
-            titulos = await client.GetFromJsonAsync<List<TituloItem>>("titulos");
+            titulos = await Api.GetAsync<List<TituloItem>>("titulos");
         }
         catch (Exception ex)
         {
@@ -140,7 +140,6 @@ else if (!loading && selectedTituloId != "")
 
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
             var url = $"titulos/{selectedTituloId}/precos";
             var queryParams = new List<string>();
 
@@ -159,7 +158,7 @@ else if (!loading && selectedTituloId != "")
                 url += "?" + string.Join("&", queryParams);
             }
 
-            precos = await client.GetFromJsonAsync<List<PrecoItem>>(url);
+            precos = await Api.GetAsync<List<PrecoItem>>(url);
             chartPending = precos is { Count: > 0 };
         }
         catch (Exception ex)
