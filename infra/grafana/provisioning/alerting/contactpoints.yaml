@@ -1,10 +1,17 @@
 apiVersion: 1
 
-# Um único contact point: Telegram. bottoken/chatid são interpolados a
-# partir de variáveis de ambiente do processo do Grafana (nunca commitados
-# em texto plano). Sintaxe confirmada na doc oficial de provisioning
-# (Administration > Provisioning > "Use environment variables"): $VAR ou
-# ${VAR} — NÃO existe sintaxe $__env{...} no provisioning do Grafana.
+# Um único contact point: Telegram.
+# - bottoken: segredo real, interpolado de env do processo do Grafana (nunca
+#   commitado em texto plano). Sintaxe confirmada na doc oficial de
+#   provisioning (Administration > Provisioning > "Use environment variables"):
+#   $VAR ou ${VAR} — NÃO existe sintaxe $__env{...} no provisioning do Grafana.
+# - chatid: NÃO é segredo (sem o token ninguém envia nada) e precisa ser
+#   STRING LITERAL. Depois que o YAML é lido, o runtime de alerting do Grafana
+#   RE-AVALIA o valor das settings (etapa própria dele, não o parse do YAML) e
+#   esse campo exige string estrita: um valor que "parece número" — seja
+#   ${VAR}/"${VAR}" após interpolar a env, seja o número literal 144442958 — é
+#   coagido a número e causa crash loop no boot. Só string literal limpa
+#   ("144442958") sobrevive à re-avaliação.
 contactPoints:
   - orgId: 1
     name: telegram-tesouro
@@ -13,4 +20,4 @@ contactPoints:
         type: telegram
         settings:
           bottoken: ${TELEGRAM_BOT_TOKEN}
-          chatid: ${TELEGRAM_CHAT_ID}
+          chatid: "144442958"
