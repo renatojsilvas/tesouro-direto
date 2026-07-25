@@ -27,7 +27,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 13 | ✅ Retry/circuit breaker (Polly) nas integrações — concluída 2026-07-25         | Médio (resiliência) | Médio | 🟡 |
 | 14 | ✅ Métricas de negócio/job no Prometheus — concluída 2026-07-24                | Médio (observabilidade) | Baixo | 🟡 |
 | 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21       | Médio (arquitetura) | Baixo | 🟢 |
-| 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🔴 |
+| 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🟢 |
 | 17 | ✅ Observabilidade no Web (Serilog/Loki) — concluída 2026-07-21                 | Médio | Baixo | 🟢 |
 | 18 | Gate de cobertura no CI                                                        | Baixo–Médio | Baixo | 🟢 |
 | 19 | ✅ 🔒 Bloquear fallback `dev-local-key` no compose — concluída 2026-07-22       | **Alto (segurança)** | Baixo | 🟢 |
@@ -173,7 +173,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** baixo; o JSON de entrada não muda se o request espelhar o comando. Cobrir com teste de integração (tarefa 8).
 - **Verificação:** `POST /configuracoes/tributos` mantém o mesmo contrato; mudança interna no comando não altera o request.
 
-### 16. Cliente tipado no Web (dedup das 5 páginas) 🔴 — decomposta em 16a–16f
+### 16. Cliente tipado no Web (dedup das 5 páginas) 🟢 ✅ Concluída (2026-07-25) — decomposta em 16a–16f, todas fechadas
 > **Decomposta (2026-07-25)** em uma tarefa de infra (**16a**) + 5 migrações de página comportamento-preservantes (**16b–16f**), uma página por sessão/PR, cada uma com o **E2E completo verde** como gate. Ordem: read-only primeiro (Titulos, Historico), depois as de escrita com `ApiError` (Tributos, Simulador, Cenarios). O client nomeado `"TesouroDiretoApi"` e o `CorrelationIdHandler` (O2) **coexistem** com o typed client durante a migração; a remoção do registro nomeado acontece no **16f**, quando nenhuma página o referencia. A execução vem em sessões próprias, uma a uma.
 - **Escopo (guarda-chuva):** criar um `TesouroApiClient` em `Web/Services/` encapsulando `CreateClient`, montagem de request, desserialização e `ApiError`; refatorar as 5 páginas para usá-lo.
 - **Arquivos:** novo `src/TesouroDireto.Web/Services/TesouroApiClient.cs`; `Components/Pages/{Titulos,Historico,Tributos,Simulador,Cenarios}.razor`; `src/TesouroDireto.Web/Program.cs`.
@@ -195,29 +195,37 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 > **Feito (2026-07-25):** diff cirúrgico de 3+/3− em `Titulos.razor` — `@inject IHttpClientFactory` → `@using TesouroDireto.Web.Services` + `@inject TesouroApiClient Api`; removido `CreateClient("TesouroDiretoApi")`; `client.GetFromJsonAsync<List<TituloItem>>(url)` → `Api.GetAsync<List<TituloItem>>(url)`. Construção da query string, `try/catch (Exception ex)` com a mesma mensagem, markup, `FormatDate`/`BadgeColor`/`TituloItem` **intactos** — comportamento preservado 1:1 (`GetAsync` é passthrough puro de `GetFromJsonAsync`, exceção propaga igual). Gates do revisor (adversarial): (a) **E2E completo 22/22** via `run-e2e.sh` (down -v → up --build → seed → Playwright inteiro); os 4 testes de `titulos.spec.ts` verdes sem retry, único flaky em `cenarios.spec.ts` (página não tocada, timing de dropdown pré-existente, passou no retry) — não é regressão do 16b; (b) grep na página sem match para `IHttpClientFactory`/`CreateClient`/`new HttpClient`/`GetFromJsonAsync` **e** sem `ApiError`/`JsonSerializer`/`Deserialize` local. `git diff --stat` só `Titulos.razor`, sem commit. Parent (tarefa 16), tabela do topo e MAPA §1/§66 seguem **abertos** — a dedup só fecha ao migrar 16c–16f. **Follow-up fora de escopo** (registrado, não vira tarefa sozinho): `run-e2e.sh` tem `trap cleanup EXIT` que roda `down -v` com `$COMPOSE_FILE` relativo **depois** do `cd "$E2E_DIR"`, então o teardown falha silencioso (`2>/dev/null`) e deixa containers/volumes órfãos — bug pré-existente do script, não do 16b.
 
-#### 16c. Migrar `Historico` (read-only + gráfico) 🟢
+#### 16c. Migrar `Historico` (read-only + gráfico) 🟢 ✅ Concluída (2026-07-25)
 - **Escopo:** migrar para `TesouroApiClient` (`GetAsync` para `titulos` e para o histórico de `precos`). **Não quebrar o gráfico** JS (`IJSRuntime`, `OnAfterRenderAsync` — ver `feedback_blazor_onafterrender_js`).
 - **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Historico.razor`.
 - **Risco:** baixo–médio — o render do gráfico depende dos dados carregados; garantir que o timing de carga não mudou.
 - **Verificação:** **E2E completo verde** (`historico.spec.ts` — gráfico renderiza com dados reais, `waitForFunction` — ver `feedback_blazor_signalr_waitforfunction`).
 
-#### 16d. Migrar `Tributos` (GET + POST/PUT + ApiError) 🟢
+> **Feito (2026-07-25, commit a00a863):** diff 4+/5− em `Historico.razor` — `@inject IHttpClientFactory` → `@using TesouroDireto.Web.Services` + `@inject TesouroApiClient Api`; os dois GET (`OnInitializedAsync` e `CarregarPrecosAsync`) viram `Api.GetAsync<...>` (passthrough puro). Gráfico JS (`OnAfterRenderAsync`/`chartPending`/`DisposeAsync`/JS interop), markup, formatters e records **intactos** — comportamento 1:1. Gate do revisor: E2E **22/22** (`historico.spec.ts` 4/4 verde); grep na página sem `IHttpClientFactory`/`CreateClient`/`GetFromJsonAsync`.
+
+#### 16d. Migrar `Tributos` (GET + POST/PUT + ApiError) 🟢 ✅ Concluída (2026-07-25)
 - **Escopo:** listagem via `GetAsync`, criar/editar via `PostAsync`/`PutAsync` usando o resultado do client; **remover** o `record ApiError` local (~:349) e a desserialização manual de erro em favor do `ApiError` compartilhado do 16a (a mensagem exibida continua vindo de `ApiError.Description`).
 - **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Tributos.razor`.
 - **Risco:** médio — primeira página de escrita; valida o caminho POST/PUT + a superfície de erro do client.
 - **Verificação:** **E2E completo verde** (`tributos.spec.ts` — `should create a new tributo` e edição); a página não tem `ApiError` local nem desserialização manual de erro.
 
-#### 16e. Migrar `Simulador` (GET + POST + ApiError) 🟢
+> **Feito (2026-07-25, commit e312b05):** diff 8+/20− em `Tributos.razor` — GET via `Api.GetAsync<List<TributoItem>>`; `SalvarAsync` usa `Api.PostAsync<object>`/`PutAsync<object>` retornando `ApiResult<object>`, com falha mapeada 1:1 para `erro = result.Error?.Description ?? $"Erro: HTTP {result.StatusCode}"` (as duas ramificações originais — parse OK e catch — colapsavam na mesma string quando sem Description, então o colapso é comportamento-preservante). Removido o `record ApiError` local + `System.Text.Json` manual; `catch (Exception ex)`/`finally` intactos. Gate do revisor: E2E **22/22** (`tributos.spec.ts` 4/4); grep na página sem `ApiError`/`JsonSerializer`/`HttpResponseMessage`.
+
+#### 16e. Migrar `Simulador` (GET + POST + ApiError) 🟢 ✅ Concluída (2026-07-25)
 - **Escopo:** listagem via `GetAsync<List<TituloItem>>("titulos?vencido=false")`, simular via `PostAsync("simulador", …)`; **remover** o `record ApiError` local (~:288) em favor do compartilhado.
 - **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Simulador.razor`.
 - **Risco:** médio — caminho POST com corpo de simulação + superfície de erro.
 - **Verificação:** **E2E completo verde** (`simulador.spec.ts` — submeter e validar valores); a página não tem `ApiError` local.
 
-#### 16f. Migrar `Cenarios` + limpeza final 🟢
+> **Feito (2026-07-25, commit e7ed4b6):** diff 12+/20− em `Simulador.razor` — GET via `Api.GetAsync`; simulação via `Api.PostAsync<SimulacaoResult>`. **Ressalva da 16a honrada:** os DOIS ramos de erro foram preservados sem colapsar — `result.Error is not null` → `Description ?? "Erro da API: HTTP {StatusCode}"`; `else` (Error null, corpo não parseia como `ApiError`) → snippet de até 200 chars do `RawBody`. Removido o `record ApiError` local + desserialização manual; `catch (Exception ex)`/`finally` intactos. Gate do revisor: E2E **22/22** (`simulador.spec.ts` 4/4, valores validados); grep na página limpo. **Resíduo pathológico** (não é comportamento real da API, registrado só por rigor): um corpo de erro que seja o literal JSON `null` cairia no ramo do snippet (`Error` null) em vez do genérico "HTTP X" do original — a API sempre devolve ProblemDetails/`{code,description}`, nunca `null` cru, então sem efeito prático.
+
+#### 16f. Migrar `Cenarios` + limpeza final 🟢 ✅ Concluída (2026-07-25)
 - **Escopo:** migrar `Cenarios.razor` (`PostAsync("simulador/cenarios", …)`, **remover** o `record ApiError` local ~:283). **Limpeza final:** remover o registro do client nomeado `"TesouroDiretoApi"` do `Program.cs` (agora sem consumidores), mantendo `AddTransient<CorrelationIdHandler>()` e o `.AddHttpMessageHandler` no typed client. **`grep` antes de remover** para confirmar zero consumidores.
 - **Arquivos:** `src/TesouroDireto.Web/Components/Pages/Cenarios.razor`; `src/TesouroDireto.Web/Program.cs` (remoção do client nomeado).
 - **Risco:** médio — última migração + remoção do registro nomeado; se alguma página ainda o referenciar, quebra. `grep` obrigatório antes.
 - **Verificação:** **E2E completo verde** (todas as specs, `cenarios.spec.ts` incluído); `grep` no repo: zero `CreateClient("TesouroDiretoApi")`, zero `IHttpClientFactory` em páginas, zero `record ApiError` em `Pages/`; só o typed client registrado.
+
+> **Feito (2026-07-25, commit fa9dd6e):** commit único 7+/27− em 2 arquivos. `Cenarios.razor` — GET via `Api.GetAsync`; comparação via `Api.PostAsync<List<CenarioResult>>`, falha 1:1 em `result.Error?.Description ?? $"Erro: HTTP {result.StatusCode}"`; `record ApiError` local removido. **Limpeza final:** `grep` de consumidores em `Components/` deu vazio → removido do `Program.cs` o bloco do `AddHttpClient("TesouroDiretoApi", …)`; `AddTransient<CorrelationIdHandler>()` e `AddHttpClient<TesouroApiClient>(…).AddHttpMessageHandler<CorrelationIdHandler>()` mantidos. Gate do revisor: E2E **22/22** (`cenarios.spec.ts` 4/4, sem flaky); grep no repo — zero `TesouroDiretoApi` em todo `src/TesouroDireto.Web/`, zero `IHttpClientFactory`/`record ApiError` em `Pages/`. **Tarefa-pai 16 fechada** — o Web inteiro (5 páginas) usa o `TesouroApiClient`; MAPA §1/§66 atualizados. **Follow-up pré-existente reconfirmado** (não introduzido aqui): `run-e2e.sh` deixa containers órfãos no teardown (`COMPOSE_FILE` relativo após `cd`) — o revisor limpou manualmente; segue aberto (ver `project_followup_run_e2e_teardown_bug`).
 
 ### 17. Observabilidade no Web (Serilog/Loki) 🟢 ✅ Concluída (2026-07-21)
 > **Feito:** ver item **O2** do anexo (esta tarefa = O2). Serilog+Loki no Web replicando o padrão O1, `CorrelationIdHandler` (`DelegatingHandler`) injetando `X-Correlation-Id` em toda chamada à API, correlação Web→API validada ao vivo no Loki.
