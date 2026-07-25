@@ -17,6 +17,12 @@ builder.Services.AddHttpClient("TesouroDiretoApi", client =>
     client.DefaultRequestHeaders.Add("X-Api-Key", builder.Configuration["ApiSettings:ApiKey"]);
 }).AddHttpMessageHandler<CorrelationIdHandler>();
 
+builder.Services.AddHttpClient<TesouroApiClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"]!);
+    client.DefaultRequestHeaders.Add("X-Api-Key", builder.Configuration["ApiSettings:ApiKey"]);
+}).AddHttpMessageHandler<CorrelationIdHandler>();
+
 var app = builder.Build();
 
 app.UseSerilogDefaults();
