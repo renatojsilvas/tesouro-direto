@@ -27,7 +27,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 13 | ✅ Retry/circuit breaker (Polly) nas integrações — concluída 2026-07-25         | Médio (resiliência) | Médio | 🟡 |
 | 14 | ✅ Métricas de negócio/job no Prometheus — concluída 2026-07-24                | Médio (observabilidade) | Baixo | 🟡 |
 | 15 | ✅ Separar contrato HTTP do `CreateTributoCommand` — concluída 2026-07-21       | Médio (arquitetura) | Baixo | 🟢 |
-| 16 | Cliente tipado no Web (dedup das 5 páginas)                                    | Médio (manutenção) | Médio | 🟢 |
+| 16 | ✅ Cliente tipado no Web (dedup das 5 páginas) — concluída 2026-07-25 (16a–16f) | Médio (manutenção) | Médio | 🟢 |
 | 17 | ✅ Observabilidade no Web (Serilog/Loki) — concluída 2026-07-21                 | Médio | Baixo | 🟢 |
 | 18 | ✅ Gate de cobertura no CI (threshold 94% = floor do medido 94.64%) — concluída 2026-07-25 | Baixo–Médio | Baixo | 🟢 |
 | 19 | ✅ 🔒 Bloquear fallback `dev-local-key` no compose — concluída 2026-07-22       | **Alto (segurança)** | Baixo | 🟢 |

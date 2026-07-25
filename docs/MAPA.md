@@ -230,7 +230,7 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 8. ✔️ RESOLVIDO (tarefa 3) Healthcheck raso não detecta banco fora (§4).
 
 **Qualidade / manutenção:**
-9. Contrato HTTP vazando `CreateTributoCommand` ✔️ RESOLVIDO (tarefa 15); acesso à API duplicado em 5 páginas Blazor segue aberto (tarefa 16) (§1).
+9. Contrato HTTP vazando `CreateTributoCommand` ✔️ RESOLVIDO (tarefa 15); acesso à API duplicado em 5 páginas Blazor ✔️ RESOLVIDO (tarefa 16, typed client `TesouroApiClient`) (§1).
 10. Enums só numéricos + `ParseEnum` hardcoded frágil ✔️ RESOLVIDO (tarefa 4) (§1).
 11. Zero teste de integração de endpoint HTTP ✔️ RESOLVIDO (tarefa 8); gate de cobertura ✔️ RESOLVIDO (tarefa 18, threshold 94%; Web fora → tarefa 32) (§5).
 12. Observabilidade: métricas por caso de uso (O6) e por dependência externa (O7) ✔️ RESOLVIDAS (2026-07-23); **métricas de negócio** ✔️ RESOLVIDAS (tarefas 14/O8, 2026-07-24); Web no Loki/Grafana ✔️ RESOLVIDO (tarefa 17/O2); logs padronizados e painéis de nível corrigidos (tarefas O1/O3/20) (§4).
