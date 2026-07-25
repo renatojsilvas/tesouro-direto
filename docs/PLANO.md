@@ -37,7 +37,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 24 | Teste de integração de `GetByNomeAsync` contra Postgres real (regressão de casamento com o índice funcional) | Médio (rede de segurança) | Baixo | 🟢 |
 | 26-28 | Hardening dos testes do `CachedProjecaoMercadoService` (NotFound c/ lkg quente + cancelamento do chamador + expiração determinística) | Médio (rede de segurança) | Baixo | 🟢 |
 | 29 | Excluir `/health*` e `/metrics` do `UseHttpMetrics` (não inflar o denominador da regra de 5xx) | Baixo–Médio (precisão de alerta) | Baixo | 🟢 |
-| 30 | 🔒 Cadastrar secrets `TELEGRAM_*` (habilita a entrega dos alertas O9) — *operacional* | Alto (operação/alertas) | Baixo | 🟢 |
+| 30 | ✅ 🔒 Secrets `TELEGRAM_*`: plumbing (`printf` do `.env` + injeção no compose) verificado — concluída 2026-07-25 | Alto (operação/alertas) | Baixo | 🟢 |
 | 31 | e2e ao vivo dos alertas O9 em staging (readiness/frescor → Firing → resolve) — *verificação* | Médio (confiança) | Baixo | 🟢 |
 | 32 | `TesouroDireto.Web` fora do gate de cobertura (**última de código antes da 33**; achado da 18) | Médio (rede de segurança) | Baixo | 🟢 |
 | 33 | OpenAPI/Swagger na API (documentação de contrato / DX) — *promovida de Fora de escopo* | Baixo–Médio (DX) | Baixo | 🟢 |
@@ -308,7 +308,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Risco:** baixo — só reduz o que é contado; nenhuma rota de negócio sai da métrica. Não mexer nas regras de alerta além do denominador.
 - **Verificação:** após bater em `/health` e `/metrics`, `http_requests_total` **não** conta esses paths; a regra `td-http-5xx-alto` passa a medir só tráfego de negócio. Ver `project_status_tarefaO9_alertas`, `feedback_metricas_prometheus_nomes`.
 
-### 30. Cadastrar os secrets `TELEGRAM_*` (entrega dos alertas) 🔒 🟢 · *(pendência operacional da O9, triado 2026-07-24)*
+### 30. Cadastrar os secrets `TELEGRAM_*` (entrega dos alertas) 🔒 🟢 ✅ Concluída (2026-07-25) · *(pendência operacional da O9, triado 2026-07-24)*
+> **Feito (verificação SOMENTE LEITURA, 2026-07-25):** *plumbing* conforme — o bloco `printf` do `.env` em `.github/workflows/deploy.yml` (l.114–121) escreve `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` na ordem certa (6 `%s` ↔ 6 args, mesmo padrão de `API_KEY`/`GRAFANA_PASSWORD`), e o serviço `grafana` do `docker-compose.yml` (l.71–72) os injeta via `${VAR:?}` com nomes idênticos. Escritor e consumidor batem, sem divergência. **Ressalva:** o **cadastro dos secrets nos GitHub Secrets** é ação manual, não verificável por leitura local — a tarefa **31** (e2e ao vivo) só entrega no Telegram se os secrets existirem de fato no repositório/VPS.
 > **Origem:** pendência operacional (ii) da **O9**. As 8 regras de alerta estão provisionadas e o contact point Telegram já lê `${TELEGRAM_BOT_TOKEN}`/`${TELEGRAM_CHAT_ID}`, mas os secrets **não estão cadastrados**. Sem eles: (a) o serviço `grafana` do `docker-compose.yml` usa `${VAR:?}` → o boot **aborta** se as envs estiverem ausentes; (b) mesmo subindo, os alertas disparam mas **não entregam** no Telegram. **Não-código** — ação no GitHub e no VPS.
 - **Escopo:** criar `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` nos GitHub Secrets do repositório e garantir que o bloco `printf` do `.env` no `deploy.yml` os escreve no VPS (mesmo padrão de `API_KEY`/`GRAFANA_PASSWORD`, ver `feedback_deploy_env_always_update`). Confirmar que o serviço `grafana` do compose os injeta.
 - **Arquivos:** GitHub Secrets (ação manual); conferir `.github/workflows/deploy.yml` (bloco `printf` do `.env`) e `docker-compose.yml` (serviço `grafana`). Nenhum código de aplicação muda.
