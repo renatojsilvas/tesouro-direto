@@ -8,13 +8,13 @@ services:
     environment:
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=${DB_PASSWORD:-app123}
       - ASPNETCORE_ENVIRONMENT=Production
-      - Serilog__WriteTo__1__Args__uri=http://loki:3100
-      - ApiKey__Key=${API_KEY:-dev-local-key}
+      - Loki__Uri=http://loki:3100
+      - ApiKey__Key=${API_KEY:?API_KEY é obrigatório no .env}
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -51,7 +51,8 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8081
       - ApiSettings__BaseUrl=http://app:8080
-      - ApiSettings__ApiKey=${API_KEY:-dev-local-key}
+      - ApiSettings__ApiKey=${API_KEY:?API_KEY é obrigatório no .env}
+      - Loki__Uri=http://loki:3100
     depends_on:
       app:
         condition: service_healthy
@@ -64,9 +65,11 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD é obrigatório no .env}
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN é obrigatório no .env}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID é obrigatório no .env}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro

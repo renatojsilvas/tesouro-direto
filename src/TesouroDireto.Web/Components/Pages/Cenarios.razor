@@ -1,6 +1,7 @@
 @page "/simulador/cenarios"
 @rendermode InteractiveServer
-@inject IHttpClientFactory HttpClientFactory
+@using TesouroDireto.Web.Services
+@inject TesouroApiClient Api
 
 <PageTitle>Cenarios</PageTitle>
 
@@ -179,8 +180,7 @@
     {
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
-            titulos = await client.GetFromJsonAsync<List<TituloItem>>("titulos?vencido=false");
+            titulos = await Api.GetAsync<List<TituloItem>>("titulos?vencido=false");
         }
         catch
         {
@@ -224,7 +224,6 @@
 
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
             var request = new
             {
                 tituloId = tituloGuid,
@@ -234,26 +233,15 @@
                 cenarios = cenarios.Select(c => new { nome = c.Nome, projecaoAnual = c.Projecao }).ToList()
             };
 
-            var response = await client.PostAsJsonAsync("simulador/cenarios", request);
-            var responseBody = await response.Content.ReadAsStringAsync();
+            var result = await Api.PostAsync<List<CenarioResult>>("simulador/cenarios", request);
 
-            if (response.IsSuccessStatusCode)
+            if (result.IsSuccess)
             {
-                resultados = System.Text.Json.JsonSerializer.Deserialize<List<CenarioResult>>(
-                    responseBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                resultados = result.Data;
             }
             else
             {
-                try
-                {
-                    var error = System.Text.Json.JsonSerializer.Deserialize<ApiError>(
-                        responseBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    erro = error?.Description ?? $"Erro: HTTP {(int)response.StatusCode}";
-                }
-                catch
-                {
-                    erro = $"Erro: HTTP {(int)response.StatusCode}";
-                }
+                erro = result.Error?.Description ?? $"Erro: HTTP {result.StatusCode}";
             }
         }
         catch (Exception ex)
@@ -279,6 +267,4 @@
     private sealed record SimResult(
         decimal ValorInvestido, decimal ValorBruto, decimal RendimentoBruto,
         decimal TotalTributos, decimal ValorLiquido, decimal RendimentoLiquido);
-
-    private sealed record ApiError(string Code, string Description);
 }

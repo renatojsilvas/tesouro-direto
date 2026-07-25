@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TesouroDireto.Application.Importacao;
-using TesouroDireto.Domain.Common;
 
 namespace TesouroDireto.Infrastructure.CsvImport;
 
@@ -11,26 +10,26 @@ public sealed class CsvImportService(
     IConfiguration configuration,
     ILogger<CsvImportService> logger) : ICsvImportService
 {
-    public async IAsyncEnumerable<Result<CsvRecord>> GetRecordsAsync(
+    public async IAsyncEnumerable<CsvRecordLine> GetRecordsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var url = configuration["CsvImport:Url"];
         if (string.IsNullOrWhiteSpace(url))
         {
-            yield return ImportacaoErrors.InvalidLine("CsvImport:Url is not configured.");
+            yield return new CsvRecordLine(0, ImportacaoErrors.InvalidLine("CsvImport:Url is not configured."));
             yield break;
         }
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
         {
-            yield return ImportacaoErrors.InvalidLine("CsvImport:Url must be an absolute HTTPS URL.");
+            yield return new CsvRecordLine(0, ImportacaoErrors.InvalidLine("CsvImport:Url must be an absolute HTTPS URL."));
             yield break;
         }
 
         var response = await SendRequestAsync(uri, cancellationToken);
         if (response is null)
         {
-            yield return ImportacaoErrors.InvalidLine("Failed to download CSV from source.");
+            yield return new CsvRecordLine(0, ImportacaoErrors.InvalidLine("Failed to download CSV from source."));
             yield break;
         }
 
@@ -38,7 +37,7 @@ public sealed class CsvImportService(
         {
             logger.LogError("CSV download returned {StatusCode} from {Url}", response.StatusCode, url);
             response.Dispose();
-            yield return ImportacaoErrors.InvalidLine($"CSV source returned HTTP {(int)response.StatusCode}.");
+            yield return new CsvRecordLine(0, ImportacaoErrors.InvalidLine($"CSV source returned HTTP {(int)response.StatusCode}."));
             yield break;
         }
 
@@ -46,9 +45,12 @@ public sealed class CsvImportService(
         using var reader = new StreamReader(stream);
 
         var isFirstLine = true;
+        var physicalLineNumber = 0;
 
         while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
+            physicalLineNumber++;
+
             if (isFirstLine)
             {
                 isFirstLine = false;
@@ -60,7 +62,7 @@ public sealed class CsvImportService(
                 continue;
             }
 
-            yield return CsvParserHelper.ParseLine(line);
+            yield return new CsvRecordLine(physicalLineNumber, CsvParserHelper.ParseLine(line));
         }
 
         response.Dispose();
@@ -72,8 +74,23 @@ public sealed class CsvImportService(
         {
             return await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (HttpRequestException ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Cancelamento pedido por quem chamou (ex.: shutdown do Quartz) é legítimo —
+            // não é uma falha do download, então propaga limpo em vez de virar degradação
+            // graciosa.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Catch amplo de propósito (mesmo padrão de FocusBcbService.cs): cobre não só
+            // HttpRequestException, mas também o que a resiliência (tarefa 13) pode lançar
+            // em cima do mesmo GetAsync — TimeoutRejectedException (AttemptTimeout de 45s
+            // esgotado após os retries) e, no futuro, BrokenCircuitException. O timeout do
+            // Polly cancela um CancellationToken INTERNO dele (não o cancellationToken do
+            // chamador), então TaskCanceledException/OperationCanceledException gerada por
+            // ele NÃO passa no filtro do catch acima e cai aqui — degradação graciosa em
+            // vez de exceção não tratada subindo para o handler/job.
             logger.LogError(ex, "Failed to download CSV from {Url}", uri);
             return null;
         }

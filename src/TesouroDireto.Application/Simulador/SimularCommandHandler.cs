@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Application.Titulos;
@@ -14,11 +15,26 @@ public sealed class SimularCommandHandler(
     IDiasUteisService diasUteisService,
     IProjecaoMercadoService projecaoService,
     ITributoReadRepository tributoRepository,
-    IFeriadoReadRepository feriadoRepository) : IRequestHandler<SimularCommand, Result<SimulacaoResultadoDto>>
+    IFeriadoReadRepository feriadoRepository,
+    IBusinessMetrics metrics) : IRequestHandler<SimularCommand, Result<SimulacaoResultadoDto>>
 {
     private static readonly SimuladorService Simulador = new();
 
     public async Task<Result<SimulacaoResultadoDto>> Handle(SimularCommand request, CancellationToken cancellationToken)
+    {
+        var indexador = "unknown";
+        var result = await ExecuteAsync(request, i => indexador = i, cancellationToken);
+        metrics.RecordSimulation(indexador, result.IsSuccess ? "success" : "failure");
+        if (result.IsFailure)
+        {
+            metrics.RecordSimulationFailure(result.Error.Code);
+        }
+
+        return result;
+    }
+
+    private async Task<Result<SimulacaoResultadoDto>> ExecuteAsync(
+        SimularCommand request, Action<string> reportIndexador, CancellationToken cancellationToken)
     {
         var tituloResult = await tituloRepository.GetByIdAsync(request.TituloId, cancellationToken);
         if (tituloResult.IsFailure)
@@ -27,6 +43,7 @@ public sealed class SimularCommandHandler(
         }
 
         var titulo = tituloResult.Value;
+        reportIndexador(titulo.Indexador.Name);
 
         var duResult = await diasUteisService.CalcularDiasUteisAsync(
             request.DataCompra, titulo.DataVencimento.Value, cancellationToken);
@@ -38,6 +55,7 @@ public sealed class SimularCommandHandler(
         var diasCorridos = titulo.DataVencimento.Value.DayNumber - request.DataCompra.DayNumber;
 
         var projecaoAnual = request.ProjecaoAnual;
+        ProjecaoMercado? projecaoUtilizada = null;
         if (projecaoAnual is null && titulo.Indexador != Indexador.Prefixado)
         {
             var projecaoResult = await projecaoService.GetProjecaoAsync(titulo.Indexador, cancellationToken);
@@ -46,6 +64,7 @@ public sealed class SimularCommandHandler(
                 return projecaoResult.Error;
             }
 
+            projecaoUtilizada = projecaoResult.Value;
             projecaoAnual = projecaoResult.Value.MedianaAnual;
         }
 
@@ -79,10 +98,10 @@ public sealed class SimularCommandHandler(
             return simulacaoResult.Error;
         }
 
-        return MapToDto(simulacaoResult.Value);
+        return MapToDto(simulacaoResult.Value, projecaoUtilizada);
     }
 
-    private static SimulacaoResultadoDto MapToDto(SimulacaoResultado resultado)
+    private static SimulacaoResultadoDto MapToDto(SimulacaoResultado resultado, ProjecaoMercado? projecaoUtilizada)
     {
         var tributos = resultado.TributosAplicados
             .Select(t => new TributoAplicadoDto(t.Nome, t.Base, t.Aliquota, t.Valor))
@@ -92,6 +111,14 @@ public sealed class SimularCommandHandler(
             .Select(c => new FluxoCupomDto(c.Data, c.ValorBruto, c.DiasUteis))
             .ToList();
 
+        var projecaoDto = projecaoUtilizada is null
+            ? null
+            : new ProjecaoUtilizadaDto(
+                projecaoUtilizada.MedianaAnual,
+                projecaoUtilizada.DataReferencia,
+                projecaoUtilizada.ObtidaEmUtc,
+                projecaoUtilizada.Origem);
+
         return new SimulacaoResultadoDto(
             resultado.ValorInvestido,
             resultado.ValorBruto,
@@ -100,6 +127,7 @@ public sealed class SimularCommandHandler(
             resultado.TotalTributos,
             resultado.ValorLiquido,
             resultado.RendimentoLiquido,
-            cupons);
+            cupons,
+            projecaoDto);
     }
 }

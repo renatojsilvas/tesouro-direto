@@ -228,15 +228,15 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `Error` [1m]))",
+          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `error` [1m]))",
           "legendFormat": "Error"
         },
         {
-          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `Warning` [1m]))",
+          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `warning` [1m]))",
           "legendFormat": "Warning"
         },
         {
-          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `Information` [1m]))",
+          "expr": "sum(count_over_time({job=\"tesouro-direto-api\"} | json | level = `info` [1m]))",
           "legendFormat": "Information"
         }
       ],
@@ -269,6 +269,103 @@
         "enableLogDetails": true,
         "sortOrder": "Ascending"
       }
+    },
+    {
+      "title": "Frescor do último preço (idade do último import)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "time() - max(import_last_success_timestamp_seconds{job=\"tesouro-direto-api\"})",
+          "legendFormat": "Idade"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 86400 },
+              { "color": "red", "value": 172800 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "Simulações (taxa por indexador/desfecho)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(simulations_total{job=\"tesouro-direto-api\"}[5m])) by (indexador, outcome)",
+          "legendFormat": "{{indexador}} / {{outcome}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Falhas de simulação por motivo",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(simulation_failures_total{job=\"tesouro-direto-api\"}[5m])) by (reason)",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "title": "Import runs (última 1h)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 46 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(import_runs_total{job=\"tesouro-direto-api\"}[1h])) by (outcome)",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "title": "Preços processados por tipo (última 1h)",
+      "type": "bargauge",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 46 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(import_prices_processed_total{job=\"tesouro-direto-api\"}[1h])) by (kind)",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "Mudanças de config fiscal (última 24h)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 46 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(tributos_config_changes_total{job=\"tesouro-direto-api\"}[24h])) by (op)",
+          "legendFormat": "{{op}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
     }
   ],
   "refresh": "10s",

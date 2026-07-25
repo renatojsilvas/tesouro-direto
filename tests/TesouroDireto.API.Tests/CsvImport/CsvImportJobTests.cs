@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Quartz;
+using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Importacao;
 using TesouroDireto.Domain.Common;
 using TesouroDireto.Infrastructure.CsvImport;
@@ -12,11 +13,12 @@ namespace TesouroDireto.API.Tests.CsvImport;
 public sealed class CsvImportJobTests
 {
     private readonly ISender _sender = Substitute.For<ISender>();
+    private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly CsvImportJob _job;
 
     public CsvImportJobTests()
     {
-        _job = new CsvImportJob(_sender, Substitute.For<ILogger<CsvImportJob>>());
+        _job = new CsvImportJob(_sender, Substitute.For<ILogger<CsvImportJob>>(), _metrics);
     }
 
     [Fact]
@@ -34,6 +36,8 @@ public sealed class CsvImportJobTests
         await _sender.Received(1).Send(
             Arg.Any<ImportCsvCommand>(),
             Arg.Any<CancellationToken>());
+        _metrics.Received(1).RecordImportRun("success");
+        _metrics.DidNotReceive().RecordImportRun("failure");
     }
 
     [Fact]
@@ -49,5 +53,7 @@ public sealed class CsvImportJobTests
         var act = () => _job.Execute(context);
 
         await act.Should().NotThrowAsync();
+        _metrics.Received(1).RecordImportRun("failure");
+        _metrics.DidNotReceive().RecordImportRun("success");
     }
 }

@@ -123,6 +123,9 @@ namespace TesouroDireto.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DataVencimento")
+                        .HasDatabaseName("ix_titulos_data_vencimento");
+
                     b.HasIndex("TipoTitulo", "DataVencimento")
                         .IsUnique()
                         .HasDatabaseName("ix_titulos_tipo_vencimento");

@@ -16,6 +16,7 @@ public sealed class ImportCsvCommandHandlerTests
     private readonly ITituloWriteRepository _tituloWriteRepository = Substitute.For<ITituloWriteRepository>();
     private readonly IPrecoTaxaWriteRepository _precoTaxaWriteRepository = Substitute.For<IPrecoTaxaWriteRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly ImportCsvCommandHandler _handler;
 
     public ImportCsvCommandHandlerTests()
@@ -25,7 +26,8 @@ public sealed class ImportCsvCommandHandlerTests
             _tituloWriteRepository,
             _precoTaxaWriteRepository,
             _unitOfWork,
-            Substitute.For<ILogger<ImportCsvCommandHandler>>());
+            Substitute.For<ILogger<ImportCsvCommandHandler>>(),
+            _metrics);
 
         _tituloWriteRepository
             .AddAsync(Arg.Any<Titulo>(), Arg.Any<CancellationToken>())
@@ -41,9 +43,9 @@ public sealed class ImportCsvCommandHandlerTests
     {
         var records = new[]
         {
-            Result<CsvRecord>.Success(new CsvRecord(
+            new CsvRecordLine(2, Result<CsvRecord>.Success(new CsvRecord(
                 "Tesouro Prefixado", new DateOnly(2025, 1, 1), new DateOnly(2023, 1, 2),
-                13.12m, 13.18m, 756.43m, 755.39m, 756.43m))
+                13.12m, 13.18m, 756.43m, 755.39m, 756.43m)))
         };
 
         _csvImportService
@@ -63,6 +65,13 @@ public sealed class ImportCsvCommandHandlerTests
         result.IsSuccess.Should().BeTrue();
         result.Value.TitulosCriados.Should().Be(1);
         result.Value.PrecosInseridos.Should().Be(1);
+
+        // O8: importação sempre retorna sucesso (erros viram contadores) — deve
+        // marcar ImportSucceeded() e reportar as contagens de preços processados.
+        _metrics.Received(1).ImportSucceeded();
+        _metrics.Received(1).RecordPricesProcessed("inserted", 1);
+        _metrics.Received(1).RecordPricesProcessed("skipped", 0);
+        _metrics.Received(1).RecordPricesProcessed("error", 0);
     }
 
     [Fact]
@@ -74,9 +83,9 @@ public sealed class ImportCsvCommandHandlerTests
 
         var records = new[]
         {
-            Result<CsvRecord>.Success(new CsvRecord(
+            new CsvRecordLine(2, Result<CsvRecord>.Success(new CsvRecord(
                 "Tesouro Prefixado", new DateOnly(2025, 1, 1), new DateOnly(2023, 1, 2),
-                13.12m, 13.18m, 756.43m, 755.39m, 756.43m))
+                13.12m, 13.18m, 756.43m, 755.39m, 756.43m)))
         };
 
         _csvImportService
@@ -107,9 +116,9 @@ public sealed class ImportCsvCommandHandlerTests
 
         var records = new[]
         {
-            Result<CsvRecord>.Success(new CsvRecord(
+            new CsvRecordLine(2, Result<CsvRecord>.Success(new CsvRecord(
                 "Tesouro Prefixado", new DateOnly(2025, 1, 1), new DateOnly(2023, 1, 2),
-                13.12m, 13.18m, 756.43m, 755.39m, 756.43m))
+                13.12m, 13.18m, 756.43m, 755.39m, 756.43m)))
         };
 
         _csvImportService
@@ -136,7 +145,7 @@ public sealed class ImportCsvCommandHandlerTests
     {
         var records = new[]
         {
-            Result<CsvRecord>.Failure(new Error("CsvImport.InvalidLine", "Invalid line"))
+            new CsvRecordLine(2, Result<CsvRecord>.Failure(new Error("CsvImport.InvalidLine", "Invalid line")))
         };
 
         _csvImportService
@@ -148,6 +157,50 @@ public sealed class ImportCsvCommandHandlerTests
         result.IsSuccess.Should().BeTrue();
         result.Value.LinhasComErro.Should().Be(1);
         result.Value.PrecosInseridos.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Handle_WithMultipleInvalidCsvRecords_ShouldLogWarningPerInvalidLine()
+    {
+        var logger = Substitute.For<ILogger<ImportCsvCommandHandler>>();
+        var handler = new ImportCsvCommandHandler(
+            _csvImportService,
+            _tituloWriteRepository,
+            _precoTaxaWriteRepository,
+            _unitOfWork,
+            logger,
+            _metrics);
+
+        // LineNumbers propositalmente não-sequenciais (3 e 6), simulando linhas em
+        // branco puladas pelo parser real entre os registros inválidos — prova que o
+        // handler reporta a linha FÍSICA do parser, não um índice local de registros.
+        var records = new[]
+        {
+            new CsvRecordLine(3, Result<CsvRecord>.Failure(new Error("CsvImport.InvalidLine", "Invalid line 1"))),
+            new CsvRecordLine(6, Result<CsvRecord>.Failure(new Error("CsvImport.InvalidLine", "Invalid line 2")))
+        };
+
+        _csvImportService
+            .GetRecordsAsync(Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(records));
+
+        var result = await handler.Handle(new ImportCsvCommand(), CancellationToken.None);
+
+        result.Value.LinhasComErro.Should().Be(2);
+
+        logger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(state => state.ToString()!.Contains("3") && state.ToString()!.Contains("Invalid line 1")),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<object, Exception?, string>>());
+
+        logger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(state => state.ToString()!.Contains("6") && state.ToString()!.Contains("Invalid line 2")),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
 #pragma warning disable CS1998

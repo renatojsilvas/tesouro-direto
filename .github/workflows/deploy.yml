@@ -1,8 +1,14 @@
-name: Deploy to VPS
+name: CI / Deploy
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -27,7 +33,12 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet restore
       - run: dotnet build --no-restore
-      - run: dotnet test --no-build --verbosity normal --collect:"XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+      - run: dotnet test --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./test-results/coverage -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+      # Fails the job if line coverage drops below the threshold. Covers the
+      # assemblies dotnet test instruments (API/Application/Domain/Infrastructure);
+      # TesouroDireto.Web is not covered (no unit tests in the .sln) — see task 32.
+      - name: Coverage gate (line >= 94%)
+        run: python3 scripts/coverage-gate.py ./test-results/coverage --threshold 94 --verbose
       - name: SonarQube Scan
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@v5
@@ -36,6 +47,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
   e2e:
+    if: github.event_name == 'push'
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +59,7 @@ jobs:
       - name: Wait for services to be healthy
         run: |
           echo "Waiting for API..."
-          timeout 120 bash -c 'until curl -sf http://localhost:5000/health; do sleep 2; done'
+          timeout 120 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 2; done'
           echo ""
           echo "Waiting for Web..."
           timeout 120 bash -c 'until curl -sf http://localhost:5275/; do sleep 2; done'
@@ -86,6 +98,7 @@ jobs:
         run: docker compose -f docker-compose.e2e.yml down -v
 
   deploy:
+    if: github.event_name == 'push'
     needs: e2e
     runs-on: ubuntu-latest
     steps:
@@ -98,11 +111,13 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             mkdir -p /opt/tesouro-direto
-            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\n' \
+            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\nTELEGRAM_BOT_TOKEN=%s\nTELEGRAM_CHAT_ID=%s\n' \
               '${{ secrets.DB_PASSWORD }}' \
               '${{ secrets.API_KEY }}' \
               '${{ secrets.GRAFANA_PASSWORD }}' \
               '${{ secrets.GRAFANA_ROOT_URL }}' \
+              '${{ secrets.TELEGRAM_BOT_TOKEN }}' \
+              '${{ secrets.TELEGRAM_CHAT_ID }}' \
               > /opt/tesouro-direto/.env
             chmod 600 /opt/tesouro-direto/.env
       - name: Deploy via SSH
@@ -123,6 +138,6 @@ jobs:
             docker compose build --no-cache
             docker compose up -d
             echo "Waiting for app to be healthy..."
-            timeout 60 bash -c 'until curl -sf http://localhost:5000/health; do sleep 3; done'
+            timeout 60 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 3; done'
             echo "Deploy complete."
             docker image prune -f

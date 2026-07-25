@@ -1,6 +1,7 @@
 @page "/titulos"
 @rendermode InteractiveServer
-@inject IHttpClientFactory HttpClientFactory
+@using TesouroDireto.Web.Services
+@inject TesouroApiClient Api
 
 <PageTitle>Titulos</PageTitle>
 
@@ -95,7 +96,6 @@ else if (titulos is not null)
 
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
             var url = "titulos";
             var queryParams = new List<string>();
 
@@ -114,7 +114,7 @@ else if (titulos is not null)
                 url += "?" + string.Join("&", queryParams);
             }
 
-            titulos = await client.GetFromJsonAsync<List<TituloItem>>(url);
+            titulos = await Api.GetAsync<List<TituloItem>>(url);
         }
         catch (Exception ex)
         {

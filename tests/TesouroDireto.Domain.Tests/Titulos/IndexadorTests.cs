@@ -41,4 +41,31 @@ public sealed class IndexadorTests
     {
         Indexador.All.Should().HaveCount(4);
     }
+
+    [Fact]
+    public void FromPersistence_WithKnownNameCaseInsensitive_ShouldReturnMatchingInstance()
+    {
+        var result = Indexador.FromPersistence("selic");
+
+        result.Should().Be(Indexador.Selic);
+        result.Name.Should().Be("Selic");
+    }
+
+    [Fact]
+    public void FromPersistence_WithUnknownName_ShouldNotThrowAndPreserveName()
+    {
+        Func<Indexador> act = () => Indexador.FromPersistence("CDI");
+
+        var result = act.Should().NotThrow().Which;
+        result.Name.Should().Be("CDI");
+        Indexador.All.Should().NotContain(result);
+    }
+
+    [Fact]
+    public void FromPersistence_ShouldTrimName()
+    {
+        var result = Indexador.FromPersistence("  IPCA  ");
+
+        result.Should().Be(Indexador.IPCA);
+    }
 }

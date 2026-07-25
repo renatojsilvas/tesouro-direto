@@ -1,6 +1,7 @@
 @page "/simulador"
 @rendermode InteractiveServer
-@inject IHttpClientFactory HttpClientFactory
+@using TesouroDireto.Web.Services
+@inject TesouroApiClient Api
 
 <PageTitle>Simulador</PageTitle>
 
@@ -199,8 +200,7 @@
     {
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
-            titulos = await client.GetFromJsonAsync<List<TituloItem>>("titulos?vencido=false");
+            titulos = await Api.GetAsync<List<TituloItem>>("titulos?vencido=false");
         }
         catch
         {
@@ -233,7 +233,6 @@
 
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
             var request = new
             {
                 tituloId = tituloGuid,
@@ -243,26 +242,20 @@
                 projecaoAnual
             };
 
-            var response = await client.PostAsJsonAsync("simulador", request);
-            var responseBody = await response.Content.ReadAsStringAsync();
+            var result = await Api.PostAsync<SimulacaoResult>("simulador", request);
 
-            if (response.IsSuccessStatusCode)
+            if (result.IsSuccess)
             {
-                resultado = System.Text.Json.JsonSerializer.Deserialize<SimulacaoResult>(
-                    responseBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                resultado = result.Data;
+            }
+            else if (result.Error is not null)
+            {
+                erro = result.Error.Description ?? $"Erro da API: HTTP {result.StatusCode}";
             }
             else
             {
-                try
-                {
-                    var error = System.Text.Json.JsonSerializer.Deserialize<ApiError>(
-                        responseBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    erro = error?.Description ?? $"Erro da API: HTTP {(int)response.StatusCode}";
-                }
-                catch
-                {
-                    erro = $"Erro da API: HTTP {(int)response.StatusCode} - {responseBody[..Math.Min(200, responseBody.Length)]}";
-                }
+                var responseBody = result.RawBody ?? "";
+                erro = $"Erro da API: HTTP {result.StatusCode} - {responseBody[..Math.Min(200, responseBody.Length)]}";
             }
         }
         catch (Exception ex)
@@ -285,5 +278,4 @@
 
     private sealed record TributoResult(string Nome, decimal Base, decimal Aliquota, decimal Valor);
     private sealed record CupomResult(DateOnly Data, decimal ValorBruto, int DiasUteis);
-    private sealed record ApiError(string Code, string Description);
 }

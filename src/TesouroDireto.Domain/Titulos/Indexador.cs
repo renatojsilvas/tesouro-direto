@@ -25,4 +25,17 @@ public sealed record Indexador
             ? match
             : new Error("Indexador.Invalid", $"'{name}' is not a valid indexador.");
     }
+
+    /// <summary>
+    /// Materializa um Indexador a partir de um valor persistido, sem falhar.
+    /// Retorna o valor conhecido correspondente (case-insensitive) ou preserva
+    /// o nome desconhecido — nunca rejeita, para não quebrar a materialização do EF.
+    /// Use apenas na camada de persistência; para validar entrada use FromName.
+    /// </summary>
+    public static Indexador FromPersistence(string name)
+    {
+        var trimmed = name?.Trim() ?? string.Empty;
+        return All.FirstOrDefault(i => string.Equals(i.Name, trimmed, StringComparison.OrdinalIgnoreCase))
+            ?? new Indexador(trimmed);
+    }
 }

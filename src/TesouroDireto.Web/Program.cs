@@ -1,17 +1,25 @@
 using TesouroDireto.Web.Components;
+using TesouroDireto.Web.Extensions;
+using TesouroDireto.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddSerilog();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-builder.Services.AddHttpClient("TesouroDiretoApi", client =>
+builder.Services.AddTransient<CorrelationIdHandler>();
+
+builder.Services.AddHttpClient<TesouroApiClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"]!);
     client.DefaultRequestHeaders.Add("X-Api-Key", builder.Configuration["ApiSettings:ApiKey"]);
-});
+}).AddHttpMessageHandler<CorrelationIdHandler>();
 
 var app = builder.Build();
+
+app.UseSerilogDefaults();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

@@ -10,6 +10,7 @@ public sealed partial class CorrelationIdMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context)
     {
         var correlationId = GetOrCreateCorrelationId(context);
+        context.Items["CorrelationId"] = correlationId;
 
         context.Response.OnStarting(() =>
         {

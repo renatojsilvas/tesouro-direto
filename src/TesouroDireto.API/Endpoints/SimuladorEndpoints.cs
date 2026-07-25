@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.API.Extensions;
 using TesouroDireto.Application.Simulador;
 
 namespace TesouroDireto.API.Endpoints;
@@ -21,9 +22,7 @@ public static class SimuladorEndpoints
 
             var result = await sender.Send(command, cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.BadRequest(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
 
         app.MapPost("/simulador/cenarios", async (
@@ -44,9 +43,7 @@ public static class SimuladorEndpoints
 
             var result = await sender.Send(command, cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.BadRequest(new { result.Error.Code, result.Error.Description });
+            return result.ToHttpResult(v => Results.Ok(v));
         });
     }
 

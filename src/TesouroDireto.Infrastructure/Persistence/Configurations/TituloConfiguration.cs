@@ -37,7 +37,7 @@ public sealed class TituloConfiguration : IEntityTypeConfiguration<Titulo>
             .IsRequired()
             .HasConversion(
                 v => v.Name,
-                v => Indexador.FromName(v).Value);
+                v => Indexador.FromPersistence(v));
 
         builder.Property(t => t.PagaJurosSemestrais)
             .HasColumnName("paga_juros_semestrais")
@@ -46,5 +46,8 @@ public sealed class TituloConfiguration : IEntityTypeConfiguration<Titulo>
         builder.HasIndex(t => new { t.TipoTitulo, t.DataVencimento })
             .IsUnique()
             .HasDatabaseName("ix_titulos_tipo_vencimento");
+
+        builder.HasIndex(t => t.DataVencimento)
+            .HasDatabaseName("ix_titulos_data_vencimento");
     }
 }

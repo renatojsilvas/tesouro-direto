@@ -73,7 +73,7 @@ public sealed class ApiKeyMiddlewareTests : IClassFixture<ApiKeyMiddlewareTests.
     [Fact]
     public async Task Request_ToExcludedPath_WithoutApiKey_ShouldReturn200()
     {
-        var response = await _client.GetAsync("/health", CancellationToken.None);
+        var response = await _client.GetAsync("/health/live", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }

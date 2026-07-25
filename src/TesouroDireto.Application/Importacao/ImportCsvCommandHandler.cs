@@ -14,7 +14,8 @@ public sealed class ImportCsvCommandHandler(
     ITituloWriteRepository tituloWriteRepository,
     IPrecoTaxaWriteRepository precoTaxaWriteRepository,
     IUnitOfWork unitOfWork,
-    ILogger<ImportCsvCommandHandler> logger)
+    ILogger<ImportCsvCommandHandler> logger,
+    IBusinessMetrics metrics)
     : IRequestHandler<ImportCsvCommand, Result<ImportResult>>
 {
     private const int BatchSize = 1000;
@@ -31,11 +32,16 @@ public sealed class ImportCsvCommandHandler(
         var precosIgnorados = 0;
         var linhasComErro = 0;
 
-        await foreach (var recordResult in csvImportService.GetRecordsAsync(cancellationToken))
+        await foreach (var csvRecordLine in csvImportService.GetRecordsAsync(cancellationToken))
         {
+            var lineNumber = csvRecordLine.LineNumber;
+            var recordResult = csvRecordLine.Record;
+
             if (recordResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, recordResult.Error.Description);
                 continue;
             }
 
@@ -47,6 +53,8 @@ public sealed class ImportCsvCommandHandler(
             if (tituloResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, tituloResult.Error.Description);
                 continue;
             }
 
@@ -62,6 +70,8 @@ public sealed class ImportCsvCommandHandler(
             if (existingDatesResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, existingDatesResult.Error.Description);
                 continue;
             }
 
@@ -77,6 +87,8 @@ public sealed class ImportCsvCommandHandler(
             if (precoResult.IsFailure)
             {
                 linhasComErro++;
+                logger.LogWarning(
+                    "Linha CSV inválida {LineNumber}: {Reason}", lineNumber, precoResult.Error.Description);
                 continue;
             }
 
@@ -100,6 +112,11 @@ public sealed class ImportCsvCommandHandler(
         logger.LogInformation(
             "CSV import completed: {TitulosCriados} titulos created, {PrecosInseridos} precos inserted, {PrecosIgnorados} skipped, {LinhasComErro} errors",
             result.TitulosCriados, result.PrecosInseridos, result.PrecosIgnorados, result.LinhasComErro);
+
+        metrics.ImportSucceeded();
+        metrics.RecordPricesProcessed("inserted", result.PrecosInseridos);
+        metrics.RecordPricesProcessed("skipped", result.PrecosIgnorados);
+        metrics.RecordPricesProcessed("error", result.LinhasComErro);
 
         return result;
     }

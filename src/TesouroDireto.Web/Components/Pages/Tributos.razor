@@ -1,6 +1,7 @@
 @page "/tributos"
 @rendermode InteractiveServer
-@inject IHttpClientFactory HttpClientFactory
+@using TesouroDireto.Web.Services
+@inject TesouroApiClient Api
 
 <PageTitle>Tributos</PageTitle>
 
@@ -222,8 +223,7 @@ else if (!loading)
         loading = true;
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
-            tributos = await client.GetFromJsonAsync<List<TributoItem>>("configuracoes/tributos");
+            tributos = await Api.GetAsync<List<TributoItem>>("configuracoes/tributos");
         }
         catch (Exception ex)
         {
@@ -278,31 +278,30 @@ else if (!loading)
 
         try
         {
-            var client = HttpClientFactory.CreateClient("TesouroDiretoApi");
             var faixas = formFaixas.Select(f => new { f.DiasMin, f.DiasMax, f.Dia, f.Aliquota }).ToList();
 
-            HttpResponseMessage response;
+            ApiResult<object> result;
 
             if (editandoId is null)
             {
                 var body = new
                 {
                     nome = formNome,
-                    baseCalculo = ParseEnum(formBaseCalculo),
-                    tipoCalculo = ParseEnum(formTipoCalculo),
+                    baseCalculo = formBaseCalculo,
+                    tipoCalculo = formTipoCalculo,
                     faixas,
                     ordem = formOrdem,
                     cumulativo = formCumulativo
                 };
-                response = await client.PostAsJsonAsync("configuracoes/tributos", body);
+                result = await Api.PostAsync<object>("configuracoes/tributos", body);
             }
             else
             {
                 var body = new { ativo = formAtivo, faixas };
-                response = await client.PutAsJsonAsync($"configuracoes/tributos/{editandoId}", body);
+                result = await Api.PutAsync<object>($"configuracoes/tributos/{editandoId}", body);
             }
 
-            if (response.IsSuccessStatusCode)
+            if (result.IsSuccess)
             {
                 sucesso = editandoId is null ? "Tributo criado." : "Tributo atualizado.";
                 mostrarForm = false;
@@ -310,17 +309,7 @@ else if (!loading)
             }
             else
             {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                try
-                {
-                    var error = System.Text.Json.JsonSerializer.Deserialize<ApiError>(
-                        responseBody, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    erro = error?.Description ?? $"Erro: HTTP {(int)response.StatusCode}";
-                }
-                catch
-                {
-                    erro = $"Erro: HTTP {(int)response.StatusCode}";
-                }
+                erro = result.Error?.Description ?? $"Erro: HTTP {result.StatusCode}";
             }
         }
         catch (Exception ex)
@@ -331,21 +320,6 @@ else if (!loading)
         {
             salvando = false;
         }
-    }
-
-    private static int ParseEnum(string value)
-    {
-        return value switch
-        {
-            "Rendimento" => 0,
-            "PuBruto" => 1,
-            "ValorInvestido" => 2,
-            "ValorResgate" => 3,
-            "FaixaPorDias" => 0,
-            "AliquotaFixa" => 1,
-            "TabelaDiaria" => 2,
-            _ => 0
-        };
     }
 
     private sealed class FaixaForm
@@ -361,5 +335,4 @@ else if (!loading)
         List<FaixaItem> Faixas, bool Ativo, int Ordem, bool Cumulativo);
 
     private sealed record FaixaItem(int? DiasMin, int? DiasMax, int? Dia, decimal Aliquota);
-    private sealed record ApiError(string Code, string Description);
 }

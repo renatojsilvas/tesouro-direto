@@ -102,4 +102,23 @@ public sealed class TituloRepositoryTests : IAsyncLifetime
 
         await act.Should().ThrowAsync<DbUpdateException>();
     }
+
+    [Fact]
+    public async Task Materialize_WithIndexadorOutsideWhitelist_ShouldNotThrow()
+    {
+        var id = Guid.NewGuid();
+
+        await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $@"INSERT INTO titulos (id, tipo_titulo, data_vencimento, indexador, paga_juros_semestrais)
+               VALUES ({id}, 'TesouroSelic', {new DateOnly(2030, 1, 1)}, 'CDI', false)",
+            CancellationToken.None);
+
+        var act = async () => await _dbContext.Titulos
+            .FirstOrDefaultAsync(t => t.Id == id, CancellationToken.None);
+
+        var found = await act.Should().NotThrowAsync();
+
+        found.Subject.Should().NotBeNull();
+        found.Subject!.Indexador.Name.Should().Be("CDI");
+    }
 }

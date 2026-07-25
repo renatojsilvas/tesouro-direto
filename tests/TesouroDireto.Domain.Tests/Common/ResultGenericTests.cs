@@ -91,4 +91,12 @@ public sealed class ResultGenericTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public void Success_ShouldBeAssignableToIResult()
+    {
+        var result = Result<int>.Success(1);
+
+        result.Should().BeAssignableTo<IResult>();
+    }
 }
