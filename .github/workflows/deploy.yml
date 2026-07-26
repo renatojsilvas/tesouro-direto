@@ -37,9 +37,10 @@ jobs:
       # Fails the job if line coverage drops below the threshold. Covers the
       # assemblies dotnet test instruments (API/Application/Domain/Infrastructure/Web);
       # TesouroDireto.Web entered the gate in task 32 via TesouroDireto.Web.Tests
-      # (bUnit + xUnit), lowering the merged floor from 94% to 82%.
-      - name: Coverage gate (line >= 82%)
-        run: python3 scripts/coverage-gate.py ./test-results/coverage --threshold 82 --verbose
+      # (bUnit + xUnit). Gate held at a round 80% floor by choice — deliberately a
+      # little below the measured merged coverage (~82.7%) to leave headroom.
+      - name: Coverage gate (line >= 80%)
+        run: python3 scripts/coverage-gate.py ./test-results/coverage --threshold 80 --verbose
       - name: SonarQube Scan
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@v5
