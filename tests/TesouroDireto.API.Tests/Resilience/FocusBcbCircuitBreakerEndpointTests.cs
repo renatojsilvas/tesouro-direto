@@ -120,9 +120,10 @@ public sealed class FocusBcbCircuitBreakerEndpointTests : IAsyncLifetime
         first.StatusCode.Should().Be(HttpStatusCode.OK);
         calls.Should().Be(1);
 
-        // FocusBcb:CacheTtl é 2s no host de teste — espera expirar o "fresh" (o "lkg"
-        // continua válido, muito longe dos 7 dias de MaxFallbackAge).
-        await Task.Delay(TimeSpan.FromSeconds(3), CancellationToken.None);
+        // FocusBcb:CacheTtl é 2s no host de teste — expira o "fresh" (o "lkg" continua
+        // válido, muito longe dos 7 dias de MaxFallbackAge). Avança o relógio fake da
+        // fixture em vez de Task.Delay real — determinístico.
+        _factory.AdvanceTime(TimeSpan.FromSeconds(3));
 
         // BCB passa a falhar. Sem retry (MaxAttempts=0) e com MinimumThroughput=2 +
         // FailureRatio=0.5, o circuito deve abrir dentro das primeiras chamadas com falha.

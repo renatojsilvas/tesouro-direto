@@ -114,6 +114,10 @@ groups:
 
       # 3 - 5xx alto: razão 5xx/total > 5%, com guarda de volume mínimo
       # (> 0.05 rps) para não disparar sobre 1 request isolado.
+      # Denominador limpo desde 2026-07-25 (tarefa 29): /health*, /health/live,
+      # /health/ready e /metrics saíram da instrumentação server-side (UseHttpMetrics),
+      # então esta razão passou a medir só tráfego de negócio. REAVALIAR o threshold
+      # (0.05) após ~1 semana de produção com o denominador já limpo.
       - uid: td-http-5xx-alto
         title: "Taxa de erro 5xx alta"
         condition: C
@@ -270,5 +274,73 @@ groups:
           severity: warning
         annotations:
           summary: "Taxa de falha de simulação acima de 20% (com volume mínimo de amostras) em 10m"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 7 - Disco raiz cheio. Uso de disco (/) acima de 85% por 10m. Exclui
+      # tmpfs/overlay para não capturar filesystems efêmeros/containers.
+      - uid: td-disco-cheio
+        title: "Disco raiz acima de 85%"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "(1 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"})) * 100"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [85]
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Uso do disco raiz (/) acima de 85% há mais de 10m"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 8 - Rate limit anômalo na borda. Volume de respostas 429 do nginx
+      # acima do esperado em 5m, sinal de abuso/scraping ou de um cliente
+      # com retry sem backoff.
+      - uid: td-rate-limit-anomalo
+        title: "Rate limit anômalo (429 na borda)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: loki
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: loki
+                uid: loki
+              expr: "sum(count_over_time({job=\"nginx\", status=\"429\"}[5m]))"
+              queryType: instant
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [20]
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mais de 20 respostas 429 (rate limit) na borda nginx em 5m"
         noDataState: OK
         execErrState: Alerting

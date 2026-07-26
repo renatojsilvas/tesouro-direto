@@ -9,12 +9,12 @@ Merge semantics: a source line counts as covered if it is hit in ANY report
 more than one test project are not double-counted.
 
 SCOPE (measured universe): the gate covers the assemblies instrumented by
-`dotnet test` over TesouroDireto.sln — API, Application, Domain, Infrastructure.
-`TesouroDireto.Web` (Blazor) is NOT covered: no unit-test project in the .sln
-exercises it, and its only tests (TesouroDireto.E2E.Tests) run in Docker in a
-separate CI job, outside this `dotnet test`. So this percentage describes the
-four instrumented assemblies, not the Web layer. Bringing Web under the gate is
-tracked as task 32 in docs/PLANO.md.
+`dotnet test` over TesouroDireto.sln — API, Application, Domain, Infrastructure
+and Web. `TesouroDireto.Web` (Blazor) is instrumented via the
+`TesouroDireto.Web.Tests` project (bUnit + xUnit), which exercises the
+TesouroApiClient and the Simulador/Tributos components; TesouroDireto.E2E.Tests
+still runs separately in Docker and is out of scope for this `dotnet test`.
+So this percentage describes all five instrumented assemblies.
 
 Usage: coverage-gate.py <coverage-root-dir> [--threshold N] [--verbose]
 Exit code: 0 if coverage >= threshold (or no threshold given), 1 otherwise.

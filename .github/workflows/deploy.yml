@@ -35,10 +35,12 @@ jobs:
       - run: dotnet build --no-restore
       - run: dotnet test --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./test-results/coverage -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
       # Fails the job if line coverage drops below the threshold. Covers the
-      # assemblies dotnet test instruments (API/Application/Domain/Infrastructure);
-      # TesouroDireto.Web is not covered (no unit tests in the .sln) — see task 32.
-      - name: Coverage gate (line >= 94%)
-        run: python3 scripts/coverage-gate.py ./test-results/coverage --threshold 94 --verbose
+      # assemblies dotnet test instruments (API/Application/Domain/Infrastructure/Web);
+      # TesouroDireto.Web entered the gate in task 32 via TesouroDireto.Web.Tests
+      # (bUnit + xUnit). Gate held at a round 80% floor by choice — deliberately a
+      # little below the measured merged coverage (~82.7%) to leave headroom.
+      - name: Coverage gate (line >= 80%)
+        run: python3 scripts/coverage-gate.py ./test-results/coverage --threshold 80 --verbose
       - name: SonarQube Scan
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@v5
@@ -136,6 +138,11 @@ jobs:
             nginx -t && systemctl reload nginx
             docker compose build --no-cache
             docker compose up -d
+            # prometheus.yml e o provisioning do grafana sao bind-mounts: o compose
+            # nao recria esses containers so porque o CONTEUDO do arquivo mudou, entao
+            # scrape jobs novos (ex.: node) e regras de alerta novas nao carregariam
+            # sem um restart. Forcar a recriacao so desses dois relê a config a cada deploy.
+            docker compose up -d --force-recreate --no-deps prometheus grafana
             echo "Waiting for app to be healthy..."
             timeout 60 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 3; done'
             echo "Deploy complete."
