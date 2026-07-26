@@ -106,6 +106,36 @@ public sealed class SwaggerEndpointTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
+        [Fact]
+        public async Task GetSwaggerJson_ShouldMarkIdBasedRoutesAndIdFieldAsDeprecated()
+        {
+            var response = await _client.GetAsync("/swagger/v1/swagger.json", CancellationToken.None);
+            var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var paths = root.GetProperty("paths");
+
+            foreach (var idBasedPath in new[] { "/titulos/{id}/precos", "/titulos/{id}/preco-atual" })
+            {
+                var operation = paths.GetProperty(idBasedPath).GetProperty("get");
+                operation.GetProperty("deprecated").GetBoolean().Should().BeTrue(
+                    $"a operação {idBasedPath} deveria estar marcada como deprecated no swagger.json.\n{body}");
+            }
+
+            foreach (var codigoBasedPath in new[] { "/titulos/{codigo}/precos", "/titulos/{codigo}/preco-atual" })
+            {
+                var operation = paths.GetProperty(codigoBasedPath).GetProperty("get");
+                operation.TryGetProperty("deprecated", out var deprecatedFlag).Should().BeFalse(
+                    $"a operação {codigoBasedPath} não deveria estar marcada como deprecated.\n{deprecatedFlag}");
+            }
+
+            var tituloDtoSchema = root.GetProperty("components").GetProperty("schemas").GetProperty("TituloDto");
+            var idProperty = tituloDtoSchema.GetProperty("properties").GetProperty("id");
+            idProperty.GetProperty("deprecated").GetBoolean().Should().BeTrue(
+                $"a propriedade id do TituloDto deveria estar marcada como deprecated no schema.\n{tituloDtoSchema}");
+        }
+
         public sealed class SwaggerDevFactory : WebApplicationFactory<Program>
         {
             protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -142,11 +172,11 @@ public sealed class SwaggerEndpointTests
         }
 
         [Fact]
-        public async Task GetSwaggerJson_WithoutApiKey_ShouldReturn401()
+        public async Task GetSwaggerJson_WithoutApiKey_ShouldReturn200()
         {
             var response = await _client.GetAsync("/swagger/v1/swagger.json", CancellationToken.None);
 
-            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Fact]
@@ -161,14 +191,11 @@ public sealed class SwaggerEndpointTests
         }
 
         [Fact]
-        public async Task GetSwaggerUi_ShouldReturn404()
+        public async Task GetSwaggerUi_WithoutApiKey_ShouldReturn200()
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/swagger/index.html");
-            request.Headers.Add("X-Api-Key", ValidApiKey);
+            var response = await _client.GetAsync("/swagger/index.html", CancellationToken.None);
 
-            var response = await _client.SendAsync(request, CancellationToken.None);
-
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Fact]
@@ -255,6 +282,7 @@ public sealed class SwaggerEndpointTests
                         ["ApiKey:Key"] = ValidApiKey,
                         ["ApiKey:ExcludedPaths:0"] = "/health",
                         ["ApiKey:ExcludedPaths:1"] = "/metrics",
+                        ["ApiKey:ExcludedPaths:2"] = "/swagger",
                         ["ConnectionStrings:DefaultConnection"] = FakeConnectionString,
                     });
                 });

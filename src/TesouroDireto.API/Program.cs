@@ -41,6 +41,8 @@ builder.Services.AddSwaggerGen(c =>
     });
 
     c.SchemaFilter<TesouroDireto.API.OpenApi.EnumSchemaFilter>();
+    c.SchemaFilter<TesouroDireto.API.OpenApi.DeprecatedFieldsSchemaFilter>();
+    c.OperationFilter<TesouroDireto.API.OpenApi.DeprecatedOperationFilter>();
 });
 
 builder.Services.AddProblemDetails(options =>
@@ -67,26 +69,16 @@ app.UseExceptionHandler();
 
 app.UseSerilogDefaults();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
-var httpMetricsExcludedPaths = (app.Configuration.GetSection("ApiKey:ExcludedPaths").Get<string[]>() ?? [])
-    .Append("/swagger")
-    .ToArray();
+var httpMetricsExcludedPaths = app.Configuration.GetSection("ApiKey:ExcludedPaths").Get<string[]>() ?? [];
 app.UseWhen(
     ctx => !httpMetricsExcludedPaths.Any(p =>
         ctx.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase)),
     branch => branch.UseHttpMetrics());
 
 app.UseMiddleware<ApiKeyMiddleware>();
-
-if (!app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-}
 
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/ready");

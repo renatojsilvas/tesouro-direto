@@ -6,4 +6,5 @@ public sealed record TituloDto(
     string DataVencimento,
     string Indexador,
     bool PagaJurosSemestrais,
-    bool Vencido);
+    bool Vencido,
+    string Codigo);

@@ -56,7 +56,8 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
             r.DataVencimento.ToString("yyyy-MM-dd"),
             r.Indexador,
             r.PagaJurosSemestrais,
-            r.Vencido)).ToList();
+            r.Vencido,
+            TituloCodigo.From(r.TipoTitulo, r.DataVencimento))).ToList();
 
         return Result<IReadOnlyCollection<TituloDto>>.Success(titulos);
     }
@@ -87,7 +88,46 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
             row.DataVencimento.ToString("yyyy-MM-dd"),
             row.Indexador,
             row.PagaJurosSemestrais,
-            row.Vencido));
+            row.Vencido,
+            TituloCodigo.From(row.TipoTitulo, row.DataVencimento)));
+    }
+
+    public async Task<Result<TituloDto>> GetByCodigoAsync(string codigo, CancellationToken cancellationToken)
+    {
+        if (!TituloCodigo.TryParseDate(codigo, out var data))
+        {
+            return TituloErrors.InvalidCodigo;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        var rows = await connection.QueryAsync<TituloDtoRow>(
+            new CommandDefinition(
+                """
+                SELECT id, tipo_titulo, data_vencimento, indexador, paga_juros_semestrais,
+                       CASE WHEN data_vencimento < @Today THEN true ELSE false END AS vencido
+                FROM titulos
+                WHERE data_vencimento = @Data
+                """,
+                new { Data = data, Today = DateOnly.FromDateTime(DateTime.UtcNow) },
+                cancellationToken: cancellationToken));
+
+        foreach (var row in rows)
+        {
+            if (string.Equals(TituloCodigo.From(row.TipoTitulo, row.DataVencimento), codigo, StringComparison.Ordinal))
+            {
+                return Result<TituloDto>.Success(new TituloDto(
+                    row.Id,
+                    row.TipoTitulo,
+                    row.DataVencimento.ToString("yyyy-MM-dd"),
+                    row.Indexador,
+                    row.PagaJurosSemestrais,
+                    row.Vencido,
+                    codigo));
+            }
+        }
+
+        return TituloErrors.NotFound;
     }
 
     private sealed record TituloDtoRow(
