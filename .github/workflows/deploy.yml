@@ -131,9 +131,17 @@ jobs:
             cd /opt/tesouro-direto
             if [ ! -d .git ]; then
               git clone https://github.com/${{ github.repository }} .
-            else
-              git pull origin main
             fi
+            # Deploy idempotente: fetch + reset --hard em vez de `git pull`. O pull
+            # RECUSA quando ha edicao local num arquivo versionado (ex.: um hotfix
+            # aplicado direto na VPS, como o chatid do Grafana na O9), travando o
+            # deploy silenciosamente e deixando o working tree desatualizado por
+            # commits a fio. reset --hard forca o disco a espelhar origin/main,
+            # descartando qualquer alteracao local em arquivo versionado.
+            # NAO usar `git clean` aqui: apagaria o .env (untracked) escrito no passo
+            # anterior e derrubaria o boot.
+            git fetch origin main
+            git reset --hard origin/main
             cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
             nginx -t && systemctl reload nginx
             docker compose build --no-cache
