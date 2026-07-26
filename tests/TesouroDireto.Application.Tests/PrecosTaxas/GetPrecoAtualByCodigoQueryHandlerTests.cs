@@ -6,56 +6,59 @@ using TesouroDireto.Domain.Common;
 
 namespace TesouroDireto.Application.Tests.PrecosTaxas;
 
-public sealed class GetPrecoAtualByNomeQueryHandlerTests
+public sealed class GetPrecoAtualByCodigoQueryHandlerTests
 {
     private readonly ITituloReadRepository _tituloReadRepo = Substitute.For<ITituloReadRepository>();
     private readonly IPrecoTaxaReadRepository _precoReadRepo = Substitute.For<IPrecoTaxaReadRepository>();
-    private readonly GetPrecoAtualByNomeQueryHandler _handler;
+    private readonly GetPrecoAtualByCodigoQueryHandler _handler;
 
-    public GetPrecoAtualByNomeQueryHandlerTests()
+    public GetPrecoAtualByCodigoQueryHandlerTests()
     {
-        _handler = new GetPrecoAtualByNomeQueryHandler(_tituloReadRepo, _precoReadRepo);
+        _handler = new GetPrecoAtualByCodigoQueryHandler(_tituloReadRepo, _precoReadRepo);
     }
 
     [Fact]
-    public async Task Handle_WithValidNome_ShouldReturnPrecoAtual()
+    public async Task Handle_WithValidCodigo_ShouldReturnPrecoAtual()
     {
         var tituloId = Guid.NewGuid();
         var titulo = new TituloDto(tituloId, "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
         var preco = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 6.50m, 6.55m, 3200.00m, 3198.00m, 3197.50m);
 
-        _tituloReadRepo.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+        _tituloReadRepo.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
             .Returns(Result<TituloDto>.Success(titulo));
         _precoReadRepo.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
             .Returns(Result<PrecoTaxaDto>.Success(preco));
 
         var result = await _handler.Handle(
-            new GetPrecoAtualByNomeQuery("Tesouro IPCA+ 2035"), CancellationToken.None);
+            new GetPrecoAtualByCodigoQuery("tesouro-ipca-mais-2035-05-15"), CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(preco);
     }
 
     [Fact]
-    public async Task Handle_WithUnknownNome_ShouldReturnNotFound()
+    public async Task Handle_WithUnknownCodigo_ShouldReturnNotFound()
     {
-        _tituloReadRepo.GetByNomeAsync("Tesouro Inexistente 2099", Arg.Any<CancellationToken>())
+        _tituloReadRepo.GetByCodigoAsync("tesouro-inexistente-2099-01-01", Arg.Any<CancellationToken>())
             .Returns(Result<TituloDto>.Failure(new Error("Titulo.NotFound", "not found")));
 
         var result = await _handler.Handle(
-            new GetPrecoAtualByNomeQuery("Tesouro Inexistente 2099"), CancellationToken.None);
+            new GetPrecoAtualByCodigoQuery("tesouro-inexistente-2099-01-01"), CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Titulo.NotFound");
     }
 
     [Fact]
-    public async Task Handle_WithEmptyNome_ShouldReturnInvalidNome()
+    public async Task Handle_WithMalformedCodigo_ShouldReturnInvalidCodigo()
     {
+        _tituloReadRepo.GetByCodigoAsync("nao-e-um-codigo-valido", Arg.Any<CancellationToken>())
+            .Returns(Result<TituloDto>.Failure(new Error("Titulo.InvalidCodigo", "malformed")));
+
         var result = await _handler.Handle(
-            new GetPrecoAtualByNomeQuery(""), CancellationToken.None);
+            new GetPrecoAtualByCodigoQuery("nao-e-um-codigo-valido"), CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("Titulo.InvalidNome");
+        result.Error.Code.Should().Be("Titulo.InvalidCodigo");
     }
 }

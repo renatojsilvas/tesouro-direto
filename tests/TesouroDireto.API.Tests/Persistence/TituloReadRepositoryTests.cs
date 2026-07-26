@@ -240,4 +240,63 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
         var plan = string.Join(Environment.NewLine, planLines);
         plan.Should().Contain("ix_titulos_nome_upper");
     }
+
+    [Fact]
+    public async Task GetByCodigoAsync_WithMatchingCodigo_ShouldReturnMatchingTitulo()
+    {
+        var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
+        await _writeRepository.AddAsync(titulo, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetByCodigoAsync("tesouro-selic-2029-03-01", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
+        result.Value.DataVencimento.Should().Be("2029-03-01");
+        result.Value.Codigo.Should().Be("tesouro-selic-2029-03-01");
+    }
+
+    [Fact]
+    public async Task GetByCodigoAsync_WithMalformedCodigo_ShouldReturnInvalidCodigo()
+    {
+        var result = await _readRepository.GetByCodigoAsync("tesouro-selic-2029-13-40", CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(TituloErrors.InvalidCodigo);
+    }
+
+    [Fact]
+    public async Task GetByCodigoAsync_WithUnknownCodigo_ShouldReturnNotFound()
+    {
+        var result = await _readRepository.GetByCodigoAsync("tesouro-selic-2099-01-01", CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(TituloErrors.NotFound);
+    }
+
+    [Fact]
+    public async Task GetByCodigoAsync_QueryPlan_ShouldBeAbleToUseDataVencimentoIndex()
+    {
+        var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
+        await _writeRepository.AddAsync(titulo, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await using var connection = await _dataSource.OpenConnectionAsync(CancellationToken.None);
+        await connection.ExecuteAsync(new CommandDefinition("SET enable_seqscan = off;", cancellationToken: CancellationToken.None));
+
+        var planLines = (await connection.QueryAsync<string>(
+            new CommandDefinition(
+                """
+                EXPLAIN
+                SELECT id, tipo_titulo, data_vencimento, indexador, paga_juros_semestrais,
+                       CASE WHEN data_vencimento < @Today THEN true ELSE false END AS vencido
+                FROM titulos
+                WHERE data_vencimento = @Data
+                """,
+                new { Data = new DateOnly(2029, 3, 1), Today = DateOnly.FromDateTime(DateTime.UtcNow) },
+                cancellationToken: CancellationToken.None))).ToList();
+
+        var plan = string.Join(Environment.NewLine, planLines);
+        plan.Should().Contain("ix_titulos_data_vencimento");
+    }
 }

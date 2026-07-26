@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Domain.PrecosTaxas;
 using TesouroDireto.Domain.Titulos;
@@ -251,5 +252,138 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var doc = JsonDocument.Parse(body);
         doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidNome");
+    }
+
+    [Fact]
+    public async Task GetTitulos_ShouldReturnCodigoDerivedFromTipoAndDataVencimento()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var titulos = await response.Content.ReadFromJsonAsync<List<TituloDto>>(JsonOptions, CancellationToken.None);
+
+        titulos.Should().Contain(t => t.Codigo == "tesouro-selic-2029-03-01");
+        titulos.Should().Contain(t => t.Codigo == "tesouro-ipca-mais-2035-05-15");
+        titulos.Should().Contain(t => t.Codigo == "tesouro-prefixado-2020-01-01");
+        titulos.Should().Contain(t => t.Codigo == "tesouro-ipca-mais-com-juros-semestrais-2040-08-15");
+    }
+
+    [Fact]
+    public async Task GetPrecosByCodigo_WithKnownCodigo_ShouldReturnSameShapeAsById()
+    {
+        var ids = await SeedTitulosAsync();
+        await SeedPrecosAsync(ids["Selic"]);
+
+        var responseById = await _client.GetAsync($"/titulos/{ids["Selic"]}/precos", CancellationToken.None);
+        var responseByCodigo = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/precos", CancellationToken.None);
+
+        responseByCodigo.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bodyById = await responseById.Content.ReadAsStringAsync(CancellationToken.None);
+        var bodyByCodigo = await responseByCodigo.Content.ReadAsStringAsync(CancellationToken.None);
+        using var docById = JsonDocument.Parse(bodyById);
+        using var docByCodigo = JsonDocument.Parse(bodyByCodigo);
+        docByCodigo.RootElement.GetArrayLength().Should().Be(docById.RootElement.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task GetPrecosByCodigo_WithMalformedCodigo_ShouldReturn400()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-13-40/precos", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidCodigo");
+    }
+
+    [Fact]
+    public async Task GetPrecosByCodigo_WithUnknownWellFormedCodigo_ShouldReturn404()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos/tesouro-selic-2099-01-01/precos", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task GetPrecoAtualByCodigo_WithKnownCodigo_ShouldReturnSameShapeAsById()
+    {
+        var ids = await SeedTitulosAsync();
+        await SeedPrecosAsync(ids["Selic"]);
+
+        var responseById = await _client.GetAsync($"/titulos/{ids["Selic"]}/preco-atual", CancellationToken.None);
+        var responseByCodigo = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/preco-atual", CancellationToken.None);
+
+        responseByCodigo.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bodyById = await responseById.Content.ReadFromJsonAsync<PrecoTaxaDto>(JsonOptions, CancellationToken.None);
+        var bodyByCodigo = await responseByCodigo.Content.ReadFromJsonAsync<PrecoTaxaDto>(JsonOptions, CancellationToken.None);
+        bodyByCodigo.Should().Be(bodyById);
+    }
+
+    [Fact]
+    public async Task GetPrecoAtualByCodigo_WithMalformedCodigo_ShouldReturn400()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-13-40/preco-atual", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidCodigo");
+    }
+
+    [Fact]
+    public async Task GetPrecoAtualByCodigo_WithUnknownWellFormedCodigo_ShouldReturn404()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos/tesouro-selic-2099-01-01/preco-atual", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task GetPrecosByCodigo_WithIpcaMaisCodigo_ShouldResolveWithoutPlusEncoding()
+    {
+        var ids = await SeedTitulosAsync();
+        await SeedPrecosAsync(ids["IPCA"]);
+
+        var response = await _client.GetAsync("/titulos/tesouro-ipca-mais-2035-05-15/precos", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetArrayLength().Should().Be(3);
+    }
+
+    [Fact]
+    public async Task GetPrecos_ById_ShouldStillRespond()
+    {
+        var ids = await SeedTitulosAsync();
+        await SeedPrecosAsync(ids["Selic"]);
+
+        var response = await _client.GetAsync($"/titulos/{ids["Selic"]}/precos", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetPrecos_WithTruncatedGuidLikeSegment_ShouldReturn404()
+    {
+        await SeedTitulosAsync();
+
+        var response = await _client.GetAsync("/titulos/12345678-1234-1234/precos", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

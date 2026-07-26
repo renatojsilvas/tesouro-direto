@@ -41,8 +41,10 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 | POST | `/importacao` | `ImportCsvCommand` (sem body) | 200/400 |
 | POST | `/importacao/feriados` | `ImportFeriadosCommand` (sem body) | 200/400 |
 | GET | `/titulos?indexador&vencido` | `GetTitulosQuery` | 200/400 |
-| GET | `/titulos/{id}/precos?dataInicio&dataFim` | `GetPrecosQuery` | 200/404 |
-| GET | `/titulos/{id}/preco-atual` | `GetPrecoAtualQuery` | 200/404 |
+| GET | `/titulos/{codigo}/precos?dataInicio&dataFim` | `GetPrecosByCodigoQuery` | 200/400/404 | ← tarefa 36 (identificador público) |
+| GET | `/titulos/{codigo}/preco-atual` | `GetPrecoAtualByCodigoQuery` | 200/400/404 | ← tarefa 36 |
+| GET | `/titulos/{id}/precos?dataInicio&dataFim` | `GetPrecosQuery` | 200/404 | **DEPRECATED** (tarefa 36; removida na 38) |
+| GET | `/titulos/{id}/preco-atual` | `GetPrecoAtualQuery` | 200/404 | **DEPRECATED** (tarefa 36; removida na 38) |
 | GET | `/titulos/preco-atual?nome` | `GetPrecoAtualByNomeQuery` | 200/404 |
 | GET | `/titulos/precos?nome&dataInicio&dataFim` | `GetPrecosByNomeQuery` | 200/404 |
 | GET | `/configuracoes/tributos` | `GetTributosQuery` | 200/400 |
@@ -85,7 +87,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **Simulador / DiasUteis** — objetos de cálculo transitórios, **não persistidos** (sem DbSet).
 
 **Persistência** (`src/TesouroDireto.Infrastructure/Persistence`): `AppDbContext` implementa `IUnitOfWork`; 4 DbSets (Titulos, PrecosTaxas, Tributos, Feriados). Tabelas snake_case:
-- `titulos` (PK uuid `ValueGeneratedNever`; índice único `ix_titulos_tipo_vencimento` em tipo+vencimento; desde a tarefa 12: `ix_titulos_data_vencimento` para filtro "vencido" e `ix_titulos_nome_upper` — índice funcional que torna `GetByNomeAsync` sargável)
+- `titulos` (PK uuid `ValueGeneratedNever`; índice único `ix_titulos_tipo_vencimento` em tipo+vencimento; desde a tarefa 12: `ix_titulos_data_vencimento` para filtro "vencido" e `ix_titulos_nome_upper` — índice funcional que torna `GetByNomeAsync` sargável). Desde a **tarefa 36**: identificador público `codigo` (slug tipo+data completa, ex. `tesouro-selic-2029-03-01`) **derivado na leitura** por `TituloCodigo.From` — **não persistido**, sem coluna nem migration; o lookup reverso (`GetByCodigoAsync`) filtra por `data_vencimento` (reusa `ix_titulos_data_vencimento`) e casa o slug em memória. O uuid `id` é chave sintética interna, agora marcada DEPRECATED nos contratos (extinção na tarefa 38).
 - `precos_taxas` (FK `titulo_id` CASCADE; índice único `ix_precos_taxas_titulo_data`; valores numeric nuláveis)
 - `tributos` + `tributo_faixas` (`OwnsMany`; índice único `ix_tributos_nome`)
 - `feriados` (índice único `ix_feriados_data`)
