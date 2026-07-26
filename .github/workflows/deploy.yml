@@ -138,6 +138,11 @@ jobs:
             nginx -t && systemctl reload nginx
             docker compose build --no-cache
             docker compose up -d
+            # prometheus.yml e o provisioning do grafana sao bind-mounts: o compose
+            # nao recria esses containers so porque o CONTEUDO do arquivo mudou, entao
+            # scrape jobs novos (ex.: node) e regras de alerta novas nao carregariam
+            # sem um restart. Forcar a recriacao so desses dois relê a config a cada deploy.
+            docker compose up -d --force-recreate --no-deps prometheus grafana
             echo "Waiting for app to be healthy..."
             timeout 60 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 3; done'
             echo "Deploy complete."
