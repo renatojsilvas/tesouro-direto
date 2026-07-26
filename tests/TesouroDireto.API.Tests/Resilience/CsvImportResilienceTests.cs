@@ -9,17 +9,6 @@ using TesouroDireto.Infrastructure.CsvImport;
 
 namespace TesouroDireto.API.Tests.Resilience;
 
-/// <summary>
-/// Tarefa 13 (item c) — prova que o pipeline de resiliência de fato re-tenta o download do
-/// CSV do Tesouro Transparente quando o servidor falha algumas vezes antes de suceder, e
-/// que isso NÃO gera duplicação de linhas processadas (o corpo só é lido depois de a
-/// tentativa vencedora ter respondido headers + status 200 — as tentativas com falha nunca
-/// chegam a produzir CsvRecordLine).
-///
-/// Monta o client via um ServiceCollection mínimo chamando exatamente o mesmo método de
-/// extensão usado em produção (<see cref="DependencyInjection.AddBatchImportResilienceHandler"/>),
-/// para não duplicar a configuração do pipeline e evitar drift entre teste e produção.
-/// </summary>
 public sealed class CsvImportResilienceTests
 {
     private const string ValidCsv = """
@@ -47,26 +36,12 @@ public sealed class CsvImportResilienceTests
             lines.Add(line);
         }
 
-        // 2 linhas de dados no CSV de teste, cada uma processada exatamente uma vez —
-        // se o retry tivesse reprocessado o corpo (ou disparado 2 downloads bem-sucedidos),
-        // veríamos 4 linhas em vez de 2.
         lines.Should().HaveCount(2);
         lines.Should().OnlyContain(l => l.Record.IsSuccess);
 
-        // 1ª tentativa + 2 retries = 3 chamadas no handler HTTP.
         handler.Calls.Should().Be(3);
     }
 
-    /// <summary>
-    /// Correção pós-revisão (furo real, frente 4): o AttemptTimeout (tarefa 13) lança
-    /// <c>Polly.Timeout.TimeoutRejectedException</c> quando um servidor lento estoura o
-    /// tempo de tentativa mesmo depois dos retries — antes só <c>HttpRequestException</c>
-    /// era capturada em <see cref="CsvImportService.SendRequestAsync"/>, então essa exceção
-    /// escaparia do <c>await foreach</c> (500 genérico em <c>POST /importacao</c>, job
-    /// Quartz sem log/métrica). Prova que agora degrada graciosamente: 1 registro de erro
-    /// estruturado (<c>CsvImport.InvalidLine</c>), sem lançar nada para fora do
-    /// enumerable.
-    /// </summary>
     [Fact]
     public async Task GetRecordsAsync_WhenServerIsSlowerThanAttemptTimeout_ShouldDegradeGracefullyInsteadOfThrowing()
     {
@@ -80,9 +55,6 @@ public sealed class CsvImportResilienceTests
 
         var lines = new List<CsvRecordLine>();
 
-        // Se TimeoutRejectedException não fosse capturada, esta linha lançaria e o teste
-        // falharia com uma exceção não tratada (em vez de uma assertion comum) — é
-        // exatamente o comportamento que o furo relatado pelo revisor descrevia.
         await foreach (var line in service.GetRecordsAsync(CancellationToken.None))
         {
             lines.Add(line);
@@ -92,7 +64,6 @@ public sealed class CsvImportResilienceTests
         lines[0].Record.IsFailure.Should().BeTrue();
         lines[0].Record.Error.Code.Should().Be("CsvImport.InvalidLine");
 
-        // 1ª tentativa + 1 retry = 2 chamadas, ambas estouraram o AttemptTimeout.
         handler.Calls.Should().Be(2);
     }
 

@@ -4,10 +4,8 @@
 
 namespace TesouroDireto.Infrastructure.Persistence.Migrations
 {
-    /// <inheritdoc />
     public partial class AddTituloIndexes : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateIndex(
@@ -21,7 +19,6 @@ namespace TesouroDireto.Infrastructure.Persistence.Migrations
                 """);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql("DROP INDEX IF EXISTS ix_titulos_nome_upper;");

@@ -41,7 +41,6 @@ public sealed class DatabaseInitializer(
 
         var sender = sp.GetRequiredService<ISender>();
 
-        // Tributos: FATAL em falha (valores canônicos/DB quebrados = deploy quebrado).
         var seed = await sender.Send(new SeedTributosCommand(), ct);
         if (seed.IsFailure)
         {
@@ -49,7 +48,6 @@ public sealed class DatabaseInitializer(
                 $"Seed de tributos falhou no boot: {seed.Error.Code} {seed.Error.Description}");
         }
 
-        // Feriados: só no primeiro boot (tabela vazia). NÃO-FATAL (tarefa 10/Quartz refaz).
         var feriadoRead = sp.GetRequiredService<IFeriadoReadRepository>();
         var datas = await feriadoRead.GetAllDatasAsync(ct);
         if (datas.IsFailure)

@@ -7,10 +7,6 @@ public static class ApiKeyGuard
 {
     public const string DefaultKey = "CHANGE-ME-IN-PRODUCTION";
 
-    /// <summary>
-    /// Valores de placeholder que nunca podem chegar a produção, incluindo
-    /// fallbacks de desenvolvimento usados em arquivos como docker-compose.yml.
-    /// </summary>
     private static readonly string[] BlockedKeys =
     {
         DefaultKey,

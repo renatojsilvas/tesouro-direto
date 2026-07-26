@@ -8,20 +8,11 @@ using TesouroDireto.Infrastructure.Persistence;
 
 namespace TesouroDireto.API.Tests.Integration;
 
-/// <summary>
-/// Prova, ponta a ponta (host real via Program.cs), que a instrumentação O7
-/// (UseHttpClientMetrics) está plugada no typed client FocusBcbService: uma simulação
-/// que de fato chama o BCB (via factory.BcbResponder) precisa deixar uma série
-/// httpclient_request_duration_seconds rotulada por client="FocusBcbService" em /metrics.
-/// Os clients de import (CSV/Feriados) não fazem I/O em Testing (URL " " força o branch
-/// "não configurada" em ApiTestFactory), então só o BCB serve para provar a métrica aqui.
-/// </summary>
 [Collection("api")]
 public sealed class HttpClientMetricsEndpointTests(ApiTestFactory factory) : IAsyncLifetime
 {
     private readonly HttpClient _client = factory.CreateAuthenticatedClient();
 
-    // /metrics é isento de ApiKey (ApiKey:ExcludedPaths) — cliente sem header.
     private readonly HttpClient _metricsClient = factory.CreateClient();
 
     public Task InitializeAsync() => factory.ResetAsync();
@@ -81,8 +72,6 @@ public sealed class HttpClientMetricsEndpointTests(ApiTestFactory factory) : IAs
 
         var body = await metricsResponse.Content.ReadAsStringAsync(CancellationToken.None);
 
-        // Ordem dos labels na exposição Prometheus não é garantida — exige client="FocusBcbService"
-        // dentro das chaves da MESMA série, por linha.
         body.Should().MatchRegex("httpclient_request_duration_seconds[^\\n{]*\\{[^\\n}]*client=\"FocusBcbService\"");
     }
 }

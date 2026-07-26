@@ -8,11 +8,6 @@ using TesouroDireto.Infrastructure.Feriados;
 
 namespace TesouroDireto.API.Tests.Resilience;
 
-/// <summary>
-/// Tarefa 13 (item c) — equivalente ao <see cref="CsvImportResilienceTests"/>, mas para o
-/// download do XLS de feriados da ANBIMA. Reaproveita o XLS de teste embarcado usado por
-/// <c>FeriadoImportServiceTests</c> (5 feriados esperados).
-/// </summary>
 public sealed class FeriadoImportResilienceTests
 {
     private const string TestXlsResource = "TesouroDireto.API.Tests.Feriados.feriados_test.xls";
@@ -38,23 +33,11 @@ public sealed class FeriadoImportResilienceTests
             records.Add(record);
         }
 
-        // Se o retry tivesse reprocessado o corpo, veríamos 10 registros em vez de 5.
         records.Should().HaveCount(5);
 
-        // 1ª tentativa + 2 retries = 3 chamadas no handler HTTP.
         handler.Calls.Should().Be(3);
     }
 
-    /// <summary>
-    /// Correção pós-revisão (furo real, frente 4): o AttemptTimeout (tarefa 13) lança
-    /// <c>Polly.Timeout.TimeoutRejectedException</c> quando um servidor lento estoura o
-    /// tempo de tentativa mesmo depois dos retries — antes só <c>HttpRequestException</c>
-    /// era capturada em <c>FeriadoImportService.GetFeriadosAsync</c>, então essa exceção
-    /// escaparia do <c>await foreach</c> (500 genérico em <c>POST /importacao</c>, job
-    /// Quartz sem log/métrica). Prova que agora degrada graciosamente: enumeração
-    /// termina vazia (mesmo comportamento de qualquer outra falha de download hoje —
-    /// URL ausente, HTTP não-2xx etc.), sem lançar nada para fora do enumerable.
-    /// </summary>
     [Fact]
     public async Task GetFeriadosAsync_WhenServerIsSlowerThanAttemptTimeout_ShouldDegradeGracefullyInsteadOfThrowing()
     {
@@ -68,9 +51,6 @@ public sealed class FeriadoImportResilienceTests
 
         var records = new List<FeriadoRecord>();
 
-        // Se TimeoutRejectedException não fosse capturada, esta linha lançaria e o teste
-        // falharia com uma exceção não tratada (em vez de uma assertion comum) — é
-        // exatamente o comportamento que o furo relatado pelo revisor descrevia.
         await foreach (var record in service.GetFeriadosAsync(CancellationToken.None))
         {
             records.Add(record);
@@ -78,7 +58,6 @@ public sealed class FeriadoImportResilienceTests
 
         records.Should().BeEmpty();
 
-        // 1ª tentativa + 1 retry = 2 chamadas, ambas estouraram o AttemptTimeout.
         handler.Calls.Should().Be(2);
     }
 

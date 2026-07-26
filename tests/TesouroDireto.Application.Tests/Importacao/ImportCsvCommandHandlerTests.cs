@@ -66,8 +66,6 @@ public sealed class ImportCsvCommandHandlerTests
         result.Value.TitulosCriados.Should().Be(1);
         result.Value.PrecosInseridos.Should().Be(1);
 
-        // O8: importação sempre retorna sucesso (erros viram contadores) — deve
-        // marcar ImportSucceeded() e reportar as contagens de preços processados.
         _metrics.Received(1).ImportSucceeded();
         _metrics.Received(1).RecordPricesProcessed("inserted", 1);
         _metrics.Received(1).RecordPricesProcessed("skipped", 0);
@@ -171,9 +169,6 @@ public sealed class ImportCsvCommandHandlerTests
             logger,
             _metrics);
 
-        // LineNumbers propositalmente não-sequenciais (3 e 6), simulando linhas em
-        // branco puladas pelo parser real entre os registros inválidos — prova que o
-        // handler reporta a linha FÍSICA do parser, não um índice local de registros.
         var records = new[]
         {
             new CsvRecordLine(3, Result<CsvRecord>.Failure(new Error("CsvImport.InvalidLine", "Invalid line 1"))),

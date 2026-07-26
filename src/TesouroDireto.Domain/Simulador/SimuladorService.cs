@@ -46,7 +46,6 @@ public sealed class SimuladorService
             return taxaContratada;
         }
 
-        // Fisher equation: (1 + nominal) = (1 + real) * (1 + inflacao)
         var projecao = projecaoAnual!.Value / 100m;
         var taxa = taxaContratada / 100m;
         var efetiva = (1m + projecao) * (1m + taxa) - 1m;
@@ -66,7 +65,6 @@ public sealed class SimuladorService
         var datasCupom = GerarDatasCupom(input.DataCompra, input.DataVencimento);
         var taxaCupomSemestral = ObterTaxaCupomSemestral(input.TipoTitulo);
 
-        // Calculate PU at purchase: sum of discounted future cash flows
         var puCompra = CalcularPuComCupons(
             taxaEfetiva, taxaCupomSemestral, datasCupom,
             input.DataCompra, input.Feriados);
@@ -84,7 +82,6 @@ public sealed class SimuladorService
             valorBrutoTotal += valorCupom;
         }
 
-        // Principal at maturity
         var principal = quantidade * 1000m;
         valorBrutoTotal += principal;
 
@@ -109,7 +106,6 @@ public sealed class SimuladorService
             pu += cupomDescontado;
         }
 
-        // Principal discounted
         var lastCupom = datasCupom.Last();
         var duPrincipal = DuCalculator.Calcular(dataCompra, lastCupom, feriados);
         var principalDescontado = 1000.0 / Math.Pow(1.0 + taxa, (double)duPrincipal / 252.0);
@@ -123,7 +119,6 @@ public sealed class SimuladorService
         var datas = new List<DateOnly>();
         var current = dataVencimento;
 
-        // Walk backwards from maturity in 6-month steps
         while (current > dataCompra)
         {
             datas.Add(current);
@@ -138,11 +133,9 @@ public sealed class SimuladorService
     {
         if (tipoTitulo == TipoTitulo.TesouroPrefixadoComJuros)
         {
-            // 10% annual → semester = (1.10)^0.5 - 1
             return (decimal)(Math.Pow(1.10, 0.5) - 1.0);
         }
 
-        // IPCA+ and IGP-M+ with coupons: 6% annual → semester = (1.06)^0.5 - 1
         return (decimal)(Math.Pow(1.06, 0.5) - 1.0);
     }
 

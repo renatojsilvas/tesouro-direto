@@ -13,15 +13,6 @@ using TesouroDireto.Infrastructure.Persistence;
 
 namespace TesouroDireto.API.Tests.Resilience;
 
-/// <summary>
-/// Tarefa 13 (item a) — BCB retry-sucede: prova, ponta a ponta (via <c>POST /simulador</c>,
-/// host real via Program.cs), que o pipeline de resiliência re-tenta a chamada ao BCB Focus
-/// quando ela falha algumas vezes antes de suceder. Usa a fixture compartilhada
-/// <see cref="ApiCollection"/> — nela, <c>Resilience:FocusBcb:Retry:BaseDelay</c>
-/// é curto e <c>CircuitBreaker:MinimumThroughput</c> é alto o bastante para nunca abrir por
-/// acidente (ver <see cref="ApiTestFactory.ConfigureWebHost"/>), então as
-/// poucas falhas geradas aqui não afetam os outros testes da mesma collection.
-/// </summary>
 [Collection("api")]
 public sealed class FocusBcbResilienceEndpointTests(ApiTestFactory factory) : IAsyncLifetime
 {
@@ -96,7 +87,6 @@ public sealed class FocusBcbResilienceEndpointTests(ApiTestFactory factory) : IA
         dto!.ProjecaoUtilizada.Should().NotBeNull();
         dto.ProjecaoUtilizada!.Origem.Should().Be(OrigemProjecao.Bcb);
 
-        // 1ª tentativa + 2 retries (MaxRetryAttempts=2, valor de produção) = 3 chamadas.
         calls.Should().Be(3);
     }
 }

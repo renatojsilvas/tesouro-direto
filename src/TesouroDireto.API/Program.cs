@@ -40,8 +40,6 @@ builder.Services.AddSwaggerGen(c =>
         [apiKeyScheme] = Array.Empty<string>(),
     });
 
-    // Ver EnumSchemaFilter: Swashbuckle não lê o JsonStringEnumConverter registrado via
-    // ConfigureHttpJsonOptions (Minimal API), então os enums sairiam como integer sem isto.
     c.SchemaFilter<TesouroDireto.API.OpenApi.EnumSchemaFilter>();
 });
 
@@ -54,9 +52,6 @@ builder.Services.AddProblemDetails(options =>
             context.ProblemDetails.Extensions["correlationId"] = correlationId;
         }
 
-        // ProblemDetails não injeta traceId por padrão fora do contexto MVC/[ApiController];
-        // seguimos o padrão oficial da Microsoft para minimal APIs (CustomizeProblemDetails)
-        // usando o Activity atual (W3C trace id) com fallback para o TraceIdentifier do ASP.NET Core.
         context.ProblemDetails.Extensions["traceId"] =
             Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
     };
@@ -72,19 +67,12 @@ app.UseExceptionHandler();
 
 app.UseSerilogDefaults();
 
-// Tarefa 33: /swagger fica ANTES do ApiKeyMiddleware só em Development (UI acessível sem
-// key para uso local) e DEPOIS dele nos demais ambientes (swagger.json exige X-Api-Key,
-// coerente com o resto das rotas de negócio; a UI não é montada fora de Development).
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// Reusa a lista ApiKey:ExcludedPaths (paths de infra: /health*, /metrics) para excluir
-// esses paths da instrumentação server-side do prometheus-net, evitando que eles inflem
-// o denominador da regra de alerta td-http-5xx-alto. "/swagger" entra só aqui (lista local),
-// nunca em ApiKey:ExcludedPaths — o swagger.json continua atrás da key em produção.
 var httpMetricsExcludedPaths = (app.Configuration.GetSection("ApiKey:ExcludedPaths").Get<string[]>() ?? [])
     .Append("/swagger")
     .ToArray();

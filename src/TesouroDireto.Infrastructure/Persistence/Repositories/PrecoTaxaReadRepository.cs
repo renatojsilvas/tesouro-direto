@@ -8,10 +8,6 @@ namespace TesouroDireto.Infrastructure.Persistence.Repositories;
 
 public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrecoTaxaReadRepository
 {
-    // Ver DapperTypeHandlers para o porquê deste registro (MatchNamesWithUnderscores +
-    // handler de DateOnly). AddInfrastructure já chama DapperTypeHandlers.Register() no
-    // boot, mas repetimos aqui como defesa em profundidade para testes que instanciam
-    // este repositório diretamente (fora do container de DI).
     static PrecoTaxaReadRepository()
     {
         DapperTypeHandlers.Register();

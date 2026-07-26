@@ -9,18 +9,6 @@ using TesouroDireto.Infrastructure.Caching;
 
 namespace TesouroDireto.Infrastructure.Projecoes;
 
-/// <summary>
-/// Decorator de cache para <see cref="IProjecaoMercadoService"/>: desacopla o Simulador
-/// da disponibilidade do BCB Focus. Mantém, por indexador, uma entrada "fresh" (TTL curto,
-/// default 6h — evita bater no BCB a cada simulação) e uma entrada "lkg" (last known good,
-/// TTL longo, default 7 dias — usada como fallback quando o BCB está fora do ar).
-///
-/// O fallback nunca é silencioso: a projeção devolvida sinaliza
-/// <see cref="OrigemProjecao.CacheFallback"/> e um warning estruturado é logado toda vez
-/// que é usado. A idade máxima do fallback é a própria expiração da entrada "lkg" no
-/// cache — não há comparação de data feita à mão para decidir se a projeção está velha
-/// demais; entrada ausente já significa "velha demais".
-/// </summary>
 public sealed class CachedProjecaoMercadoService(
     IProjecaoMercadoService inner,
     IMemoryCache cache,
@@ -45,9 +33,6 @@ public sealed class CachedProjecaoMercadoService(
 
         if (result.IsSuccess)
         {
-            // Recarimba com o TimeProvider do decorator (real em produção, controlável
-            // em teste) — é este valor, e não o que o inner devolveu, que efetivamente
-            // chega a quem consome IProjecaoMercadoService.
             var projecao = result.Value with
             {
                 ObtidaEmUtc = timeProvider.GetUtcNow(),
@@ -71,10 +56,6 @@ public sealed class CachedProjecaoMercadoService(
 
         if (result.Error.Code != ProjecaoErrors.HttpError.Code)
         {
-            // Falhas que não são de indisponibilidade do BCB (indexador não suportado,
-            // URL mal configurada, resposta sem dados) não são cobertas por fallback —
-            // usar uma projeção velha para mascarar um erro de configuração/dados seria
-            // enganoso. Propaga sem consultar nem gravar o cache.
             return result;
         }
 

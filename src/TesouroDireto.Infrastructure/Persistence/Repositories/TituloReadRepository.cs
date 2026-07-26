@@ -9,10 +9,6 @@ namespace TesouroDireto.Infrastructure.Persistence.Repositories;
 
 public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloReadRepository
 {
-    // Ver DapperTypeHandlers para o porquê deste registro (MatchNamesWithUnderscores +
-    // handler de DateOnly). AddInfrastructure já chama DapperTypeHandlers.Register() no
-    // boot, mas repetimos aqui como defesa em profundidade para testes que instanciam
-    // este repositório diretamente (fora do container de DI).
     static TituloReadRepository()
     {
         DapperTypeHandlers.Register();

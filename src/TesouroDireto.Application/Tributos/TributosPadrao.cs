@@ -5,8 +5,6 @@ namespace TesouroDireto.Application.Tributos;
 
 public static class TributosPadrao
 {
-    // Alíquotas de IOF por dia de resgate (índice 0 = dia 1), tabela regressiva de 29 dias.
-    // Fonte: tests/TesouroDireto.E2E.Tests/seed.sql (memória project_tributos_configurados).
     private static readonly decimal[] IofAliquotas =
     [
         96m, 93m, 90m, 86m, 83m, 80m, 76m, 73m, 70m, 66m,

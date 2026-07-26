@@ -3,14 +3,6 @@ using IResult = Microsoft.AspNetCore.Http.IResult;
 
 namespace TesouroDireto.API.Extensions;
 
-/// <summary>
-/// Converte <see cref="Result"/>/<see cref="Result{T}"/> em <see cref="IResult"/>,
-/// mapeando falhas para problem+json de forma consistente com o
-/// <c>CustomizeProblemDetails</c> configurado em Program.cs (correlationId + traceId).
-/// A escrita usa <see cref="IProblemDetailsService"/>.WriteAsync explicitamente
-/// (em vez de <see cref="Results.Problem"/>) para deixar claro, no ponto de uso,
-/// que a resposta passa pelo pipeline de ProblemDetails do ASP.NET Core.
-/// </summary>
 public static class ResultExtensions
 {
     public static IResult ToHttpResult(this Result result, Func<IResult> onSuccess)

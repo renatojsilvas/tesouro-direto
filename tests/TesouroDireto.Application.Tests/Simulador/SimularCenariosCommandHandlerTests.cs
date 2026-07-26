@@ -57,7 +57,6 @@ public sealed class SimularCenariosCommandHandlerTests
         result.Value.Should().HaveCount(3);
         result.Value.Select(r => r.Nome).Should().ContainInOrder("Otimista", "Base", "Pessimista");
 
-        // Higher projection = higher return
         var valores = result.Value.Select(r => r.Resultado.ValorBruto).ToList();
         valores[0].Should().BeLessThan(valores[1]);
         valores[1].Should().BeLessThan(valores[2]);

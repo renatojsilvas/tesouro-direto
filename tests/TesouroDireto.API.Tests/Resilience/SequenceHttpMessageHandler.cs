@@ -2,13 +2,6 @@ using System.Net;
 
 namespace TesouroDireto.API.Tests.Resilience;
 
-/// <summary>
-/// Handler HTTP fake compartilhado pelos testes de resiliência (tarefa 13): devolve
-/// <paramref name="failureStatusCode"/> nas primeiras <paramref name="failuresBeforeSuccess"/>
-/// chamadas e a resposta de <paramref name="successResponseFactory"/> a partir daí em
-/// diante. <see cref="Calls"/> conta TODAS as chamadas (thread-safe), permitindo provar
-/// quantas tentativas o pipeline de resiliência de fato fez.
-/// </summary>
 internal sealed class SequenceHttpMessageHandler(
     int failuresBeforeSuccess,
     HttpStatusCode failureStatusCode,

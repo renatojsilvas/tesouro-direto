@@ -6,10 +6,6 @@ namespace TesouroDireto.Infrastructure.Tests.Observability;
 
 public sealed class BusinessMetricsTests
 {
-    // As métricas de BusinessMetrics são static no default registry do prometheus-net
-    // (estado global compartilhado entre testes/instâncias). Cada teste captura o valor
-    // ANTES e DEPOIS e assere o DELTA, nunca o valor absoluto — evita colisão entre
-    // testes que rodam na mesma série/label.
     private static readonly Gauge ImportLastSuccessTimestamp = Metrics.CreateGauge(
         "import_last_success_timestamp_seconds", "help");
 

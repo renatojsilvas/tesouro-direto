@@ -48,8 +48,6 @@ public sealed class FeriadoImportServiceTests
     [Fact]
     public async Task GetFeriadosAsync_WithNonSeekableStream_ShouldStillWork()
     {
-        // This is the exact scenario that caused the bug:
-        // HTTP streams are not seekable, ExcelDataReader requires seek
         var service = CreateServiceWithNonSeekableStream(
             GetTestXlsBytes(), "https://example.com/feriados.xls");
 

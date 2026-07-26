@@ -3,11 +3,6 @@ using System.Net.Http.Headers;
 
 namespace TesouroDireto.Web.Tests;
 
-/// <summary>
-/// Fake <see cref="HttpMessageHandler"/> that routes requests by HTTP method + relative
-/// path (ignoring query string) to a caller-configured responder, so tests can control
-/// exactly what the fake API returns without touching real network/infra.
-/// </summary>
 public sealed class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly List<(HttpMethod Method, string Path, Func<HttpRequestMessage, HttpResponseMessage> Responder)> _routes = [];

@@ -72,7 +72,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         });
     }
 
-    // 1. GET /titulos sem filtro -> 200, 4 itens
     [Fact]
     public async Task GetTitulos_WithoutFilter_ShouldReturnAllTitulos()
     {
@@ -85,7 +84,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         titulos.Should().HaveCount(4);
     }
 
-    // 2. GET /titulos?indexador=IPCA -> 200, só IPCA
     [Fact]
     public async Task GetTitulos_WithIndexadorFilter_ShouldReturnOnlyMatching()
     {
@@ -99,7 +97,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         titulos.Should().AllSatisfy(t => t.Indexador.Should().Be("IPCA"));
     }
 
-    // 3. GET /titulos?vencido=true -> 200, só vencidos
     [Fact]
     public async Task GetTitulos_WithVencidoFilter_ShouldReturnOnlyExpired()
     {
@@ -113,7 +110,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         titulos![0].Vencido.Should().BeTrue();
     }
 
-    // 4. GET /titulos?indexador=XPTO (inválido) -> comportamento real: 400
     [Fact]
     public async Task GetTitulos_WithInvalidIndexador_ShouldReturn400()
     {
@@ -124,7 +120,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    // 5. GET /titulos/{id}/precos com preços -> 200 lista
     [Fact]
     public async Task GetPrecos_WithPrecos_ShouldReturn200List()
     {
@@ -139,7 +134,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         doc.RootElement.GetArrayLength().Should().Be(3);
     }
 
-    // 6. GET /titulos/{id}/precos?dataInicio=&dataFim= -> 200 subconjunto
     [Fact]
     public async Task GetPrecos_WithDateRange_ShouldReturnSubset()
     {
@@ -155,7 +149,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         doc.RootElement.GetArrayLength().Should().Be(1);
     }
 
-    // 7. GET /titulos/{id}/precos id inexistente -> 404
     [Fact]
     public async Task GetPrecos_WithUnknownId_ShouldReturn404()
     {
@@ -164,7 +157,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // 8. GET /titulos/{id}/preco-atual id com preço -> 200
     [Fact]
     public async Task GetPrecoAtual_WithPreco_ShouldReturn200()
     {
@@ -176,7 +168,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // 9. GET /titulos/{id}/preco-atual id sem preço -> 404
     [Fact]
     public async Task GetPrecoAtual_WithoutPreco_ShouldReturn404()
     {
@@ -187,7 +178,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // 10. GET /titulos/preco-atual?nome= nome válido -> 200
     [Fact]
     public async Task GetPrecoAtualByNome_WithValidNome_ShouldReturn200()
     {
@@ -199,7 +189,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // 11. GET /titulos/preco-atual?nome= nome inválido -> 404
     [Fact]
     public async Task GetPrecoAtualByNome_WithUnknownNome_ShouldReturn404()
     {
@@ -210,7 +199,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // 12. GET /titulos/precos?nome= válido -> 200 lista
     [Fact]
     public async Task GetPrecosByNome_WithValidNome_ShouldReturn200List()
     {
@@ -225,7 +213,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         doc.RootElement.GetArrayLength().Should().Be(3);
     }
 
-    // 13. GET /titulos/precos?nome= inexistente -> 404
     [Fact]
     public async Task GetPrecosByNome_WithUnknownNome_ShouldReturn404()
     {
@@ -236,7 +223,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // 14. GET /titulos/preco-atual?nome= vazio -> 400 (Titulo.InvalidNome)
     [Fact]
     public async Task GetPrecoAtualByNome_WithEmptyNome_ShouldReturn400()
     {
@@ -252,7 +238,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidNome");
     }
 
-    // 15. GET /titulos/precos?nome= vazio -> 400 (Titulo.InvalidNome)
     [Fact]
     public async Task GetPrecosByNome_WithEmptyNome_ShouldReturn400()
     {

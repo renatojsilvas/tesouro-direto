@@ -32,8 +32,6 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        // Registra config estática do Dapper (name matching + DateOnly) uma única vez,
-        // no boot, antes de qualquer repositório ser resolvido — ver DapperTypeHandlers.
         DapperTypeHandlers.Register();
 
         var connectionString = configuration.GetConnectionString("DefaultConnection")!;
@@ -100,9 +98,6 @@ public static class DependencyInjection
         .UseHttpClientMetrics()
         .AddBatchImportResilienceHandler(configuration, "feriado-import-resilience", "Resilience:FeriadoImport");
 
-        // FocusBcbService.cs deixa de ser exposto diretamente como IProjecaoMercadoService:
-        // o decorator de cache (CachedProjecaoMercadoService, tarefa 11) é quem responde
-        // por IProjecaoMercadoService, com FocusBcbService como colaborador interno.
         services.AddHttpClient<FocusBcbService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
@@ -145,23 +140,6 @@ public static class DependencyInjection
         return services;
     }
 
-    /// <summary>
-    /// Pipeline de resiliência COMPLETO (tarefa 13) para o client do BCB Focus:
-    /// TotalTimeout → Retry → CircuitBreaker → AttemptTimeout, na mesma ordem usada pelo
-    /// AddStandardResilienceHandler padrão do próprio pacote — explícito aqui porque os
-    /// clients de import (CSV/Feriados, ver <see cref="AddBatchImportResilienceHandler"/>)
-    /// não têm circuit breaker. Retry só cobre transitório/5xx/408/timeout via
-    /// <see cref="HttpClientResiliencePredicates.IsTransient"/> (nunca 4xx de negócio).
-    ///
-    /// Extraído como método de extensão público (em vez de inline no AddInfrastructure)
-    /// para que os testes de resiliência montem exatamente o mesmo pipeline de produção
-    /// via um <see cref="IHttpClientBuilder"/> próprio, só trocando IConfiguration e o
-    /// HttpMessageHandler primário — evita duplicar a configuração e o risco de drift.
-    ///
-    /// Conta com os valores default (produção): 3 tentativas x 6s (AttemptTimeout) + ~1.5s
-    /// de backoff (0.5s + 1s, sem contar jitter) ≈ 19.5s ≤ TotalTimeout 25s ≤
-    /// HttpClient.Timeout 30s (ver client em AddInfrastructure).
-    /// </summary>
     public static IHttpResiliencePipelineBuilder AddFocusBcbResilienceHandler(
         this IHttpClientBuilder builder, IConfiguration configuration)
     {
@@ -202,17 +180,6 @@ public static class DependencyInjection
         });
     }
 
-    /// <summary>
-    /// Pipeline de resiliência dos clients de import batch (CSV/Tesouro Transparente e
-    /// XLS/ANBIMA, tarefa 13): Retry → AttemptTimeout, SEM circuit breaker e SEM total
-    /// timeout — são jobs diários (não simulações interativas), e o corpo da resposta
-    /// (streaming via HttpCompletionOption.ResponseHeadersRead) já fica limitado pelo
-    /// HttpClient.Timeout configurado em AddInfrastructure (10min CSV / 5min feriados).
-    ///
-    /// Conta com os valores default (produção): 4 tentativas x 45s (AttemptTimeout) + ~14s
-    /// de backoff (2s + 4s + 8s, sem contar jitter) ≈ 194s, folgado dentro dos dois
-    /// HttpClient.Timeout acima.
-    /// </summary>
     public static IHttpResiliencePipelineBuilder AddBatchImportResilienceHandler(
         this IHttpClientBuilder builder, IConfiguration configuration, string pipelineName, string configSection)
     {

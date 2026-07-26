@@ -20,7 +20,7 @@ public sealed class SeedTributosCommandHandler(
 
         if (existentes.Value.Count > 0)
         {
-            return Result.Success(); // idempotente: já semeado
+            return Result.Success();
         }
 
         var padrao = TributosPadrao.Build();

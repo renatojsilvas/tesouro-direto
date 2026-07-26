@@ -8,9 +8,6 @@ namespace TesouroDireto.Infrastructure.Tests.Observability;
 
 public sealed class MetricsBehaviorTests
 {
-    // As métricas do MetricsBehavior são static no default registry do prometheus-net
-    // (estado global compartilhado entre testes). Cada teste usa um record de request
-    // próprio para que o label request_type seja único e não colida com os demais.
     [Fact]
     public async Task Success_ShouldRecordSuccessOutcome()
     {

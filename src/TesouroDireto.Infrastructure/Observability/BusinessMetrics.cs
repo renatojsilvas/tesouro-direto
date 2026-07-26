@@ -3,12 +3,6 @@ using TesouroDireto.Application.Common.Interfaces;
 
 namespace TesouroDireto.Infrastructure.Observability;
 
-/// <summary>
-/// Implementação concreta (O8) de <see cref="IBusinessMetrics"/> via prometheus-net,
-/// no default registry (o mesmo já scrapeado por app.MapMetrics() em Program.cs —
-/// sem fiação extra). Todos os labels são conjuntos fechados (outcome, kind, op,
-/// indexador, reason=Error.Code) — nunca dado de request, para não estourar cardinalidade.
-/// </summary>
 public sealed class BusinessMetrics : IBusinessMetrics
 {
     private static readonly Gauge ImportLastSuccessTimestamp = Metrics.CreateGauge(

@@ -5,12 +5,6 @@ using TesouroDireto.Domain.Common;
 
 namespace TesouroDireto.Infrastructure.Observability;
 
-/// <summary>
-/// Behavior do MediatR (O6) que expõe latência e desfecho por caso de uso via
-/// prometheus-net, no default registry (o mesmo já scrapeado por app.MapMetrics()
-/// em Program.cs — sem fiação extra). O label request_type é sempre
-/// typeof(TRequest).Name, nunca dado do request, para não estourar cardinalidade.
-/// </summary>
 public sealed class MetricsBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
