@@ -60,4 +60,27 @@ public sealed class CachedTituloReadRepository(
 
         return result;
     }
+
+    public async Task<Result<TituloDto>> GetByCodigoAsync(string codigo, CancellationToken cancellationToken)
+    {
+        var key = $"titulo-codigo:{codigo}";
+
+        if (cache.TryGetValue(key, out TituloDto? cached))
+        {
+            return Result<TituloDto>.Success(cached!);
+        }
+
+        var result = await inner.GetByCodigoAsync(codigo, cancellationToken);
+
+        if (result.IsSuccess)
+        {
+            var options = new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(Ttl)
+                .AddExpirationToken(new CancellationChangeToken(invalidator.GetTitulosToken()));
+
+            cache.Set(key, result.Value, options);
+        }
+
+        return result;
+    }
 }
