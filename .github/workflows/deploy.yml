@@ -35,10 +35,11 @@ jobs:
       - run: dotnet build --no-restore
       - run: dotnet test --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./test-results/coverage -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
       # Fails the job if line coverage drops below the threshold. Covers the
-      # assemblies dotnet test instruments (API/Application/Domain/Infrastructure);
-      # TesouroDireto.Web is not covered (no unit tests in the .sln) — see task 32.
-      - name: Coverage gate (line >= 94%)
-        run: python3 scripts/coverage-gate.py ./test-results/coverage --threshold 94 --verbose
+      # assemblies dotnet test instruments (API/Application/Domain/Infrastructure/Web);
+      # TesouroDireto.Web entered the gate in task 32 via TesouroDireto.Web.Tests
+      # (bUnit + xUnit), lowering the merged floor from 94% to 82%.
+      - name: Coverage gate (line >= 82%)
+        run: python3 scripts/coverage-gate.py ./test-results/coverage --threshold 82 --verbose
       - name: SonarQube Scan
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@v5

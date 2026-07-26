@@ -189,7 +189,7 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 - **Flakiness inerente do Blazor Server**: `retries: 2` + hacks `waitForTimeout(1000)` "if Blazor missed the event".
 - **Adapters de I/O sem integração real**: FocusBcb só com `FakeHttpMessageHandler`; `CsvImportService` **sem teste dedicado** (só mockado no handler).
 - **Infrastructure.Tests só cobre Caching**; resto testado a partir de API.Tests (placement inconsistente).
-- **Sem gate de cobertura** ✔️ RESOLVIDO (tarefa 18, 2026-07-25): `scripts/coverage-gate.py` parseia o opencover já produzido e **reprova o job `test`** se a linha cair abaixo de **94%** (= floor do medido 94.64%; sem ferramenta nova). Cobre API/Application/Domain/Infrastructure; **`TesouroDireto.Web` fica fora** (nenhum teste no `.sln` o exercita) → **tarefa 32**. **Ainda sem testes de componente Blazor (bUnit)** — casa com a tarefa 32.
+- **Sem gate de cobertura** ✔️ RESOLVIDO (tarefa 18, 2026-07-25): `scripts/coverage-gate.py` parseia o opencover já produzido e **reprova o job `test`** se a linha cair abaixo do threshold (= floor do medido; sem ferramenta nova). **Testes de componente Blazor (bUnit)** ✔️ RESOLVIDO (tarefa 32, 2026-07-26): novo `tests/TesouroDireto.Web.Tests/` (bUnit) traz o **`TesouroDireto.Web` para dentro do gate** (`TesouroApiClient` + componentes Simulador/Tributos); com o Web na medição o floor caiu **94%→82%** (Web entra com 32%). **Limite aceito:** o gate agregado não trava a existência futura de testes de Web (removê-los *sobe* a média) — travar exigiria piso por-módulo. Só o `E2E.Tests` (Docker, job à parte) segue fora do `dotnet test`.
 - **Drift de schema seed↔migrations**: `seed.sql` define schema manualmente em paralelo às migrations — mudança numa migration sem atualizar seed quebra E2E silenciosamente.
 
 ---
@@ -232,5 +232,5 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 **Qualidade / manutenção:**
 9. Contrato HTTP vazando `CreateTributoCommand` ✔️ RESOLVIDO (tarefa 15); acesso à API duplicado em 5 páginas Blazor ✔️ RESOLVIDO (tarefa 16, typed client `TesouroApiClient`) (§1).
 10. Enums só numéricos + `ParseEnum` hardcoded frágil ✔️ RESOLVIDO (tarefa 4) (§1).
-11. Zero teste de integração de endpoint HTTP ✔️ RESOLVIDO (tarefa 8); gate de cobertura ✔️ RESOLVIDO (tarefa 18, threshold 94%; Web fora → tarefa 32) (§5).
+11. Zero teste de integração de endpoint HTTP ✔️ RESOLVIDO (tarefa 8); gate de cobertura ✔️ RESOLVIDO (tarefa 18; Web trazido para o gate na tarefa 32, floor 94%→82%) (§5).
 12. Observabilidade: métricas por caso de uso (O6) e por dependência externa (O7) ✔️ RESOLVIDAS (2026-07-23); **métricas de negócio** ✔️ RESOLVIDAS (tarefas 14/O8, 2026-07-24); Web no Loki/Grafana ✔️ RESOLVIDO (tarefa 17/O2); logs padronizados e painéis de nível corrigidos (tarefas O1/O3/20) (§4).
