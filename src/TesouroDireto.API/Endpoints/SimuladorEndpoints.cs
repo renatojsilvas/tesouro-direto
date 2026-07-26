@@ -23,7 +23,18 @@ public static class SimuladorEndpoints
             var result = await sender.Send(command, cancellationToken);
 
             return result.ToHttpResult(v => Results.Ok(v));
-        });
+        })
+        .WithName("SimularInvestimento")
+        .WithTags("Simulador")
+        .WithSummary("Simula o rendimento de um investimento em um título")
+        .WithDescription("Simula valor bruto/líquido, tributos aplicados e cupons (quando houver) para um título, " +
+            "valor investido, data de compra e taxa contratada. ProjecaoAnual é opcional para títulos indexados " +
+            "(sem ela, usa a projeção de mercado do BCB Focus). 404 se o título não existir ou não houver " +
+            "projeção de mercado disponível para o indexador.")
+        .Produces<SimulacaoResultadoDto>()
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 
         app.MapPost("/simulador/cenarios", async (
             SimularCenariosRequest request,
@@ -44,7 +55,17 @@ public static class SimuladorEndpoints
             var result = await sender.Send(command, cancellationToken);
 
             return result.ToHttpResult(v => Results.Ok(v));
-        });
+        })
+        .WithName("SimularCenarios")
+        .WithTags("Simulador")
+        .WithSummary("Simula múltiplos cenários de projeção para o mesmo investimento")
+        .WithDescription("Simula um mesmo título, valor investido, data de compra e taxa contratada sob vários " +
+            "cenários nomeados, cada um com sua própria projeção anual informada explicitamente. " +
+            "404 se o título não existir.")
+        .Produces<IReadOnlyCollection<CenarioResultadoDto>>()
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
     }
 
     private sealed record SimularRequest(

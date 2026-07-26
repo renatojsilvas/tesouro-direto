@@ -67,7 +67,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **Enums só numéricos no JSON** ✔️ RESOLVIDO (tarefa 4): `JsonStringEnumConverter` registrado (aceita string E número); `ParseEnum` hardcoded removido do `Tributos.razor`.
 - **Erro por string-matching** ✔️ RESOLVIDO (tarefa 7, ver acima): o `Error.Code.Contains("NotFound")` do PUT foi eliminado pelo helper `ToHttpResult`.
 - **Sem validação declarativa na borda** — exception handler global ✔️ RESOLVIDO (tarefa 6/O4): `UseExceptionHandler` + `AddProblemDetails` → exceção crua vira `application/problem+json` com `correlationId`/`traceId`; 401 do `ApiKeyMiddleware` também padronizado.
-- **Sem versionamento, sem Swagger/OpenAPI, sem rate limiting** nos endpoints (inclui `POST /importacao`, que dispara download/parse externo). `GET /` retorna `"Hello World!"`; `AllowedHosts: "*"`.
+- **Sem versionamento, sem rate limiting** nos endpoints (inclui `POST /importacao`, que dispara download/parse externo). **OpenAPI/Swagger presente desde a tarefa 33** (Swashbuckle): UI só em Development; em prod `/swagger/v1/swagger.json` fica atrás da ApiKey (`X-Api-Key`) e a UI não é montada. `GET /` retorna `"Hello World!"`; `AllowedHosts: "*"`.
 - **Mapeamento `Result`→HTTP** ✔️ RESOLVIDO (tarefa 7): helper `ToHttpResult` em `Extensions/ResultExtensions.cs`, mapa por estrutura (`.NotFound`→404, resto→400) aplicado nos 4 `Endpoints/*.cs` — fim do `Contains("NotFound")` e do boilerplate por endpoint.
 
 ---
