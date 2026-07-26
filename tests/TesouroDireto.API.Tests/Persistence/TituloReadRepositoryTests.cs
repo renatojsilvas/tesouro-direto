@@ -1,3 +1,4 @@
+using Dapper;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -152,5 +153,111 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
         titulo.Indexador.Should().Be("Selic");
         titulo.PagaJurosSemestrais.Should().BeFalse();
         titulo.Vencido.Should().BeFalse();
+    }
+
+    // GetByNomeAsync: contrato do repositório é
+    // WHERE UPPER(tipo_titulo || ' ' || EXTRACT(YEAR FROM data_vencimento)::text) = UPPER(@Nome),
+    // com @Nome = nome.Trim(). O índice funcional ix_titulos_nome_upper cobre a MESMA
+    // expressão (não-único).
+
+    [Fact]
+    public async Task GetByNomeAsync_WithExactMatch_ShouldReturnMatchingTitulo()
+    {
+        var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
+        await _writeRepository.AddAsync(titulo, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetByNomeAsync("Tesouro Selic 2029", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
+        result.Value.DataVencimento.Should().Be("2029-03-01");
+        result.Value.Indexador.Should().Be("Selic");
+    }
+
+    [Fact]
+    public async Task GetByNomeAsync_WithMixedCaseAndSurroundingWhitespace_ShouldReturnMatchingTitulo()
+    {
+        // Guardião central da regressão do índice: se .Trim() ou UPPER sumirem do
+        // repositório, este teste fica vermelho.
+        var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
+        await _writeRepository.AddAsync(titulo, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetByNomeAsync("  tesouro selic 2029  ", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
+        result.Value.DataVencimento.Should().Be("2029-03-01");
+        result.Value.Indexador.Should().Be("Selic");
+    }
+
+    [Fact]
+    public async Task GetByNomeAsync_WhenNomeDoesNotExist_ShouldReturnNotFound()
+    {
+        var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
+        await _writeRepository.AddAsync(titulo, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetByNomeAsync("Tesouro Selic 2099", CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().Be(TituloErrors.NotFound);
+    }
+
+    [Fact]
+    public async Task GetByNomeAsync_WithDuplicateNameFromDifferentVencimentos_ShouldReturnOneMatch()
+    {
+        // ix_titulos_nome_upper NÃO é único: dois títulos do mesmo tipo+ano (dias
+        // diferentes) produzem o mesmo nome. GetByNomeAsync usa QueryFirstOrDefault,
+        // então o caso é sucesso (não NotFound), devolvendo uma única linha.
+        var titulo1 = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2031, 3, 1)).Value).Value;
+        var titulo2 = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2031, 9, 1)).Value).Value;
+        await _writeRepository.AddAsync(titulo1, CancellationToken.None);
+        await _writeRepository.AddAsync(titulo2, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetByNomeAsync("Tesouro Selic 2031", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
+        result.Value.DataVencimento.Should().BeOneOf("2031-03-01", "2031-09-01");
+    }
+
+    [Fact]
+    public async Task GetByNomeAsync_QueryPlan_ShouldBeAbleToUseNomeUpperIndex()
+    {
+        // EXPLAIN robusto: com a tabela minúscula do teste, o planner prefere Seq Scan
+        // por custo. Desligamos enable_seqscan nesta conexão para provar que a
+        // expressão do índice funcional ix_titulos_nome_upper é USÁVEL pelo planner —
+        // trava a ponta da MIGRATION (índice existe e sua expressão é indexável).
+        // ATENÇÃO: o SQL abaixo é uma cópia estática, NÃO a query real emitida pelo
+        // repositório; logo este teste NÃO detecta uma regressão da expressão em
+        // GetByNomeAsync (uma mudança só no repo passa verde aqui). Quem trava a
+        // regressão do repositório de produção são os testes funcionais acima
+        // (WithExactMatch / WithMixedCaseAndSurroundingWhitespace / WithDuplicateName),
+        // que exercitam o caminho real. Manter as duas cópias (repo e este teste) em
+        // sincronia é manual.
+        var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
+        await _writeRepository.AddAsync(titulo, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await using var connection = await _dataSource.OpenConnectionAsync(CancellationToken.None);
+        await connection.ExecuteAsync(new CommandDefinition("SET enable_seqscan = off;", cancellationToken: CancellationToken.None));
+
+        var planLines = (await connection.QueryAsync<string>(
+            new CommandDefinition(
+                """
+                EXPLAIN
+                SELECT id, tipo_titulo, data_vencimento, indexador, paga_juros_semestrais,
+                       CASE WHEN data_vencimento < @Today THEN true ELSE false END AS vencido
+                FROM titulos
+                WHERE UPPER(tipo_titulo || ' ' || EXTRACT(YEAR FROM data_vencimento)::text) = UPPER(@Nome)
+                """,
+                new { Nome = "Tesouro Selic 2029".Trim(), Today = DateOnly.FromDateTime(DateTime.UtcNow) },
+                cancellationToken: CancellationToken.None))).ToList();
+
+        var plan = string.Join(Environment.NewLine, planLines);
+        plan.Should().Contain("ix_titulos_nome_upper");
     }
 }
