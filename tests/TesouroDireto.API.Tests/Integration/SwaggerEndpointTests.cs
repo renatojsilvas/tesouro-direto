@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -175,6 +174,8 @@ public sealed class SwaggerEndpointTests
         [Fact]
         public async Task Metrics_ShouldNotIncludeSwaggerPathInHttpMetricsSeries()
         {
+            var emptyBefore = await ScrapeHttpMetricSumAsync("endpoint=\"\"");
+
             using (var request = new HttpRequestMessage(HttpMethod.Get, "/swagger/v1/swagger.json"))
             {
                 request.Headers.Add("X-Api-Key", ValidApiKey);
@@ -182,33 +183,64 @@ public sealed class SwaggerEndpointTests
                 swaggerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             }
 
+            var emptyAfterSwagger = await ScrapeHttpMetricSumAsync("endpoint=\"\"");
+            emptyAfterSwagger.Should().Be(emptyBefore,
+                "hits em /swagger são excluídos do UseHttpMetrics e não devem incrementar nenhuma série "
+                + "http_* com endpoint=\"\" (mesmo tratamento dado a /health*+/metrics na tarefa 29). "
+                + "A asserção é por DELTA e não por ausência absoluta porque o registry do prometheus-net "
+                + "é estático/global do processo — outras classes de teste (ex.: 401 do ApiKeyMiddleware, "
+                + "que curto-circuita antes do roteamento) já podem ter produzido endpoint=\"\".");
+
+            var throwBefore = await ScrapeHttpMetricSumAsync("endpoint=\"/_test/throw\"");
+
             using (var request = new HttpRequestMessage(HttpMethod.Get, "/_test/throw"))
             {
                 request.Headers.Add("X-Api-Key", ValidApiKey);
                 await _client.SendAsync(request, CancellationToken.None);
             }
 
-            var metricsResponse = await _client.GetAsync("/metrics", CancellationToken.None);
-            var body = await metricsResponse.Content.ReadAsStringAsync(CancellationToken.None);
+            var throwAfter = await ScrapeHttpMetricSumAsync("endpoint=\"/_test/throw\"");
+            throwAfter.Should().BeGreaterThan(throwBefore,
+                "positivo de controle: a rota roteada /_test/throw É instrumentada, provando que "
+                + "UseHttpMetrics está ativo e o scrape funciona (senão o delta acima seria vácuo).");
+        }
 
-            foreach (var series in new[] { "http_request_duration_seconds_count", "http_requests_received_total" })
+        private async Task<double> ScrapeHttpMetricSumAsync(string labelToken)
+        {
+            var response = await _client.GetAsync("/metrics", CancellationToken.None);
+            var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+            double sum = 0;
+            foreach (var line in body.Split('\n'))
             {
-                var emptyEndpointPattern = new Regex(
-                    $@"{Regex.Escape(series)}\{{[^}}]*endpoint=""""[^}}]*\}}");
+                if (line.Length == 0 || line[0] == '#')
+                {
+                    continue;
+                }
 
-                emptyEndpointPattern.IsMatch(body).Should().BeFalse(
-                    $"a série {series} não deveria conter endpoint=\"\" (label vazio emitido pelo " +
-                    $"middleware do swagger quando não excluído do UseHttpMetrics — mesmo tratamento " +
-                    $"dado a /health*+/metrics na tarefa 29).\nCorpo:\n{body}");
+                if (!line.StartsWith("http_request_duration_seconds_count", StringComparison.Ordinal)
+                    && !line.StartsWith("http_requests_received_total", StringComparison.Ordinal))
+                {
+                    continue;
+                }
 
-                var controlPattern = new Regex(
-                    $@"{Regex.Escape(series)}\{{[^}}]*endpoint=""/_test/throw""[^}}]*\}}");
+                if (!line.Contains(labelToken, StringComparison.Ordinal))
+                {
+                    continue;
+                }
 
-                controlPattern.IsMatch(body).Should().BeTrue(
-                    $"a rota roteada /_test/throw deveria continuar instrumentada com seu " +
-                    $"endpoint real (positivo de controle: prova que a instrumentação está ativa e " +
-                    $"o scrape funciona).\nCorpo:\n{body}");
+                var lastSpace = line.LastIndexOf(' ');
+                if (lastSpace >= 0 && double.TryParse(
+                        line[(lastSpace + 1)..],
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var value))
+                {
+                    sum += value;
+                }
             }
+
+            return sum;
         }
 
         public sealed class SwaggerProdFactory : WebApplicationFactory<Program>
