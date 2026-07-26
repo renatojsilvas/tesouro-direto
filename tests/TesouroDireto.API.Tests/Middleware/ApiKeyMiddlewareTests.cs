@@ -86,6 +86,14 @@ public sealed class ApiKeyMiddlewareTests : IClassFixture<ApiKeyMiddlewareTests.
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task Request_ToSwaggerPath_WithoutApiKey_ShouldReturn200()
+    {
+        var response = await _client.GetAsync("/swagger/index.html", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     public sealed class ApiKeyWebFactory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -97,6 +105,7 @@ public sealed class ApiKeyMiddlewareTests : IClassFixture<ApiKeyMiddlewareTests.
                 {
                     ["ApiKey:Key"] = ValidApiKey,
                     ["ApiKey:ExcludedPaths:0"] = "/health",
+                    ["ApiKey:ExcludedPaths:1"] = "/swagger",
                     ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=fake;Username=fake;Password=fake"
                 });
             });

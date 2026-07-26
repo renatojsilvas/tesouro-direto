@@ -172,11 +172,11 @@ public sealed class SwaggerEndpointTests
         }
 
         [Fact]
-        public async Task GetSwaggerJson_WithoutApiKey_ShouldReturn401()
+        public async Task GetSwaggerJson_WithoutApiKey_ShouldReturn200()
         {
             var response = await _client.GetAsync("/swagger/v1/swagger.json", CancellationToken.None);
 
-            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Fact]
@@ -191,14 +191,11 @@ public sealed class SwaggerEndpointTests
         }
 
         [Fact]
-        public async Task GetSwaggerUi_ShouldReturn404()
+        public async Task GetSwaggerUi_WithoutApiKey_ShouldReturn200()
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/swagger/index.html");
-            request.Headers.Add("X-Api-Key", ValidApiKey);
+            var response = await _client.GetAsync("/swagger/index.html", CancellationToken.None);
 
-            var response = await _client.SendAsync(request, CancellationToken.None);
-
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Fact]
@@ -285,6 +282,7 @@ public sealed class SwaggerEndpointTests
                         ["ApiKey:Key"] = ValidApiKey,
                         ["ApiKey:ExcludedPaths:0"] = "/health",
                         ["ApiKey:ExcludedPaths:1"] = "/metrics",
+                        ["ApiKey:ExcludedPaths:2"] = "/swagger",
                         ["ConnectionStrings:DefaultConnection"] = FakeConnectionString,
                     });
                 });
