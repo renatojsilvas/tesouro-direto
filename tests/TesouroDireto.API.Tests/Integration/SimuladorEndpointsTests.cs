@@ -254,7 +254,8 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty);
 
         // FocusBcb:CacheTtl é encurtado para 2s só no host de teste (ver ApiTestFactory).
-        await Task.Delay(TimeSpan.FromSeconds(3), CancellationToken.None);
+        // Avança o relógio fake da fixture em vez de Task.Delay real — determinístico.
+        factory.AdvanceTime(TimeSpan.FromSeconds(3));
 
         var secondResponse = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
 
@@ -264,5 +265,38 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         secondDto!.ProjecaoUtilizada.Should().NotBeNull();
         secondDto.ProjecaoUtilizada!.Origem.Should().Be(OrigemProjecao.CacheFallback);
         secondDto.ProjecaoUtilizada!.ValorAnual.Should().Be(firstDto.ProjecaoUtilizada!.ValorAnual);
+    }
+
+    // 23. 1ª chamada OK (aquece fresh 2s + lkg 7d), avança 3s (expira fresh), BCB responde
+    // 200 sem dados -> Projecao.NotFound propaga como 404 problem+json, SEM servir o lkg
+    // quente (fallback só cobre HttpError — ver CachedProjecaoMercadoService).
+    [Fact]
+    public async Task PostSimulador_WhenBcbReturnsEmptyValueWithHotLkg_ShouldReturn404WithoutServingFallback()
+    {
+        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2031, 1, 1));
+        object RequestBody() => new
+        {
+            TituloId = tituloId,
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 10m,
+            ProjecaoAnual = (decimal?)null
+        };
+
+        // Aquece fresh (2s) + lkg (7d) com resposta válida do BCB.
+        factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, SelicSuccessJson);
+        var warm = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+        warm.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Expira fresh (2s), mantém lkg (7d) — determinístico, sem Task.Delay.
+        factory.AdvanceTime(TimeSpan.FromSeconds(3));
+
+        // BCB responde 200 sem dados -> Projecao.NotFound (NÃO é HttpError).
+        factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, EmptyValueJson);
+        var response = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+
+        // NotFound propaga como 404 problem+json; lkg NÃO é servido (fallback só p/ HttpError).
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
     }
 }

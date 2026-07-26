@@ -2,9 +2,15 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Internal;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Testcontainers.PostgreSql;
+using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Infrastructure.Caching;
 using TesouroDireto.Infrastructure.Persistence;
 using TesouroDireto.Infrastructure.Projecoes;
@@ -65,6 +71,35 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
     /// rede real por acidente num teste que esqueceu de configurar o responder.
     /// </summary>
     public Func<HttpRequestMessage, HttpResponseMessage>? BcbResponder { get; set; }
+
+    /// <summary>
+    /// Relógio fake compartilhado pela fixture (Time.Testing), injetado DIRETAMENTE no
+    /// <see cref="CachedProjecaoMercadoService"/> montado em <see cref="ConfigureWebHost"/>
+    /// (e no <see cref="ISystemClock"/> do <see cref="IMemoryCache"/> via
+    /// <see cref="FakeSystemClock"/>) — permite testar expiração de TTL do cache de
+    /// projeção avançando o tempo de forma determinística com <see cref="AdvanceTime"/>,
+    /// sem <c>Task.Delay</c> real. Só avança (forward-only) e é compartilhado entre todos
+    /// os testes da collection "api"; como cada teste que usa TTL aquece o cache DEPOIS do
+    /// <see cref="ResetAsync"/> (que invalida por token) e avança um delta pequeno e
+    /// conhecido, não há vazamento de estado entre testes.
+    ///
+    /// IMPORTANTE: propositalmente NÃO substitui o <see cref="TimeProvider"/> global do
+    /// DI (via <c>services.AddSingleton&lt;TimeProvider&gt;</c>) — comprovado por teste que
+    /// isso vaza para o pipeline de resiliência do BCB Focus (<c>AddResilienceHandler</c>
+    /// resolve <see cref="TimeProvider"/> do container para agendar os delays de
+    /// retry/circuit breaker), travando qualquer teste que dependa de um retry com delay
+    /// real até estourar o <c>HttpClient.Timeout</c> de 30s (o delay do Polly some fica
+    /// esperando um <see cref="TimeProvider"/> congelado que nunca avança sozinho). Por
+    /// isso o relógio fake só chega ao decorator de cache via injeção direta abaixo, não
+    /// pelo slot genérico de <see cref="TimeProvider"/> do container.
+    /// </summary>
+    public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+    /// <summary>
+    /// Avança <see cref="Time"/> em <paramref name="delta"/> — usado por testes que
+    /// precisam expirar entradas do cache de projeção sem esperar wall-clock real.
+    /// </summary>
+    public void AdvanceTime(TimeSpan delta) => Time.Advance(delta);
 
     public async Task InitializeAsync()
     {
@@ -223,7 +258,36 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         {
             services.AddHttpClient<FocusBcbService>()
                 .ConfigurePrimaryHttpMessageHandler(() => new BcbResponderHandler(() => BcbResponder));
+
+            // Relógio fake (Time — ver doc acima) alimenta o IMemoryCache (via
+            // FakeSystemClock) e é injetado DIRETAMENTE no CachedProjecaoMercadoService
+            // abaixo — de propósito, NÃO via slot genérico de TimeProvider do container
+            // (vazaria para o Polly do BCB Focus, travando testes de retry/circuit
+            // breaker — ver doc de Time).
+            services.RemoveAll<IMemoryCache>();
+            services.AddSingleton<IMemoryCache>(
+                _ => new MemoryCache(new MemoryCacheOptions { Clock = new FakeSystemClock(Time) }));
+
+            services.RemoveAll<IProjecaoMercadoService>();
+            services.AddScoped<IProjecaoMercadoService>(sp => new CachedProjecaoMercadoService(
+                sp.GetRequiredService<FocusBcbService>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<MemoryCacheInvalidator>(),
+                Time,
+                sp.GetRequiredService<IConfiguration>(),
+                sp.GetRequiredService<ILogger<CachedProjecaoMercadoService>>()));
         });
+    }
+
+    /// <summary>
+    /// Microsoft.Extensions.Caching.Memory ainda não expõe TimeProvider em
+    /// MemoryCacheOptions — só o ISystemClock legado (Clock). Adapter fininho que faz o
+    /// MemoryCache seguir o mesmo relógio fake (Time) do TimeProvider do host, para que
+    /// SetAbsoluteExpiration(TimeSpan) expire de forma determinística ao avançar o tempo.
+    /// </summary>
+    private sealed class FakeSystemClock(TimeProvider timeProvider) : ISystemClock
+    {
+        public DateTimeOffset UtcNow => timeProvider.GetUtcNow();
     }
 
     private sealed class BcbResponderHandler(Func<Func<HttpRequestMessage, HttpResponseMessage>?> responderAccessor)

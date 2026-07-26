@@ -166,6 +166,29 @@ public sealed class FocusBcbServiceTests
         result.Error.Code.Should().Be("Projecao.UrlNotConfigured");
     }
 
+    [Fact]
+    public async Task GetProjecaoAsync_WhenCallerCancels_ShouldPropagateOperationCanceled_NotHttpError()
+    {
+        using var cts = new CancellationTokenSource();
+        var service = CreateServiceWithHandler(new CallerCancellingHandler(cts));
+
+        var act = async () => await service.GetProjecaoAsync(Indexador.Selic, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetProjecaoAsync_WhenInternalTimeoutCancels_ShouldReturnHttpError_NotPropagate()
+    {
+        var service = CreateServiceWithHandler(new InternalTimeoutHandler());
+
+        // Chamador NUNCA cancela (CancellationToken.None).
+        var result = await service.GetProjecaoAsync(Indexador.Selic, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Projecao.HttpError");
+    }
+
     private static FocusBcbService CreateService(
         string responseJson,
         HttpStatusCode statusCode = HttpStatusCode.OK,
@@ -211,5 +234,28 @@ public sealed class FocusBcbServiceTests
         {
             throw new HttpRequestException("Connection refused");
         }
+    }
+
+    // Cancela o token do CHAMADOR e então observa o cancelamento — como um cancelamento
+    // legítimo pedido por quem chamou (não uma falha do BCB).
+    private sealed class CallerCancellingHandler(CancellationTokenSource cts) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await cts.CancelAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+    }
+
+    // Simula timeout INTERNO (HttpClient.Timeout / Polly AttemptTimeout): TaskCanceledException
+    // com um token JÁ cancelado que NÃO é o do chamador. Como o token do chamador não está
+    // cancelado, o filtro `when` do FocusBcbService falha e cai no catch amplo -> HttpError.
+    private sealed class InternalTimeoutHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new TaskCanceledException("internal timeout", null, new CancellationToken(canceled: true));
     }
 }
