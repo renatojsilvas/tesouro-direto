@@ -7,11 +7,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace TesouroDireto.API.Tests.Middleware;
 
-/// <summary>
-/// Tarefa 29: os paths de infra (/health, /health/live, /health/ready, /metrics) não devem
-/// inflar o denominador das séries http_request_duration_seconds_count / http_requests_received_total
-/// usadas pela regra de alerta td-http-5xx-alto. Rotas de negócio (ex.: "/") continuam contadas.
-/// </summary>
 public sealed class HttpMetricsExclusionTests : IClassFixture<HttpMetricsExclusionTests.MetricsWebFactory>
 {
     private readonly HttpClient _client;
@@ -24,7 +19,6 @@ public sealed class HttpMetricsExclusionTests : IClassFixture<HttpMetricsExclusi
     [Fact]
     public async Task HttpMetrics_ShouldExcludeInfraPaths_ButKeepBusinessRoutes()
     {
-        // Bate várias vezes nos paths de infra.
         for (var i = 0; i < 3; i++)
         {
             await _client.GetAsync("/health", CancellationToken.None);
@@ -34,15 +28,11 @@ public sealed class HttpMetricsExclusionTests : IClassFixture<HttpMetricsExclusi
         await _client.GetAsync("/health/ready", CancellationToken.None);
         await _client.GetAsync("/metrics", CancellationToken.None);
 
-        // Rota de negócio (não-infra), positivo de controle.
         await _client.GetAsync("/", CancellationToken.None);
 
-        // Scrape final.
         var response = await _client.GetAsync("/metrics", CancellationToken.None);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
 
-        // O label real emitido pelo prometheus-net (UseHttpMetrics) para a rota é "endpoint",
-        // não "http_route" (calibrado inspecionando o corpo real de /metrics no host de teste).
         foreach (var series in new[] { "http_request_duration_seconds_count", "http_requests_received_total" })
         {
             foreach (var infraPath in new[] { "/health", "/health/live", "/health/ready", "/metrics" })

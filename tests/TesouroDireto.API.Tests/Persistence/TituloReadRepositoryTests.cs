@@ -155,10 +155,6 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
         titulo.Vencido.Should().BeFalse();
     }
 
-    // GetByNomeAsync: contrato do repositório é
-    // WHERE UPPER(tipo_titulo || ' ' || EXTRACT(YEAR FROM data_vencimento)::text) = UPPER(@Nome),
-    // com @Nome = nome.Trim(). O índice funcional ix_titulos_nome_upper cobre a MESMA
-    // expressão (não-único).
 
     [Fact]
     public async Task GetByNomeAsync_WithExactMatch_ShouldReturnMatchingTitulo()
@@ -178,8 +174,6 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetByNomeAsync_WithMixedCaseAndSurroundingWhitespace_ShouldReturnMatchingTitulo()
     {
-        // Guardião central da regressão do índice: se .Trim() ou UPPER sumirem do
-        // repositório, este teste fica vermelho.
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
@@ -208,9 +202,6 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetByNomeAsync_WithDuplicateNameFromDifferentVencimentos_ShouldReturnOneMatch()
     {
-        // ix_titulos_nome_upper NÃO é único: dois títulos do mesmo tipo+ano (dias
-        // diferentes) produzem o mesmo nome. GetByNomeAsync usa QueryFirstOrDefault,
-        // então o caso é sucesso (não NotFound), devolvendo uma única linha.
         var titulo1 = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2031, 3, 1)).Value).Value;
         var titulo2 = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2031, 9, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo1, CancellationToken.None);
@@ -227,17 +218,6 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetByNomeAsync_QueryPlan_ShouldBeAbleToUseNomeUpperIndex()
     {
-        // EXPLAIN robusto: com a tabela minúscula do teste, o planner prefere Seq Scan
-        // por custo. Desligamos enable_seqscan nesta conexão para provar que a
-        // expressão do índice funcional ix_titulos_nome_upper é USÁVEL pelo planner —
-        // trava a ponta da MIGRATION (índice existe e sua expressão é indexável).
-        // ATENÇÃO: o SQL abaixo é uma cópia estática, NÃO a query real emitida pelo
-        // repositório; logo este teste NÃO detecta uma regressão da expressão em
-        // GetByNomeAsync (uma mudança só no repo passa verde aqui). Quem trava a
-        // regressão do repositório de produção são os testes funcionais acima
-        // (WithExactMatch / WithMixedCaseAndSurroundingWhitespace / WithDuplicateName),
-        // que exercitam o caminho real. Manter as duas cópias (repo e este teste) em
-        // sincronia é manual.
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);

@@ -52,8 +52,6 @@ public sealed class SimularCommandHandlerTests
             .GetProjecaoAsync(Arg.Any<Indexador>(), Arg.Any<CancellationToken>());
     }
 
-    // O8: prova E3 — sucesso registra simulations_total{indexador,outcome="success"}
-    // e nunca simulation_failures_total.
     [Fact]
     public async Task Handle_Success_ShouldRecordSimulationSuccess()
     {
@@ -70,9 +68,6 @@ public sealed class SimularCommandHandlerTests
         _metrics.DidNotReceive().RecordSimulationFailure(Arg.Any<string>());
     }
 
-    // O8: prova E4 — falha por projeção indisponível (BCB fora + cache frio) registra
-    // simulations_total{indexador="Selic",outcome="failure"} e
-    // simulation_failures_total{reason=Error.Code}, nunca a Description (cardinalidade).
     [Fact]
     public async Task Handle_ProjecaoIndisponivel_ShouldRecordSimulationFailureWithErrorCode()
     {
@@ -155,9 +150,6 @@ public sealed class SimularCommandHandlerTests
         result.IsFailure.Should().BeTrue();
     }
 
-    // ObtidaEmUtc/Origem são obrigatórios em ProjecaoMercado de propósito (ver
-    // comentário no record): este helper só existe para não repetir os dois
-    // argumentos "neutros" em cada teste que não se importa com eles.
     private static ProjecaoMercado CreateProjecao(string indicador, decimal valorAnual) =>
         new(indicador, new DateOnly(2024, 1, 1), valorAnual, valorAnual,
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero), OrigemProjecao.Bcb);

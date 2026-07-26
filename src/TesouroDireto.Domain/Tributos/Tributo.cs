@@ -6,7 +6,7 @@ public sealed class Tributo : Entity<Guid>
 {
     private readonly List<Faixa> _faixas = [];
 
-#pragma warning disable CS8618 // EF Core requires parameterless constructor
+#pragma warning disable CS8618
     private Tributo() : base(Guid.Empty) { }
 #pragma warning restore CS8618
 

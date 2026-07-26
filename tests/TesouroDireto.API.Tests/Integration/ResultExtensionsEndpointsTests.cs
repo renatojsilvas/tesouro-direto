@@ -6,11 +6,6 @@ using FluentAssertions;
 
 namespace TesouroDireto.API.Tests.Integration;
 
-/// <summary>
-/// Prova de não-vacuidade do helper ResultExtensions.ToHttpResult: garante que o corpo
-/// de falha é problem+json completo (code + correlationId + traceId), consistente com o
-/// CustomizeProblemDetails configurado em Program.cs.
-/// </summary>
 [Collection("api")]
 public sealed class ResultExtensionsEndpointsTests(ApiTestFactory factory) : IAsyncLifetime
 {

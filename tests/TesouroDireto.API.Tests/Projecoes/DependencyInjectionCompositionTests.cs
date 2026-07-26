@@ -8,11 +8,6 @@ using TesouroDireto.Infrastructure.Projecoes;
 
 namespace TesouroDireto.API.Tests.Projecoes;
 
-// Rede de segurança da tarefa 23: trava por teste a composição de DI da
-// projeção de mercado (Infrastructure/DependencyInjection.cs, ~linhas 103-122).
-// Uma regressão que voltasse a registrar
-// AddHttpClient<IProjecaoMercadoService, FocusBcbService>(...) faria os testes
-// (e o app) baterem direto na API real do BCB, pulando o decorator de cache.
 public sealed class DependencyInjectionCompositionTests
     : IClassFixture<DependencyInjectionCompositionTests.CompositionWebFactory>
 {

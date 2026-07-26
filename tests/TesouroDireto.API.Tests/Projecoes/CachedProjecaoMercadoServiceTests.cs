@@ -30,10 +30,6 @@ public sealed class CachedProjecaoMercadoServiceTests : IDisposable
 
     public CachedProjecaoMercadoServiceTests()
     {
-        // Microsoft.Extensions.Caching.Memory (mesmo na 9.x) ainda não expõe TimeProvider
-        // em MemoryCacheOptions — só o ISystemClock legado (Clock). Um adapter fininho
-        // faz o MemoryCache seguir o mesmo relógio fake do decorator, sem sleeps reais
-        // para testar TTL/expiração.
         _cache = new MemoryCache(new MemoryCacheOptions { Clock = new FakeSystemClock(_timeProvider) });
 
         var configuration = new ConfigurationBuilder().Build();
@@ -164,12 +160,6 @@ public sealed class CachedProjecaoMercadoServiceTests : IDisposable
         await _inner.Received(1).GetProjecaoAsync(Indexador.Selic, Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Aquece o cache "lkg" com uma projeção válida (dentro do TTL de fallback, 7 dias),
-    /// depois faz o inner devolver <paramref name="error"/> — que não é
-    /// <see cref="ProjecaoErrors.HttpError"/> — e confirma que o erro original propaga
-    /// sem cair no fallback, mesmo com uma entrada "lkg" quente disponível.
-    /// </summary>
     private async Task AssertPropagatesWithoutFallback(Error error)
     {
         SetupInnerSuccess(Indexador.Selic);
@@ -201,12 +191,6 @@ public sealed class CachedProjecaoMercadoServiceTests : IDisposable
             .Returns(Result<ProjecaoMercado>.Success(projecao));
     }
 
-    /// <summary>
-    /// NSubstitute não verifica bem chamadas genéricas de <see cref="ILogger.Log"/> via
-    /// <c>Received</c> direto (o compilador não infere o <c>TState</c>) — o padrão usual
-    /// é inspecionar <c>ReceivedCalls()</c> pelo nome do método e o primeiro argumento
-    /// (o <see cref="LogLevel"/>).
-    /// </summary>
     private void AssertWarningLogged()
     {
         var warningCalls = _logger.ReceivedCalls()

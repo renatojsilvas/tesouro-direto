@@ -7,8 +7,6 @@ namespace TesouroDireto.Application.Tests.Tributos;
 
 public sealed class TributosPadraoTests
 {
-    // Fonte dos literais: tests/TesouroDireto.E2E.Tests/seed.sql (memória project_tributos_configurados).
-    // Literais explícitos e independentes de TributosPadrao.cs para evitar asserção circular.
     private static readonly decimal[] IofAliquotasEsperadas =
     [
         96m, 93m, 90m, 86m, 83m, 80m, 76m, 73m, 70m, 66m,

@@ -4,10 +4,8 @@
 
 namespace TesouroDireto.Infrastructure.Persistence.Migrations
 {
-    /// <inheritdoc />
     public partial class MakePrecoTaxaValuesNullable : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<decimal>(
@@ -71,7 +69,6 @@ namespace TesouroDireto.Infrastructure.Persistence.Migrations
                 oldScale: 6);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<decimal>(

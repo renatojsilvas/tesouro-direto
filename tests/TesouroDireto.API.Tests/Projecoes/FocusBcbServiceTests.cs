@@ -182,7 +182,6 @@ public sealed class FocusBcbServiceTests
     {
         var service = CreateServiceWithHandler(new InternalTimeoutHandler());
 
-        // Chamador NUNCA cancela (CancellationToken.None).
         var result = await service.GetProjecaoAsync(Indexador.Selic, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
@@ -236,8 +235,6 @@ public sealed class FocusBcbServiceTests
         }
     }
 
-    // Cancela o token do CHAMADOR e então observa o cancelamento — como um cancelamento
-    // legítimo pedido por quem chamou (não uma falha do BCB).
     private sealed class CallerCancellingHandler(CancellationTokenSource cts) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -249,9 +246,6 @@ public sealed class FocusBcbServiceTests
         }
     }
 
-    // Simula timeout INTERNO (HttpClient.Timeout / Polly AttemptTimeout): TaskCanceledException
-    // com um token JÁ cancelado que NÃO é o do chamador. Como o token do chamador não está
-    // cancelado, o filtro `when` do FocusBcbService falha e cai no catch amplo -> HttpError.
     private sealed class InternalTimeoutHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(

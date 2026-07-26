@@ -9,12 +9,10 @@ public sealed class SimuladorServiceTests
 {
     private readonly SimuladorService _service = new();
 
-    // === PREFIXADO ===
 
     [Fact]
     public void Simular_Prefixado_ShouldCalculateCorrectly()
     {
-        // R$10,000 at 12% for 252 DU (1 year), no tributos
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroPrefixado,
             valorInvestido: 10_000m,
@@ -33,7 +31,6 @@ public sealed class SimuladorServiceTests
     [Fact]
     public void Simular_Prefixado_HalfYear_ShouldCompound()
     {
-        // R$10,000 at 12% for 126 DU (~6 months)
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroPrefixado,
             valorInvestido: 10_000m,
@@ -43,27 +40,23 @@ public sealed class SimuladorServiceTests
         var result = _service.Simular(input);
 
         result.IsSuccess.Should().BeTrue();
-        // (1.12)^(126/252) = (1.12)^0.5 ≈ 1.0583
         result.Value.ValorBruto.Should().BeApproximately(10_583m, 2m);
     }
 
-    // === SELIC ===
 
     [Fact]
     public void Simular_Selic_ShouldUseProjectionPlusSpread()
     {
-        // R$10,000, Selic projetada 13.75%, spread 0.1%, 252 DU
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroSelic,
             valorInvestido: 10_000m,
-            taxaContratada: 0.10m, // spread
+            taxaContratada: 0.10m,
             diasUteis: 252,
             projecaoAnual: 13.75m);
 
         var result = _service.Simular(input);
 
         result.IsSuccess.Should().BeTrue();
-        // Effective ≈ (1 + 0.1375) * (1 + 0.001) - 1 ≈ 13.864%
         result.Value.ValorBruto.Should().BeApproximately(11_386m, 5m);
     }
 
@@ -83,32 +76,27 @@ public sealed class SimuladorServiceTests
         result.Error.Code.Should().Be("Simulador.ProjecaoRequired");
     }
 
-    // === IPCA+ ===
 
     [Fact]
     public void Simular_IPCA_ShouldUseFisherEquation()
     {
-        // R$10,000, IPCA projetada 4%, taxa real 6%, 252 DU
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroIPCA,
             valorInvestido: 10_000m,
-            taxaContratada: 6m, // taxa real
+            taxaContratada: 6m,
             diasUteis: 252,
             projecaoAnual: 4m);
 
         var result = _service.Simular(input);
 
         result.IsSuccess.Should().BeTrue();
-        // Effective = (1.04) * (1.06) - 1 = 10.24%
         result.Value.ValorBruto.Should().BeApproximately(11_024m, 2m);
     }
 
-    // === IGP-M+ ===
 
     [Fact]
     public void Simular_IGPM_ShouldUseFisherEquation()
     {
-        // R$10,000, IGP-M projetada 5%, taxa real 6%, 252 DU
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroIGPMComJuros,
             valorInvestido: 10_000m,
@@ -119,17 +107,13 @@ public sealed class SimuladorServiceTests
         var result = _service.Simular(input);
 
         result.IsSuccess.Should().BeTrue();
-        // Effective = (1.05) * (1.06) - 1 = 11.3%
-        // But IGP-M+ always has coupons, so calculation is different
         result.Value.Cupons.Should().NotBeNull();
     }
 
-    // === CUPONS SEMESTRAIS ===
 
     [Fact]
     public void Simular_PrefixadoComJuros_ShouldGenerateCupons()
     {
-        // R$10,000, 12%, 504 DU (2 years), vencimento in 2 years
         var dataCompra = new DateOnly(2024, 1, 15);
         var dataVencimento = new DateOnly(2026, 1, 15);
         var input = CreateInput(
@@ -168,12 +152,10 @@ public sealed class SimuladorServiceTests
         result.Value.Cupons!.Count.Should().BeGreaterThan(0);
     }
 
-    // === TRIBUTOS ===
 
     [Fact]
     public void Simular_WithIR_FaixaPorDias_ShortTerm_ShouldApply225()
     {
-        // 180 dias corridos → 22.5% sobre rendimento
         var ir = CreateTributoIR();
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroPrefixado,
@@ -195,7 +177,6 @@ public sealed class SimuladorServiceTests
     [Fact]
     public void Simular_WithIR_FaixaPorDias_MediumTerm_ShouldApply20()
     {
-        // 360 dias corridos → 20%
         var ir = CreateTributoIR();
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroPrefixado,
@@ -214,7 +195,6 @@ public sealed class SimuladorServiceTests
     [Fact]
     public void Simular_WithIR_FaixaPorDias_LongTerm_ShouldApply15()
     {
-        // 721 dias corridos → 15%
         var ir = CreateTributoIR();
         var input = CreateInput(
             tipoTitulo: TipoTitulo.TesouroPrefixado,
@@ -248,7 +228,6 @@ public sealed class SimuladorServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TributosAplicados.Should().HaveCount(1);
-        // 0.25% de 10,000 = 25
         result.Value.TributosAplicados.First().Valor.Should().BeApproximately(25m, 0.01m);
     }
 
@@ -272,8 +251,6 @@ public sealed class SimuladorServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TributosAplicados.Should().HaveCount(2);
-        // IR first: 20% of ~1200 = ~240, rendimento adjusted to ~960
-        // Taxa extra: 10% of ~960 (adjusted) = ~96
         var taxaExtraAplicada = result.Value.TributosAplicados.Last();
         taxaExtraAplicada.Base.Should().BeLessThan(result.Value.RendimentoBruto);
     }
@@ -295,7 +272,6 @@ public sealed class SimuladorServiceTests
         result.Value.ValorLiquido.Should().Be(result.Value.ValorBruto);
     }
 
-    // === VALIDATIONS ===
 
     [Fact]
     public void Simular_WithZeroInvestment_ShouldReturnFailure()
@@ -328,7 +304,6 @@ public sealed class SimuladorServiceTests
         result.Value.RendimentoBruto.Should().Be(0m);
     }
 
-    // === HELPERS ===
 
     private static SimulacaoInput CreateInput(
         TipoTitulo tipoTitulo,

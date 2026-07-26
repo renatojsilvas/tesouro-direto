@@ -35,7 +35,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         return id;
     }
 
-    // 20. GET /configuracoes/tributos com seed -> 200 ordenado
     [Fact]
     public async Task GetConfiguracoesTributos_WithSeed_ShouldReturnOrderedByOrdem()
     {
@@ -51,7 +50,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         dtos.Select(d => d.Nome).Should().ContainInOrder("IOF", "Taxa Custodia", "IR");
     }
 
-    // 21. POST /configuracoes/tributos válido (enums numéricos no JSON) -> 201 + Location + { Id }
     [Fact]
     public async Task PostConfiguracoesTributos_WithValidPayload_ShouldReturn201WithLocationAndId()
     {
@@ -74,7 +72,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         doc.RootElement.GetProperty("id").GetGuid().Should().NotBeEmpty();
     }
 
-    // 21a. POST /configuracoes/tributos com enums como STRING no JSON -> 201
     [Fact]
     public async Task PostConfiguracoesTributos_WithStringEnums_ShouldReturn201()
     {
@@ -88,7 +85,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
-    // 21b. POST /configuracoes/tributos com enums como NÚMERO no JSON (backward compat) -> 201
     [Fact]
     public async Task PostConfiguracoesTributos_WithNumericEnums_ShouldReturn201()
     {
@@ -102,7 +98,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
-    // 22. POST /configuracoes/tributos sem faixas/nome inválido -> 400
     [Fact]
     public async Task PostConfiguracoesTributos_WithoutFaixas_ShouldReturn400()
     {
@@ -119,7 +114,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    // 23. PUT /configuracoes/tributos/{id} existente válido -> 204
     [Fact]
     public async Task PutConfiguracoesTributos_WithExistingIdAndValidPayload_ShouldReturn204()
     {
@@ -136,7 +130,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    // 24. PUT /configuracoes/tributos/{id} id inexistente -> 404
     [Fact]
     public async Task PutConfiguracoesTributos_WithUnknownId_ShouldReturn404()
     {
@@ -151,7 +144,6 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // 25. PUT /configuracoes/tributos/{id} faixas inválidas -> 400
     [Fact]
     public async Task PutConfiguracoesTributos_WithInvalidFaixas_ShouldReturn400()
     {

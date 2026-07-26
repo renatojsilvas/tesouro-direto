@@ -18,11 +18,10 @@ public sealed class DiasUteisServiceTests
     [Fact]
     public async Task CalcularAsync_ShouldLoadFeriadosAndCalculate()
     {
-        var feriados = new[] { new DateOnly(2024, 7, 17) }; // Wed
+        var feriados = new[] { new DateOnly(2024, 7, 17) };
         _readRepo.GetAllDatasAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(feriados));
 
-        // Mon Jul 15 to Fri Jul 19 = 4 weekdays - 1 holiday = 3
         var result = await _service.CalcularDiasUteisAsync(
             new DateOnly(2024, 7, 15),
             new DateOnly(2024, 7, 19),
@@ -54,7 +53,6 @@ public sealed class DiasUteisServiceTests
             .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(
                 Array.Empty<DateOnly>()));
 
-        // Mon Jul 15 to Fri Jul 19 = 4
         var result = await _service.CalcularDiasUteisAsync(
             new DateOnly(2024, 7, 15),
             new DateOnly(2024, 7, 19),

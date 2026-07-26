@@ -12,12 +12,6 @@ using TesouroDireto.API.Extensions;
 
 namespace TesouroDireto.API.Tests.Integration;
 
-/// <summary>
-/// Tarefa 33: geração/exposição do OpenAPI/Swagger. Hosts leves (connstring FAKE, sem
-/// Testcontainers) — geração do swagger.json não toca o banco. Em "Development", o boot
-/// tentaria migração real via <see cref="IDatabaseInitializer"/> mesmo com uma connstring
-/// fake, então ele é substituído por um no-op só nesses testes.
-/// </summary>
 public sealed class SwaggerEndpointTests
 {
     private const string FakeConnectionString =
@@ -59,7 +53,6 @@ public sealed class SwaggerEndpointTests
                     $"o path {expectedPath} deveria estar documentado no swagger.json.\n{body}");
             }
 
-            // "/" é infraestrutura de smoke-test, não rota de negócio — ExcludeFromDescription.
             paths.TryGetProperty("/", out _).Should().BeFalse(
                 "a rota \"/\" foi marcada com ExcludeFromDescription e não deveria aparecer no doc.");
 
@@ -68,9 +61,6 @@ public sealed class SwaggerEndpointTests
             apiKeyScheme.GetProperty("in").GetString().Should().Be("header");
             apiKeyScheme.GetProperty("name").GetString().Should().Be("X-Api-Key");
 
-            // AddSecurityRequirement é um requisito GLOBAL do documento (chave "security" na
-            // raiz do OpenAPI) — pela spec, isso já se aplica a TODAS as operations, sem
-            // precisar repetir "security" em cada uma individualmente.
             root.TryGetProperty("security", out var documentSecurity).Should().BeTrue(
                 $"o documento deveria ter um security requirement global referenciando ApiKey.\n{body}");
             var referencesApiKeyScheme = documentSecurity.EnumerateArray()
@@ -85,17 +75,12 @@ public sealed class SwaggerEndpointTests
             response401.GetProperty("content").TryGetProperty("application/problem+json", out _)
                 .Should().BeTrue("a resposta 401 deveria usar content-type application/problem+json.");
 
-            // BaseCalculo/TipoCalculo (enums de CreateTributoRequest) devem aparecer como string,
-            // não como integer — Swashbuckle 6.x não lê JsonStringEnumConverter registrado via
-            // ConfigureHttpJsonOptions (Minimal API), só via MVC; ver Program.cs para a solução.
             var schemas = root.GetProperty("components").GetProperty("schemas");
             var createTributoRequestSchema = schemas.EnumerateObject()
                 .FirstOrDefault(p => p.Name.Contains("CreateTributoRequest", StringComparison.Ordinal));
             createTributoRequestSchema.Value.ValueKind.Should().NotBe(JsonValueKind.Undefined,
                 $"deveria existir um schema para CreateTributoRequest.\n{body}");
 
-            // As propriedades referenciam os schemas dos enums via $ref — o type:string real
-            // fica no schema nomeado (BaseCalculo/TipoCalculo), não inline na propriedade.
             createTributoRequestSchema.Value.GetProperty("properties").GetProperty("baseCalculo")
                 .GetProperty("$ref").GetString().Should().Be("#/components/schemas/BaseCalculo");
             createTributoRequestSchema.Value.GetProperty("properties").GetProperty("tipoCalculo")
@@ -140,9 +125,6 @@ public sealed class SwaggerEndpointTests
 
                 builder.ConfigureTestServices(services =>
                 {
-                    // Development tentaria migração real no boot (DatabaseInitializer só
-                    // pula sob o environment "Testing"); com uma connstring fake isso
-                    // quebraria o host antes de qualquer teste rodar.
                     services.RemoveAll<IDatabaseInitializer>();
                     services.AddSingleton<IDatabaseInitializer, NoOpDatabaseInitializer>();
                 });
@@ -200,12 +182,6 @@ public sealed class SwaggerEndpointTests
                 swaggerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             }
 
-            // Positivo de controle: rota ROTEADA de verdade (diferente do middleware puro do
-            // swagger), instrumentada com endpoint="/_test/throw" — prova que a instrumentação
-            // está ativa e o scrape funciona (senão a ausência de série vazia abaixo seria
-            // vácua por o scrape inteiro estar quebrado). Usa /_test/throw (só mapeada sob
-            // "Testing", que é o environment desta fixture) em vez de uma rota de negócio real
-            // para não depender do Postgres (connstring desta fixture é fake).
             using (var request = new HttpRequestMessage(HttpMethod.Get, "/_test/throw"))
             {
                 request.Headers.Add("X-Api-Key", ValidApiKey);
@@ -217,11 +193,6 @@ public sealed class SwaggerEndpointTests
 
             foreach (var series in new[] { "http_request_duration_seconds_count", "http_requests_received_total" })
             {
-                // UseSwagger() é middleware puro (não um endpoint roteado) — quando
-                // instrumentado por engano pelo UseHttpMetrics, o prometheus-net não tem como
-                // saber o path da rota e emite endpoint="" (vazio), nunca "endpoint=/swagger...".
-                // A asserção correta é a ausência do label vazio, não de um path "/swagger*"
-                // que o prometheus-net jamais produziria.
                 var emptyEndpointPattern = new Regex(
                     $@"{Regex.Escape(series)}\{{[^}}]*endpoint=""""[^}}]*\}}");
 
@@ -244,10 +215,6 @@ public sealed class SwaggerEndpointTests
         {
             protected override void ConfigureWebHost(IWebHostBuilder builder)
             {
-                // "Testing" pula a migração nativamente (DatabaseInitializer.InitializeAsync
-                // retorna cedo) — não precisa de no-op aqui. Representa o comportamento de
-                // produção para o pipeline do swagger (UseSwagger depois do ApiKeyMiddleware,
-                // sem UseSwaggerUI) porque não é Development.
                 builder.UseEnvironment("Testing");
                 builder.ConfigureAppConfiguration((_, config) =>
                 {
