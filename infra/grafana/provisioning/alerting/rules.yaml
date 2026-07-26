@@ -114,6 +114,10 @@ groups:
 
       # 3 - 5xx alto: razão 5xx/total > 5%, com guarda de volume mínimo
       # (> 0.05 rps) para não disparar sobre 1 request isolado.
+      # Denominador limpo desde 2026-07-25 (tarefa 29): /health*, /health/live,
+      # /health/ready e /metrics saíram da instrumentação server-side (UseHttpMetrics),
+      # então esta razão passou a medir só tráfego de negócio. REAVALIAR o threshold
+      # (0.05) após ~1 semana de produção com o denominador já limpo.
       - uid: td-http-5xx-alto
         title: "Taxa de erro 5xx alta"
         condition: C

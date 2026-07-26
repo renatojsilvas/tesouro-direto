@@ -46,7 +46,16 @@ await app.InitializeDatabaseAsync();
 app.UseExceptionHandler();
 
 app.UseSerilogDefaults();
-app.UseHttpMetrics();
+
+// Reusa a lista ApiKey:ExcludedPaths (paths de infra: /health*, /metrics) para excluir
+// esses paths da instrumentação server-side do prometheus-net, evitando que eles inflem
+// o denominador da regra de alerta td-http-5xx-alto.
+var httpMetricsExcludedPaths = app.Configuration.GetSection("ApiKey:ExcludedPaths").Get<string[]>() ?? [];
+app.UseWhen(
+    ctx => !httpMetricsExcludedPaths.Any(p =>
+        ctx.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase)),
+    branch => branch.UseHttpMetrics());
+
 app.UseMiddleware<ApiKeyMiddleware>();
 
 app.MapHealthChecks("/health");
