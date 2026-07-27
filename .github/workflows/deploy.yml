@@ -55,24 +55,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start E2E environment
-        run: docker compose -f docker-compose.e2e.yml up -d --build
-
-      - name: Wait for services to be healthy
-        run: |
-          echo "Waiting for API..."
-          timeout 120 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 2; done'
-          echo ""
-          echo "Waiting for Web..."
-          timeout 120 bash -c 'until curl -sf http://localhost:5275/; do sleep 2; done'
-          echo ""
-          echo "All services healthy."
-
-      - name: Seed test data
-        run: |
-          docker exec tesouro-direto-e2e-db psql -U app -d tesouro_direto_e2e -f /seed.sql
-          echo "Seed complete."
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -83,9 +65,12 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Run E2E tests
-        working-directory: tests/TesouroDireto.E2E.Tests
-        run: npx playwright test
+      # Fonte unica do fluxo E2E (subir a stack + esperar saude + seed + rodar os
+      # specs): o MESMO script rodado localmente. Evita duas fontes de verdade que
+      # divergem com o tempo. O script tem timeout nas esperas e um trap que derruba
+      # a stack ao sair. Requer node_modules/browsers ja instalados (passo acima).
+      - name: Run E2E (run-e2e.sh)
+        run: ./run-e2e.sh
 
       - name: Upload test results
         if: failure()
@@ -95,6 +80,8 @@ jobs:
           path: tests/TesouroDireto.E2E.Tests/test-results/
           retention-days: 7
 
+      # Rede de seguranca: o trap do run-e2e.sh ja faz o down -v, mas um teardown
+      # explicito cobre o caso de o script falhar antes de armar o trap.
       - name: Tear down E2E environment
         if: always()
         run: docker compose -f docker-compose.e2e.yml down -v
