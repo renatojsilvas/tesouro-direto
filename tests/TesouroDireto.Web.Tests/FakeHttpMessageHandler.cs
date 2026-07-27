@@ -32,13 +32,22 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
             $"No route configured for {request.Method} {requestPath}");
     }
 
-    public static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json)
+    public static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json, IReadOnlyDictionary<string, string>? headers = null)
     {
         var response = new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(json)
         };
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        if (headers is not null)
+        {
+            foreach (var (name, value) in headers)
+            {
+                response.Headers.TryAddWithoutValidation(name, value);
+            }
+        }
+
         return response;
     }
 

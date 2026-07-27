@@ -1,5 +1,6 @@
 @page "/historico"
 @rendermode InteractiveServer
+@using System.Text.Json.Serialization
 @using TesouroDireto.Web.Services
 @inject TesouroApiClient Api
 @inject IJSRuntime JS
@@ -53,7 +54,7 @@
     <p><em>Carregando preços...</em></p>
 }
 
-@if (precos is { Count: > 0 })
+@if (pageItems is { Count: > 0 })
 {
     <div class="card mb-4">
         <div class="card-body">
@@ -62,7 +63,7 @@
         </div>
     </div>
 
-    <p class="text-muted">@precos.Count registro(s)</p>
+    <p class="text-muted" data-testid="pg-info">@totalCount registro(s)</p>
 
     <div class="table-responsive">
         <table class="table table-sm table-striped" data-testid="tabela-precos">
@@ -77,7 +78,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var preco in precos.TakeLast(50).Reverse())
+                @foreach (var preco in pageItems)
                 {
                     <tr>
                         <td>@FormatDate(preco.DataBase)</td>
@@ -90,10 +91,13 @@
                 }
             </tbody>
         </table>
-        @if (precos.Count > 50)
-        {
-            <p class="text-muted fst-italic" data-testid="mensagem-paginacao">Exibindo os 50 registros mais recentes de @precos.Count total.</p>
-        }
+
+        <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-sm btn-outline-secondary" data-testid="pg-first" disabled="@(links?.First is null || currentPage <= 1)" @onclick="IrPrimeiraAsync">Primeira</button>
+            <button class="btn btn-sm btn-outline-secondary" data-testid="pg-prev" disabled="@(links?.Prev is null)" @onclick="IrAnteriorAsync">Anterior</button>
+            <button class="btn btn-sm btn-outline-secondary" data-testid="pg-next" disabled="@(links?.Next is null)" @onclick="IrProximaAsync">Próxima</button>
+            <button class="btn btn-sm btn-outline-secondary" data-testid="pg-last" disabled="@(links?.Last is null || currentPage >= LastPage)" @onclick="IrUltimaAsync">Última</button>
+        </div>
     </div>
 }
 else if (!loading && selectedTituloCodigo != "")
@@ -102,8 +106,13 @@ else if (!loading && selectedTituloCodigo != "")
 }
 
 @code {
+    private const int PageSize = 25;
+
     private List<TituloItem>? titulos;
-    private List<PrecoItem>? precos;
+    private List<PrecoItem>? pageItems;
+    private int totalCount;
+    private PageLinks? links;
+    private int currentPage = 1;
     private bool loadingTitulos = true;
     private bool loading;
     private string? erro;
@@ -131,35 +140,48 @@ else if (!loading && selectedTituloCodigo != "")
     {
         if (string.IsNullOrEmpty(selectedTituloCodigo))
         {
-            precos = null;
+            pageItems = null;
+            links = null;
+            totalCount = 0;
             return;
         }
 
+        var tituloSelecionado = titulos?.FirstOrDefault(t => t.Codigo == selectedTituloCodigo);
+        if (tituloSelecionado?.Links is null || !tituloSelecionado.Links.TryGetValue("precos", out var precosLink))
+        {
+            erro = "Título selecionado não possui link de preços.";
+            pageItems = null;
+            return;
+        }
+
+        var queryParams = new List<string> { "page=1", $"pageSize={PageSize}" };
+
+        if (dataInicio.HasValue)
+        {
+            queryParams.Add($"dataInicio={DateOnly.FromDateTime(dataInicio.Value):yyyy-MM-dd}");
+        }
+
+        if (dataFim.HasValue)
+        {
+            queryParams.Add($"dataFim={DateOnly.FromDateTime(dataFim.Value):yyyy-MM-dd}");
+        }
+
+        currentPage = 1;
+        await CarregarPaginaAsync(precosLink.Href + "?" + string.Join("&", queryParams));
+    }
+
+    private async Task CarregarPaginaAsync(string url)
+    {
         loading = true;
         erro = null;
 
         try
         {
-            var url = $"titulos/{selectedTituloCodigo}/precos";
-            var queryParams = new List<string>();
-
-            if (dataInicio.HasValue)
-            {
-                queryParams.Add($"dataInicio={DateOnly.FromDateTime(dataInicio.Value):yyyy-MM-dd}");
-            }
-
-            if (dataFim.HasValue)
-            {
-                queryParams.Add($"dataFim={DateOnly.FromDateTime(dataFim.Value):yyyy-MM-dd}");
-            }
-
-            if (queryParams.Count > 0)
-            {
-                url += "?" + string.Join("&", queryParams);
-            }
-
-            precos = await Api.GetAsync<List<PrecoItem>>(url);
-            chartPending = precos is { Count: > 0 };
+            var pagina = await Api.GetPagedAsync<PrecoItem>(url);
+            pageItems = pagina.Items.ToList();
+            totalCount = pagina.TotalCount;
+            links = pagina.Links;
+            chartPending = pageItems is { Count: > 0 };
         }
         catch (Exception ex)
         {
@@ -171,19 +193,65 @@ else if (!loading && selectedTituloCodigo != "")
         }
     }
 
+    private int LastPage => totalCount > 0 ? (int)Math.Ceiling(totalCount / (double)PageSize) : 1;
+
+    private Task IrPrimeiraAsync()
+    {
+        if (links?.First is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        currentPage = 1;
+        return CarregarPaginaAsync(links.First);
+    }
+
+    private Task IrAnteriorAsync()
+    {
+        if (links?.Prev is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        currentPage--;
+        return CarregarPaginaAsync(links.Prev);
+    }
+
+    private Task IrProximaAsync()
+    {
+        if (links?.Next is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        currentPage++;
+        return CarregarPaginaAsync(links.Next);
+    }
+
+    private Task IrUltimaAsync()
+    {
+        if (links?.Last is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        currentPage = LastPage;
+        return CarregarPaginaAsync(links.Last);
+    }
+
     private bool chartPending;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (chartPending && precos is { Count: > 0 })
+        if (chartPending && pageItems is { Count: > 0 })
         {
             chartPending = false;
 
-            var labels = precos.Select(p => FormatDate(p.DataBase)).ToArray();
+            var labels = pageItems.Select(p => FormatDate(p.DataBase)).ToArray();
             var datasets = new object[]
             {
-                new { label = "PU Compra", data = precos.Select(p => p.PuCompra ?? 0).ToArray(), color = "#0d6efd" },
-                new { label = "PU Venda", data = precos.Select(p => p.PuVenda ?? 0).ToArray(), color = "#dc3545" }
+                new { label = "PU Compra", data = pageItems.Select(p => p.PuCompra ?? 0).ToArray(), color = "#0d6efd" },
+                new { label = "PU Venda", data = pageItems.Select(p => p.PuVenda ?? 0).ToArray(), color = "#dc3545" }
             };
 
             await JS.InvokeVoidAsync("chartInterop.createLineChart", "priceChart", labels, datasets);
@@ -218,6 +286,12 @@ else if (!loading && selectedTituloCodigo != "")
         return value?.ToString("C2", Cultura) ?? "-";
     }
 
-    private sealed record TituloItem(string Codigo, string TipoTitulo, string DataVencimento, string Indexador);
+    private sealed record TituloItem(
+        string Codigo,
+        string TipoTitulo,
+        string DataVencimento,
+        string Indexador,
+        [property: JsonPropertyName("_links")] Dictionary<string, HateoasLinkDto>? Links);
+
     private sealed record PrecoItem(string DataBase, decimal? TaxaCompra, decimal? TaxaVenda, decimal? PuCompra, decimal? PuVenda, decimal? PuBase);
 }
