@@ -1,5 +1,6 @@
 @page "/simulador"
 @rendermode InteractiveServer
+@using System.Text.Json.Serialization
 @using TesouroDireto.Web.Services
 @inject TesouroApiClient Api
 
@@ -242,7 +243,12 @@
                 projecaoAnual
             };
 
-            var result = await Api.PostAsync<SimulacaoResult>("simulador", request);
+            var tituloSelecionado = titulos?.FirstOrDefault(t => t.Codigo == selectedTituloCodigo);
+            var simularHref = tituloSelecionado?.Links is not null && tituloSelecionado.Links.TryGetValue("simular", out var simularLink)
+                ? simularLink.Href
+                : "simulador";
+
+            var result = await Api.PostAsync<SimulacaoResult>(simularHref, request);
 
             if (result.IsSuccess)
             {
@@ -268,7 +274,14 @@
         }
     }
 
-    private sealed record TituloItem(string Codigo, string TipoTitulo, string DataVencimento, string Indexador, bool PagaJurosSemestrais, bool Vencido);
+    private sealed record TituloItem(
+        string Codigo,
+        string TipoTitulo,
+        string DataVencimento,
+        string Indexador,
+        bool PagaJurosSemestrais,
+        bool Vencido,
+        [property: JsonPropertyName("_links")] Dictionary<string, HateoasLinkDto>? Links);
 
     private sealed record SimulacaoResult(
         decimal ValorInvestido, decimal ValorBruto, decimal RendimentoBruto,

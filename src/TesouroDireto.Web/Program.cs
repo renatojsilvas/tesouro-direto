@@ -11,6 +11,8 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddTransient<CorrelationIdHandler>();
 
+builder.Services.AddSingleton<IConditionalGetStore, BoundedConditionalGetStore>();
+
 builder.Services.AddHttpClient<TesouroApiClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"]!);

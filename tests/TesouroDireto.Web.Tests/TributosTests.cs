@@ -29,7 +29,7 @@ public class TributosTests : TestContext
         }
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
-        Services.AddSingleton(new TesouroApiClient(httpClient));
+        Services.AddSingleton(new TesouroApiClient(httpClient, new BoundedConditionalGetStore()));
         return handler;
     }
 
