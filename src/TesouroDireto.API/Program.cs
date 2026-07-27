@@ -41,6 +41,8 @@ builder.Services.AddSwaggerGen(c =>
     });
 
     c.SchemaFilter<TesouroDireto.API.OpenApi.EnumSchemaFilter>();
+    c.OperationFilter<TesouroDireto.API.OpenApi.PrecosPaginacaoOperationFilter>();
+    c.OperationFilter<TesouroDireto.API.OpenApi.TributoLocationOperationFilter>();
 });
 
 builder.Services.AddProblemDetails(options =>

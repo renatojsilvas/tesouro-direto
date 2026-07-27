@@ -40,18 +40,22 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 | GET | `/metrics` | Prometheus (isento) | 200 |
 | POST | `/importacao` | `ImportCsvCommand` (sem body) | 200/400 |
 | POST | `/importacao/feriados` | `ImportFeriadosCommand` (sem body) | 200/400 |
-| GET | `/titulos?indexador&vencido` | `GetTitulosQuery` | 200/400 |
-| GET | `/titulos/{codigo}/precos?dataInicio&dataFim` | `GetPrecosByCodigoQuery` | 200/400/404 | ← tarefa 36 (identificador público) |
+| GET | `/titulos?indexador&vencido` | `GetTitulosQuery` (itens com `_links`) | 200/400 |
+| GET | `/titulos/{codigo}` | `GetTituloByCodigoQuery` (recurso único, `_links` self/precos/preco-atual/simular) | 200/400/404 | ← tarefa 39 |
+| GET | `/titulos/{codigo}/precos?dataInicio&dataFim&page&pageSize` | `GetPrecosByCodigoQuery` | 200/400/404 | ← tarefa 36; paginação opcional + `Link`/`X-Total-Count` na 39 |
 | GET | `/titulos/{codigo}/preco-atual` | `GetPrecoAtualByCodigoQuery` | 200/400/404 | ← tarefa 36 |
 | GET | `/titulos/{id}/precos?dataInicio&dataFim` | `GetPrecosQuery` | 200/404 | **DEPRECATED** (tarefa 36; removida na 38) |
 | GET | `/titulos/{id}/preco-atual` | `GetPrecoAtualQuery` | 200/404 | **DEPRECATED** (tarefa 36; removida na 38) |
 | GET | `/titulos/preco-atual?nome` | `GetPrecoAtualByNomeQuery` | 200/404 |
 | GET | `/titulos/precos?nome&dataInicio&dataFim` | `GetPrecosByNomeQuery` | 200/404 |
 | GET | `/configuracoes/tributos` | `GetTributosQuery` | 200/400 |
-| POST | `/configuracoes/tributos` | **`CreateTributoCommand` (corpo ligado direto)** | 201/400 |
+| GET | `/configuracoes/tributos/{id}` | `GetTributoByIdQuery` (recurso único; alvo do `Location` do 201) | 200/404 | ← tarefa 39 |
+| POST | `/configuracoes/tributos` | **`CreateTributoCommand` (corpo ligado direto)** — `Location` via `CreatedAtRoute` | 201/400 |
 | PUT | `/configuracoes/tributos/{id}` | `UpdateTributoCommand` (via `UpdateTributoRequest`) | 204/404/400 |
 | POST | `/simulador` | `SimularCommand` (via `SimularRequest`) | 200/400 |
 | POST | `/simulador/cenarios` | `SimularCenariosCommand` | 200/400 |
+
+**Maturidade REST (tarefa 39):** todas as rotas GET de leitura passam por `ReadEndpointExtensions.MapReadGet` (GET+HEAD+OPTIONS; método não suportado → 405 com `Allow: GET, HEAD, OPTIONS`) e pelo `ConditionalGetFilter` (endpoint filter): ETag = hash de token de versão global (`IContentVersionProvider`: `max(data_base)`+counts) + método+path+query; `If-None-Match` casando → 304; `ETag`/`Cache-Control: public, max-age=300` **só em respostas 2xx** (erro não é cacheável). Simulador → `Cache-Control: no-store`. Paginação in-memory em `/titulos/{codigo}/precos` (`page`/`pageSize`, defaults preservam o comportamento anterior) com `Link` (RFC 8288) + `X-Total-Count`; corpo segue array cru. `_links` HAL-like só nos itens de título (sibling; raiz segue array). nginx: gzip (`gzip_vary on`) + `limit_req_status 429`+`Retry-After`. **Regra para todo endpoint futuro.**
 
 **Middleware:** `ApiKeyMiddleware` (header `X-Api-Key`, comparação SHA256 em tempo constante, isenta `/health` e `/metrics`, falha→401 com corpo `application/problem+json`+`correlationId` desde a tarefa 6); `CorrelationIdMiddleware` (header `X-Correlation-Id`, valida regex, injeta no LogContext **e em `HttpContext.Items`** para leitura no corpo do ProblemDetails).
 

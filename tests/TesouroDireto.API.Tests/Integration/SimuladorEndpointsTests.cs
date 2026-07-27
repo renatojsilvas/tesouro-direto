@@ -61,6 +61,44 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     }
 
     [Fact]
+    public async Task PostSimulador_ShouldSetCacheControlNoStore()
+    {
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
+
+        var response = await _client.PostAsJsonAsync("/simulador", new
+        {
+            Codigo = codigo,
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 10m,
+            ProjecaoAnual = (decimal?)null
+        }, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PostSimuladorCenarios_ShouldSetCacheControlNoStore()
+    {
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
+
+        var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
+        {
+            Codigo = codigo,
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 10m,
+            Cenarios = new[] { new { Nome = "Base", ProjecaoAnual = 5m } }
+        }, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task PostSimulador_WithIndexedTituloAndExplicitProjecao_ShouldReturn200WithoutBcbCall()
     {
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2035, 5, 15));

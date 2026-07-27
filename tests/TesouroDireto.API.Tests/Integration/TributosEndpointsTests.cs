@@ -73,6 +73,39 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
     }
 
     [Fact]
+    public async Task PostConfiguracoesTributos_ThenGetOnLocation_ShouldReturn200WithCreatedTributo()
+    {
+        var command = new CreateTributoCommand(
+            "IOF Location",
+            BaseCalculo.Rendimento,
+            TipoCalculo.TabelaDiaria,
+            [new FaixaDto(0, 29, null, 96m), new FaixaDto(null, null, 29, 0m)],
+            1,
+            false);
+
+        var postResponse = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+
+        postResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var location = postResponse.Headers.Location;
+        location.Should().NotBeNull();
+
+        var getResponse = await _client.GetAsync(location, CancellationToken.None);
+
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var dto = await getResponse.Content.ReadFromJsonAsync<TributoDto>(cancellationToken: CancellationToken.None);
+        dto.Should().NotBeNull();
+        dto!.Nome.Should().Be("IOF Location");
+    }
+
+    [Fact]
+    public async Task GetConfiguracoesTributosById_WithUnknownId_ShouldReturn404()
+    {
+        var response = await _client.GetAsync($"/configuracoes/tributos/{Guid.NewGuid()}", CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task PostConfiguracoesTributos_WithStringEnums_ShouldReturn201()
     {
         var json = """

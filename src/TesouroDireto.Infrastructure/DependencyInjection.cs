@@ -21,6 +21,7 @@ using TesouroDireto.Application.Tributos;
 using TesouroDireto.Infrastructure.Caching;
 using TesouroDireto.Infrastructure.CsvImport;
 using TesouroDireto.Infrastructure.Feriados;
+using TesouroDireto.Infrastructure.Http;
 using TesouroDireto.Infrastructure.Observability;
 using TesouroDireto.Infrastructure.Persistence;
 using TesouroDireto.Infrastructure.Persistence.Repositories;
@@ -83,6 +84,8 @@ public static class DependencyInjection
                 sp.GetRequiredService<MemoryCacheInvalidator>()));
 
         services.AddScoped<IDiasUteisService, DiasUteisService>();
+
+        services.AddScoped<IContentVersionProvider, ContentVersionProvider>();
 
         services.AddHttpClient<ICsvImportService, CsvImportService>(client =>
         {
