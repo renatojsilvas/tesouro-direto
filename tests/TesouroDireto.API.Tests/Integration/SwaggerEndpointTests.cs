@@ -107,7 +107,7 @@ public sealed class SwaggerEndpointTests
         }
 
         [Fact]
-        public async Task GetSwaggerJson_ShouldMarkIdBasedRoutesAndIdFieldAsDeprecated()
+        public async Task GetSwaggerJson_ShouldNotExposeIdBasedRoutesOrIdField()
         {
             var response = await _client.GetAsync("/swagger/v1/swagger.json", CancellationToken.None);
             var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
@@ -118,22 +118,13 @@ public sealed class SwaggerEndpointTests
 
             foreach (var idBasedPath in new[] { "/titulos/{id}/precos", "/titulos/{id}/preco-atual" })
             {
-                var operation = paths.GetProperty(idBasedPath).GetProperty("get");
-                operation.GetProperty("deprecated").GetBoolean().Should().BeTrue(
-                    $"a operação {idBasedPath} deveria estar marcada como deprecated no swagger.json.\n{body}");
-            }
-
-            foreach (var codigoBasedPath in new[] { "/titulos/{codigo}/precos", "/titulos/{codigo}/preco-atual" })
-            {
-                var operation = paths.GetProperty(codigoBasedPath).GetProperty("get");
-                operation.TryGetProperty("deprecated", out var deprecatedFlag).Should().BeFalse(
-                    $"a operação {codigoBasedPath} não deveria estar marcada como deprecated.\n{deprecatedFlag}");
+                paths.TryGetProperty(idBasedPath, out _).Should().BeFalse(
+                    $"a rota {idBasedPath} foi removida na tarefa 38 e não deveria aparecer no swagger.json.\n{body}");
             }
 
             var tituloDtoSchema = root.GetProperty("components").GetProperty("schemas").GetProperty("TituloDto");
-            var idProperty = tituloDtoSchema.GetProperty("properties").GetProperty("id");
-            idProperty.GetProperty("deprecated").GetBoolean().Should().BeTrue(
-                $"a propriedade id do TituloDto deveria estar marcada como deprecated no schema.\n{tituloDtoSchema}");
+            tituloDtoSchema.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse(
+                $"o campo id foi removido do TituloDto na tarefa 38 e não deveria aparecer no schema.\n{tituloDtoSchema}");
         }
 
         public sealed class SwaggerDevFactory : WebApplicationFactory<Program>

@@ -21,13 +21,13 @@
         }
         else
         {
-            <select id="titulo" class="form-select" @bind="selectedTituloId" @bind:after="CarregarPrecosAsync">
+            <select id="titulo" class="form-select" @bind="selectedTituloCodigo" @bind:after="CarregarPrecosAsync">
                 <option value="">Selecione um título</option>
                 @if (titulos is not null)
                 {
                     @foreach (var titulo in titulos)
                     {
-                        <option value="@titulo.Id">@titulo.TipoTitulo - @titulo.DataVencimento</option>
+                        <option value="@titulo.Codigo">@titulo.TipoTitulo - @titulo.DataVencimento</option>
                     }
                 }
             </select>
@@ -96,7 +96,7 @@
         }
     </div>
 }
-else if (!loading && selectedTituloId != "")
+else if (!loading && selectedTituloCodigo != "")
 {
     <p class="text-muted" data-testid="vazio">Nenhum registro encontrado para o período.</p>
 }
@@ -107,7 +107,7 @@ else if (!loading && selectedTituloId != "")
     private bool loadingTitulos = true;
     private bool loading;
     private string? erro;
-    private string selectedTituloId = "";
+    private string selectedTituloCodigo = "";
     private DateTime? dataInicio;
     private DateTime? dataFim;
 
@@ -129,7 +129,7 @@ else if (!loading && selectedTituloId != "")
 
     private async Task CarregarPrecosAsync()
     {
-        if (string.IsNullOrEmpty(selectedTituloId))
+        if (string.IsNullOrEmpty(selectedTituloCodigo))
         {
             precos = null;
             return;
@@ -140,7 +140,7 @@ else if (!loading && selectedTituloId != "")
 
         try
         {
-            var url = $"titulos/{selectedTituloId}/precos";
+            var url = $"titulos/{selectedTituloCodigo}/precos";
             var queryParams = new List<string>();
 
             if (dataInicio.HasValue)
@@ -218,6 +218,6 @@ else if (!loading && selectedTituloId != "")
         return value?.ToString("C2", Cultura) ?? "-";
     }
 
-    private sealed record TituloItem(Guid Id, string TipoTitulo, string DataVencimento, string Indexador);
-    private sealed record PrecoItem(Guid Id, string DataBase, decimal? TaxaCompra, decimal? TaxaVenda, decimal? PuCompra, decimal? PuVenda, decimal? PuBase);
+    private sealed record TituloItem(string Codigo, string TipoTitulo, string DataVencimento, string Indexador);
+    private sealed record PrecoItem(string DataBase, decimal? TaxaCompra, decimal? TaxaVenda, decimal? PuCompra, decimal? PuVenda, decimal? PuBase);
 }

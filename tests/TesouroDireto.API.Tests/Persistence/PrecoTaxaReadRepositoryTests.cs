@@ -73,24 +73,6 @@ public sealed class PrecoTaxaReadRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TituloExistsAsync_WhenExists_ShouldReturnTrue()
-    {
-        var result = await _readRepository.TituloExistsAsync(_titulo.Id, CancellationToken.None);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task TituloExistsAsync_WhenNotExists_ShouldReturnFalse()
-    {
-        var result = await _readRepository.TituloExistsAsync(Guid.NewGuid(), CancellationToken.None);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeFalse();
-    }
-
-    [Fact]
     public async Task GetByTituloIdAsync_WithNoFilters_ShouldReturnAll()
     {
         await SeedPrecos();
@@ -149,7 +131,6 @@ public sealed class PrecoTaxaReadRepositoryTests : IAsyncLifetime
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(1);
         var dto = result.Value.First();
-        dto.Id.Should().NotBeEmpty();
         dto.DataBase.Should().Be("2024-01-02");
         dto.TaxaCompra.Should().Be(13.12m);
         dto.TaxaVenda.Should().Be(13.18m);

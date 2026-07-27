@@ -24,13 +24,13 @@
                     }
                     else
                     {
-                        <select id="titulo" class="form-select" @bind="selectedTituloId">
+                        <select id="titulo" class="form-select" @bind="selectedTituloCodigo">
                             <option value="">Selecione um título</option>
                             @if (titulos is not null)
                             {
                                 @foreach (var titulo in titulos.Where(t => t.Indexador != "Prefixado"))
                                 {
-                                    <option value="@titulo.Id">@titulo.TipoTitulo - @titulo.DataVencimento</option>
+                                    <option value="@titulo.Codigo">@titulo.TipoTitulo - @titulo.DataVencimento</option>
                                 }
                             }
                         </select>
@@ -169,7 +169,7 @@
     private bool loadingTitulos = true;
     private bool simulando;
     private string? erro;
-    private string selectedTituloId = "";
+    private string selectedTituloCodigo = "";
     private decimal valorInvestido;
     private DateTime dataCompra = DateTime.Today;
     private decimal taxaContratada;
@@ -202,7 +202,7 @@
         erro = null;
         resultados = null;
 
-        if (string.IsNullOrEmpty(selectedTituloId) || !Guid.TryParse(selectedTituloId, out var tituloGuid))
+        if (string.IsNullOrEmpty(selectedTituloCodigo))
         {
             erro = "Selecione um título.";
             return;
@@ -226,7 +226,7 @@
         {
             var request = new
             {
-                tituloId = tituloGuid,
+                codigo = selectedTituloCodigo,
                 valorInvestido,
                 dataCompra = DateOnly.FromDateTime(dataCompra),
                 taxaContratada,
@@ -260,7 +260,7 @@
         public decimal Projecao { get; set; } = projecao;
     }
 
-    private sealed record TituloItem(Guid Id, string TipoTitulo, string DataVencimento, string Indexador);
+    private sealed record TituloItem(string Codigo, string TipoTitulo, string DataVencimento, string Indexador);
 
     private sealed record CenarioResult(string Nome, SimResult Resultado);
 

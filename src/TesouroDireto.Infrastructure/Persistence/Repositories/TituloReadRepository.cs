@@ -51,7 +51,6 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
             new CommandDefinition(sql.ToString(), parameters, cancellationToken: cancellationToken));
 
         IReadOnlyCollection<TituloDto> titulos = rows.Select(r => new TituloDto(
-            r.Id,
             r.TipoTitulo,
             r.DataVencimento.ToString("yyyy-MM-dd"),
             r.Indexador,
@@ -62,7 +61,7 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
         return Result<IReadOnlyCollection<TituloDto>>.Success(titulos);
     }
 
-    public async Task<Result<TituloDto>> GetByNomeAsync(string nome, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> GetIdByNomeAsync(string nome, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
 
@@ -82,17 +81,10 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
             return TituloErrors.NotFound;
         }
 
-        return Result<TituloDto>.Success(new TituloDto(
-            row.Id,
-            row.TipoTitulo,
-            row.DataVencimento.ToString("yyyy-MM-dd"),
-            row.Indexador,
-            row.PagaJurosSemestrais,
-            row.Vencido,
-            TituloCodigo.From(row.TipoTitulo, row.DataVencimento)));
+        return Result<Guid>.Success(row.Id);
     }
 
-    public async Task<Result<TituloDto>> GetByCodigoAsync(string codigo, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> GetIdByCodigoAsync(string codigo, CancellationToken cancellationToken)
     {
         if (!TituloCodigo.TryParseDate(codigo, out var data))
         {
@@ -116,14 +108,7 @@ public sealed class TituloReadRepository(NpgsqlDataSource dataSource) : ITituloR
         {
             if (string.Equals(TituloCodigo.From(row.TipoTitulo, row.DataVencimento), codigo, StringComparison.Ordinal))
             {
-                return Result<TituloDto>.Success(new TituloDto(
-                    row.Id,
-                    row.TipoTitulo,
-                    row.DataVencimento.ToString("yyyy-MM-dd"),
-                    row.Indexador,
-                    row.PagaJurosSemestrais,
-                    row.Vencido,
-                    codigo));
+                return Result<Guid>.Success(row.Id);
             }
         }
 

@@ -21,11 +21,10 @@ public sealed class GetPrecoAtualByNomeQueryHandlerTests
     public async Task Handle_WithValidNome_ShouldReturnPrecoAtual()
     {
         var tituloId = Guid.NewGuid();
-        var titulo = new TituloDto(tituloId, "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        var preco = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 6.50m, 6.55m, 3200.00m, 3198.00m, 3197.50m);
+        var preco = new PrecoTaxaDto("2025-03-24", 6.50m, 6.55m, 3200.00m, 3198.00m, 3197.50m);
 
-        _tituloReadRepo.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        _tituloReadRepo.GetIdByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
         _precoReadRepo.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
             .Returns(Result<PrecoTaxaDto>.Success(preco));
 
@@ -39,8 +38,8 @@ public sealed class GetPrecoAtualByNomeQueryHandlerTests
     [Fact]
     public async Task Handle_WithUnknownNome_ShouldReturnNotFound()
     {
-        _tituloReadRepo.GetByNomeAsync("Tesouro Inexistente 2099", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Failure(new Error("Titulo.NotFound", "not found")));
+        _tituloReadRepo.GetIdByNomeAsync("Tesouro Inexistente 2099", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(new Error("Titulo.NotFound", "not found")));
 
         var result = await _handler.Handle(
             new GetPrecoAtualByNomeQuery("Tesouro Inexistente 2099"), CancellationToken.None);

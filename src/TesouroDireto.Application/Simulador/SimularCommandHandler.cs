@@ -11,6 +11,7 @@ using TesouroDireto.Domain.Titulos;
 namespace TesouroDireto.Application.Simulador;
 
 public sealed class SimularCommandHandler(
+    ITituloReadRepository tituloReadRepository,
     ITituloWriteRepository tituloRepository,
     IDiasUteisService diasUteisService,
     IProjecaoMercadoService projecaoService,
@@ -36,7 +37,13 @@ public sealed class SimularCommandHandler(
     private async Task<Result<SimulacaoResultadoDto>> ExecuteAsync(
         SimularCommand request, Action<string> reportIndexador, CancellationToken cancellationToken)
     {
-        var tituloResult = await tituloRepository.GetByIdAsync(request.TituloId, cancellationToken);
+        var tituloIdResult = await tituloReadRepository.GetIdByCodigoAsync(request.Codigo, cancellationToken);
+        if (tituloIdResult.IsFailure)
+        {
+            return tituloIdResult.Error;
+        }
+
+        var tituloResult = await tituloRepository.GetByIdAsync(tituloIdResult.Value, cancellationToken);
         if (tituloResult.IsFailure)
         {
             return tituloResult.Error;

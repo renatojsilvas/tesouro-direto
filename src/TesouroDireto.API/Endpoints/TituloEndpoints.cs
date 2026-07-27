@@ -1,6 +1,5 @@
 using MediatR;
 using TesouroDireto.API.Extensions;
-using TesouroDireto.API.OpenApi;
 using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Application.Titulos;
 
@@ -9,9 +8,6 @@ namespace TesouroDireto.API.Endpoints;
 public static class TituloEndpoints
 {
     private const string CodigoRouteSegment = "{codigo:regex(^[a-z][a-z0-9-]*-\\d{{4}}-\\d{{2}}-\\d{{2}}$)}";
-
-    private const string IdDeprecationMessage =
-        "DEPRECATED: prefira a rota por codigo; o id uuid é interno e será removido na tarefa 38.";
 
     public static void MapTituloEndpoints(this IEndpointRouteBuilder app)
     {
@@ -33,46 +29,6 @@ public static class TituloEndpoints
         .Produces<IReadOnlyCollection<TituloDto>>()
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status401Unauthorized);
-
-        app.MapGet("/titulos/{id:guid}/precos", async (
-            Guid id,
-            DateOnly? dataInicio,
-            DateOnly? dataFim,
-            ISender sender,
-            CancellationToken cancellationToken) =>
-        {
-            var result = await sender.Send(new GetPrecosQuery(id, dataInicio, dataFim), cancellationToken);
-
-            return result.ToHttpResult(v => Results.Ok(v));
-        })
-        .WithName("GetPrecosPorTituloId")
-        .WithTags("Titulos")
-        .WithSummary("Lista o histórico de preços/taxas de um título")
-        .WithDescription("DEPRECATED: Retorna o histórico de preços e taxas do título identificado por id, com filtro opcional " +
-            "por intervalo de datas (dataInicio, dataFim). 404 se o título não existir.")
-        .Produces<IReadOnlyCollection<PrecoTaxaDto>>()
-        .ProducesProblem(StatusCodes.Status401Unauthorized)
-        .ProducesProblem(StatusCodes.Status404NotFound)
-        .WithMetadata(new DeprecatedApiMarker(IdDeprecationMessage));
-
-        app.MapGet("/titulos/{id:guid}/preco-atual", async (
-            Guid id,
-            ISender sender,
-            CancellationToken cancellationToken) =>
-        {
-            var result = await sender.Send(new GetPrecoAtualQuery(id), cancellationToken);
-
-            return result.ToHttpResult(v => Results.Ok(v));
-        })
-        .WithName("GetPrecoAtualPorTituloId")
-        .WithTags("Titulos")
-        .WithSummary("Retorna o preço/taxa mais recente de um título")
-        .WithDescription("DEPRECATED: Retorna o preço e taxa mais recentes do título identificado por id. " +
-            "404 se o título não existir.")
-        .Produces<PrecoTaxaDto>()
-        .ProducesProblem(StatusCodes.Status401Unauthorized)
-        .ProducesProblem(StatusCodes.Status404NotFound)
-        .WithMetadata(new DeprecatedApiMarker(IdDeprecationMessage));
 
         app.MapGet("/titulos/preco-atual", async (
             string nome,

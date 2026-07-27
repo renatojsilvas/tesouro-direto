@@ -11,12 +11,12 @@ public sealed class GetPrecoAtualByCodigoQueryHandler(
 {
     public async Task<Result<PrecoTaxaDto>> Handle(GetPrecoAtualByCodigoQuery request, CancellationToken cancellationToken)
     {
-        var tituloResult = await tituloReadRepository.GetByCodigoAsync(request.Codigo, cancellationToken);
-        if (tituloResult.IsFailure)
+        var tituloIdResult = await tituloReadRepository.GetIdByCodigoAsync(request.Codigo, cancellationToken);
+        if (tituloIdResult.IsFailure)
         {
-            return tituloResult.Error;
+            return tituloIdResult.Error;
         }
 
-        return await precoTaxaReadRepository.GetLatestByTituloIdAsync(tituloResult.Value.Id, cancellationToken);
+        return await precoTaxaReadRepository.GetLatestByTituloIdAsync(tituloIdResult.Value, cancellationToken);
     }
 }

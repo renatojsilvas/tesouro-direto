@@ -26,30 +26,27 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private async Task<Guid> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
+    private async Task<string> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
     {
-        var id = Guid.Empty;
-
         await factory.SeedAsync(async sp =>
         {
             var db = sp.GetRequiredService<AppDbContext>();
             var titulo = Titulo.Create(tipoTitulo, DataVencimento.Create(dataVencimento).Value).Value;
             await db.Titulos.AddAsync(titulo);
             await db.SaveChangesAsync();
-            id = titulo.Id;
         });
 
-        return id;
+        return TituloCodigo.From(tipoTitulo.Name, dataVencimento);
     }
 
     [Fact]
     public async Task PostSimulador_WithPrefixadoTitulo_ShouldReturn200()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
 
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,
@@ -66,11 +63,11 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimulador_WithIndexedTituloAndExplicitProjecao_ShouldReturn200WithoutBcbCall()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2035, 5, 15));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2035, 5, 15));
 
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 6m,
@@ -84,11 +81,11 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     }
 
     [Fact]
-    public async Task PostSimulador_WithUnknownTituloId_ShouldReturn404()
+    public async Task PostSimulador_WithUnknownWellFormedCodigo_ShouldReturn404()
     {
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
-            TituloId = Guid.NewGuid(),
+            Codigo = "tesouro-selic-2099-01-01",
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,
@@ -99,13 +96,33 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     }
 
     [Fact]
+    public async Task PostSimulador_WithMalformedCodigo_ShouldReturn400()
+    {
+        var response = await _client.PostAsJsonAsync("/simulador", new
+        {
+            Codigo = "nao-e-um-codigo-valido",
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 10m,
+            ProjecaoAnual = (decimal?)null
+        }, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidCodigo");
+    }
+
+    [Fact]
     public async Task PostSimulador_WithNonPositiveValorInvestido_ShouldReturn400()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
 
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 0m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,
@@ -118,11 +135,11 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimuladorCenarios_WithTwoScenarios_ShouldReturn200Collection()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2035, 5, 15));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2035, 5, 15));
 
         var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 6m,
@@ -141,11 +158,11 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     }
 
     [Fact]
-    public async Task PostSimuladorCenarios_WithUnknownTituloId_ShouldReturn404()
+    public async Task PostSimuladorCenarios_WithUnknownWellFormedCodigo_ShouldReturn404()
     {
         var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
         {
-            TituloId = Guid.NewGuid(),
+            Codigo = "tesouro-selic-2099-01-01",
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 6m,
@@ -156,6 +173,29 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         }, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task PostSimuladorCenarios_WithMalformedCodigo_ShouldReturn400()
+    {
+        var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
+        {
+            Codigo = "nao-e-um-codigo-valido",
+            ValorInvestido = 1000m,
+            DataCompra = new DateOnly(2024, 1, 2),
+            TaxaContratada = 6m,
+            Cenarios = new[]
+            {
+                new { Nome = "Otimista", ProjecaoAnual = 3.5m }
+            }
+        }, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("Titulo.InvalidCodigo");
     }
 
 
@@ -178,12 +218,12 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimulador_WhenBcbReturnsEmptyValue_ShouldReturn404ProblemJson()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, EmptyValueJson);
 
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,
@@ -197,12 +237,12 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimulador_WhenBcbFailsAndCacheIsCold_ShouldReturn400ProblemJson()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2032, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2032, 1, 1));
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty);
 
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 6m,
@@ -216,11 +256,11 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimulador_WhenBcbFailsAfterTtlExpires_ShouldFallBackToLastKnownGood()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2033, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2033, 1, 1));
 
         object RequestBody() => new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,
@@ -253,10 +293,10 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimulador_WhenBcbReturnsEmptyValueWithHotLkg_ShouldReturn404WithoutServingFallback()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2031, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2031, 1, 1));
         object RequestBody() => new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,

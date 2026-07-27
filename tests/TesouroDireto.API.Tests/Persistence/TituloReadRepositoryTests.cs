@@ -147,7 +147,6 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(1);
         var titulo = result.Value.First();
-        titulo.Id.Should().NotBeEmpty();
         titulo.TipoTitulo.Should().Be("Tesouro Selic");
         titulo.DataVencimento.Should().Be("2029-03-01");
         titulo.Indexador.Should().Be("Selic");
@@ -157,50 +156,46 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
 
 
     [Fact]
-    public async Task GetByNomeAsync_WithExactMatch_ShouldReturnMatchingTitulo()
+    public async Task GetIdByNomeAsync_WithExactMatch_ShouldReturnMatchingTituloId()
     {
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await _readRepository.GetByNomeAsync("Tesouro Selic 2029", CancellationToken.None);
+        var result = await _readRepository.GetIdByNomeAsync("Tesouro Selic 2029", CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
-        result.Value.DataVencimento.Should().Be("2029-03-01");
-        result.Value.Indexador.Should().Be("Selic");
+        result.Value.Should().Be(titulo.Id);
     }
 
     [Fact]
-    public async Task GetByNomeAsync_WithMixedCaseAndSurroundingWhitespace_ShouldReturnMatchingTitulo()
+    public async Task GetIdByNomeAsync_WithMixedCaseAndSurroundingWhitespace_ShouldReturnMatchingTituloId()
     {
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await _readRepository.GetByNomeAsync("  tesouro selic 2029  ", CancellationToken.None);
+        var result = await _readRepository.GetIdByNomeAsync("  tesouro selic 2029  ", CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
-        result.Value.DataVencimento.Should().Be("2029-03-01");
-        result.Value.Indexador.Should().Be("Selic");
+        result.Value.Should().Be(titulo.Id);
     }
 
     [Fact]
-    public async Task GetByNomeAsync_WhenNomeDoesNotExist_ShouldReturnNotFound()
+    public async Task GetIdByNomeAsync_WhenNomeDoesNotExist_ShouldReturnNotFound()
     {
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await _readRepository.GetByNomeAsync("Tesouro Selic 2099", CancellationToken.None);
+        var result = await _readRepository.GetIdByNomeAsync("Tesouro Selic 2099", CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().Be(TituloErrors.NotFound);
     }
 
     [Fact]
-    public async Task GetByNomeAsync_WithDuplicateNameFromDifferentVencimentos_ShouldReturnOneMatch()
+    public async Task GetIdByNomeAsync_WithDuplicateNameFromDifferentVencimentos_ShouldReturnOneMatch()
     {
         var titulo1 = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2031, 3, 1)).Value).Value;
         var titulo2 = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2031, 9, 1)).Value).Value;
@@ -208,15 +203,14 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
         await _writeRepository.AddAsync(titulo2, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await _readRepository.GetByNomeAsync("Tesouro Selic 2031", CancellationToken.None);
+        var result = await _readRepository.GetIdByNomeAsync("Tesouro Selic 2031", CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
-        result.Value.DataVencimento.Should().BeOneOf("2031-03-01", "2031-09-01");
+        new[] { titulo1.Id, titulo2.Id }.Should().Contain(result.Value);
     }
 
     [Fact]
-    public async Task GetByNomeAsync_QueryPlan_ShouldBeAbleToUseNomeUpperIndex()
+    public async Task GetIdByNomeAsync_QueryPlan_ShouldBeAbleToUseNomeUpperIndex()
     {
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);
@@ -242,40 +236,38 @@ public sealed class TituloReadRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetByCodigoAsync_WithMatchingCodigo_ShouldReturnMatchingTitulo()
+    public async Task GetIdByCodigoAsync_WithMatchingCodigo_ShouldReturnMatchingTituloId()
     {
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await _readRepository.GetByCodigoAsync("tesouro-selic-2029-03-01", CancellationToken.None);
+        var result = await _readRepository.GetIdByCodigoAsync("tesouro-selic-2029-03-01", CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.TipoTitulo.Should().Be("Tesouro Selic");
-        result.Value.DataVencimento.Should().Be("2029-03-01");
-        result.Value.Codigo.Should().Be("tesouro-selic-2029-03-01");
+        result.Value.Should().Be(titulo.Id);
     }
 
     [Fact]
-    public async Task GetByCodigoAsync_WithMalformedCodigo_ShouldReturnInvalidCodigo()
+    public async Task GetIdByCodigoAsync_WithMalformedCodigo_ShouldReturnInvalidCodigo()
     {
-        var result = await _readRepository.GetByCodigoAsync("tesouro-selic-2029-13-40", CancellationToken.None);
+        var result = await _readRepository.GetIdByCodigoAsync("tesouro-selic-2029-13-40", CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Be(TituloErrors.InvalidCodigo);
     }
 
     [Fact]
-    public async Task GetByCodigoAsync_WithUnknownCodigo_ShouldReturnNotFound()
+    public async Task GetIdByCodigoAsync_WithUnknownCodigo_ShouldReturnNotFound()
     {
-        var result = await _readRepository.GetByCodigoAsync("tesouro-selic-2099-01-01", CancellationToken.None);
+        var result = await _readRepository.GetIdByCodigoAsync("tesouro-selic-2099-01-01", CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Be(TituloErrors.NotFound);
     }
 
     [Fact]
-    public async Task GetByCodigoAsync_QueryPlan_ShouldBeAbleToUseDataVencimentoIndex()
+    public async Task GetIdByCodigoAsync_QueryPlan_ShouldBeAbleToUseDataVencimentoIndex()
     {
         var titulo = Titulo.Create(TipoTitulo.TesouroSelic, DataVencimento.Create(new DateOnly(2029, 3, 1)).Value).Value;
         await _writeRepository.AddAsync(titulo, CancellationToken.None);

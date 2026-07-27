@@ -12,11 +12,6 @@ public sealed class CachedPrecoTaxaReadRepository(
 {
     private static readonly TimeSpan Ttl = TimeSpan.FromHours(6);
 
-    public Task<Result<bool>> TituloExistsAsync(Guid tituloId, CancellationToken cancellationToken)
-    {
-        return inner.TituloExistsAsync(tituloId, cancellationToken);
-    }
-
     public Task<Result<IReadOnlyCollection<PrecoTaxaDto>>> GetByTituloIdAsync(
         Guid tituloId,
         DateOnly? dataInicio,

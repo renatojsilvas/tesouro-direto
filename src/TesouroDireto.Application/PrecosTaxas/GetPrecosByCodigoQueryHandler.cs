@@ -13,14 +13,14 @@ public sealed class GetPrecosByCodigoQueryHandler(
         GetPrecosByCodigoQuery request,
         CancellationToken cancellationToken)
     {
-        var tituloResult = await tituloReadRepository.GetByCodigoAsync(request.Codigo, cancellationToken);
-        if (tituloResult.IsFailure)
+        var tituloIdResult = await tituloReadRepository.GetIdByCodigoAsync(request.Codigo, cancellationToken);
+        if (tituloIdResult.IsFailure)
         {
-            return tituloResult.Error;
+            return tituloIdResult.Error;
         }
 
         return await precoTaxaReadRepository.GetByTituloIdAsync(
-            tituloResult.Value.Id,
+            tituloIdResult.Value,
             request.DataInicio,
             request.DataFim,
             cancellationToken);

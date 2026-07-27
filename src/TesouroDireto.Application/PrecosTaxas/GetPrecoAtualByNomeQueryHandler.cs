@@ -17,12 +17,12 @@ public sealed class GetPrecoAtualByNomeQueryHandler(
             return TituloErrors.InvalidNome;
         }
 
-        var tituloResult = await tituloReadRepository.GetByNomeAsync(request.Nome, cancellationToken);
-        if (tituloResult.IsFailure)
+        var tituloIdResult = await tituloReadRepository.GetIdByNomeAsync(request.Nome, cancellationToken);
+        if (tituloIdResult.IsFailure)
         {
-            return tituloResult.Error;
+            return tituloIdResult.Error;
         }
 
-        return await precoTaxaReadRepository.GetLatestByTituloIdAsync(tituloResult.Value.Id, cancellationToken);
+        return await precoTaxaReadRepository.GetLatestByTituloIdAsync(tituloIdResult.Value, cancellationToken);
     }
 }

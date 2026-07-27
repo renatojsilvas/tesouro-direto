@@ -28,7 +28,7 @@ public sealed class AuthEndpointsTests(ApiTestFactory factory) : IAsyncLifetime
         {
             Content = JsonContent.Create(new
             {
-                TituloId = Guid.NewGuid(),
+                Codigo = "tesouro-selic-2029-01-01",
                 ValorInvestido = 1000m,
                 DataCompra = new DateOnly(2024, 1, 2),
                 TaxaContratada = 10m,

@@ -13,19 +13,6 @@ public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrec
         DapperTypeHandlers.Register();
     }
 
-    public async Task<Result<bool>> TituloExistsAsync(Guid tituloId, CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-
-        var exists = await connection.ExecuteScalarAsync<bool>(
-            new CommandDefinition(
-                "SELECT EXISTS (SELECT 1 FROM titulos WHERE id = @TituloId)",
-                new { TituloId = tituloId },
-                cancellationToken: cancellationToken));
-
-        return Result<bool>.Success(exists);
-    }
-
     public async Task<Result<IReadOnlyCollection<PrecoTaxaDto>>> GetByTituloIdAsync(
         Guid tituloId,
         DateOnly? dataInicio,
@@ -36,7 +23,7 @@ public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrec
 
         var sql = new StringBuilder(
             """
-            SELECT id, data_base, taxa_compra, taxa_venda, pu_compra, pu_venda, pu_base
+            SELECT data_base, taxa_compra, taxa_venda, pu_compra, pu_venda, pu_base
             FROM precos_taxas
             WHERE titulo_id = @TituloId
             """);
@@ -62,7 +49,6 @@ public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrec
             new CommandDefinition(sql.ToString(), parameters, cancellationToken: cancellationToken));
 
         IReadOnlyCollection<PrecoTaxaDto> precos = rows.Select(r => new PrecoTaxaDto(
-            r.Id,
             r.DataBase.ToString("yyyy-MM-dd"),
             r.TaxaCompra,
             r.TaxaVenda,
@@ -80,7 +66,7 @@ public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrec
         var row = await connection.QueryFirstOrDefaultAsync<PrecoTaxaDtoRow>(
             new CommandDefinition(
                 """
-                SELECT id, data_base, taxa_compra, taxa_venda, pu_compra, pu_venda, pu_base
+                SELECT data_base, taxa_compra, taxa_venda, pu_compra, pu_venda, pu_base
                 FROM precos_taxas
                 WHERE titulo_id = @TituloId
                 ORDER BY data_base DESC
@@ -95,7 +81,6 @@ public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrec
         }
 
         return Result<PrecoTaxaDto>.Success(new PrecoTaxaDto(
-            row.Id,
             row.DataBase.ToString("yyyy-MM-dd"),
             row.TaxaCompra,
             row.TaxaVenda,
@@ -105,7 +90,6 @@ public sealed class PrecoTaxaReadRepository(NpgsqlDataSource dataSource) : IPrec
     }
 
     private sealed record PrecoTaxaDtoRow(
-        Guid Id,
         DateOnly DataBase,
         decimal? TaxaCompra,
         decimal? TaxaVenda,

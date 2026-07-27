@@ -38,16 +38,16 @@ public sealed class CachedTituloReadRepository(
         return result;
     }
 
-    public async Task<Result<TituloDto>> GetByNomeAsync(string nome, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> GetIdByNomeAsync(string nome, CancellationToken cancellationToken)
     {
         var key = $"titulo-nome:{nome.Trim().ToUpperInvariant()}";
 
-        if (cache.TryGetValue(key, out TituloDto? cached))
+        if (cache.TryGetValue(key, out Guid cached))
         {
-            return Result<TituloDto>.Success(cached!);
+            return Result<Guid>.Success(cached);
         }
 
-        var result = await inner.GetByNomeAsync(nome, cancellationToken);
+        var result = await inner.GetIdByNomeAsync(nome, cancellationToken);
 
         if (result.IsSuccess)
         {
@@ -61,16 +61,16 @@ public sealed class CachedTituloReadRepository(
         return result;
     }
 
-    public async Task<Result<TituloDto>> GetByCodigoAsync(string codigo, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> GetIdByCodigoAsync(string codigo, CancellationToken cancellationToken)
     {
         var key = $"titulo-codigo:{codigo}";
 
-        if (cache.TryGetValue(key, out TituloDto? cached))
+        if (cache.TryGetValue(key, out Guid cached))
         {
-            return Result<TituloDto>.Success(cached!);
+            return Result<Guid>.Success(cached);
         }
 
-        var result = await inner.GetByCodigoAsync(codigo, cancellationToken);
+        var result = await inner.GetIdByCodigoAsync(codigo, cancellationToken);
 
         if (result.IsSuccess)
         {

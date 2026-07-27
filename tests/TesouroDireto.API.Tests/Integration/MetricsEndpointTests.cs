@@ -47,7 +47,7 @@ public sealed class MetricsEndpointTests(ApiTestFactory factory) : IAsyncLifetim
 
         var response = await _authenticatedClient.PostAsJsonAsync("/simulador", new
         {
-            TituloId = Guid.NewGuid(),
+            Codigo = "tesouro-selic-2099-01-01",
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,

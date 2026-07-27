@@ -4,7 +4,7 @@ using TesouroDireto.Domain.Common;
 namespace TesouroDireto.Application.Simulador;
 
 public sealed record SimularCommand(
-    Guid TituloId,
+    string Codigo,
     decimal ValorInvestido,
     DateOnly DataCompra,
     decimal TaxaContratada,
