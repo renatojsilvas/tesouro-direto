@@ -10,9 +10,12 @@ public static class SimuladorEndpoints
     {
         app.MapPost("/simulador", async (
             SimularRequest request,
+            HttpContext httpContext,
             ISender sender,
             CancellationToken cancellationToken) =>
         {
+            httpContext.Response.Headers.CacheControl = "no-store";
+
             var command = new SimularCommand(
                 request.Codigo,
                 request.ValorInvestido,
@@ -38,9 +41,12 @@ public static class SimuladorEndpoints
 
         app.MapPost("/simulador/cenarios", async (
             SimularCenariosRequest request,
+            HttpContext httpContext,
             ISender sender,
             CancellationToken cancellationToken) =>
         {
+            httpContext.Response.Headers.CacheControl = "no-store";
+
             var cenarios = request.Cenarios
                 .Select(c => new CenarioInput(c.Nome, c.ProjecaoAnual))
                 .ToList();

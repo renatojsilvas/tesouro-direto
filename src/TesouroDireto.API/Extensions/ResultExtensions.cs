@@ -38,8 +38,11 @@ public static class ResultExtensions
         return new ResultProblemHttpResult(status, title, error);
     }
 
-    private sealed class ResultProblemHttpResult(int status, string title, Error error) : IResult
+    private sealed class ResultProblemHttpResult(int status, string title, Error error)
+        : IResult, Microsoft.AspNetCore.Http.IStatusCodeHttpResult
     {
+        public int? StatusCode => status;
+
         public async Task ExecuteAsync(HttpContext httpContext)
         {
             var problemDetailsService = httpContext.RequestServices.GetRequiredService<IProblemDetailsService>();

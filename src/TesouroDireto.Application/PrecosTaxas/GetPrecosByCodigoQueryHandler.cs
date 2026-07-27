@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.Application.Common;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Domain.Common;
 
@@ -7,9 +8,9 @@ namespace TesouroDireto.Application.PrecosTaxas;
 public sealed class GetPrecosByCodigoQueryHandler(
     ITituloReadRepository tituloReadRepository,
     IPrecoTaxaReadRepository precoTaxaReadRepository)
-    : IRequestHandler<GetPrecosByCodigoQuery, Result<IReadOnlyCollection<PrecoTaxaDto>>>
+    : IRequestHandler<GetPrecosByCodigoQuery, Result<PagedResult<PrecoTaxaDto>>>
 {
-    public async Task<Result<IReadOnlyCollection<PrecoTaxaDto>>> Handle(
+    public async Task<Result<PagedResult<PrecoTaxaDto>>> Handle(
         GetPrecosByCodigoQuery request,
         CancellationToken cancellationToken)
     {
@@ -19,10 +20,27 @@ public sealed class GetPrecosByCodigoQueryHandler(
             return tituloIdResult.Error;
         }
 
-        return await precoTaxaReadRepository.GetByTituloIdAsync(
+        var precosResult = await precoTaxaReadRepository.GetByTituloIdAsync(
             tituloIdResult.Value,
             request.DataInicio,
             request.DataFim,
             cancellationToken);
+
+        if (precosResult.IsFailure)
+        {
+            return precosResult.Error;
+        }
+
+        var precos = precosResult.Value;
+
+        if (request.Page is null)
+        {
+            return new PagedResult<PrecoTaxaDto>(precos.ToList(), precos.Count);
+        }
+
+        var (page, pageSize) = PaginationDefaults.Normalize(request.Page, request.PageSize);
+        var items = precos.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        return new PagedResult<PrecoTaxaDto>(items, precos.Count);
     }
 }

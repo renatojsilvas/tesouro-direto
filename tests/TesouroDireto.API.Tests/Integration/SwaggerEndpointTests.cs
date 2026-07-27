@@ -122,9 +122,49 @@ public sealed class SwaggerEndpointTests
                     $"a rota {idBasedPath} foi removida na tarefa 38 e não deveria aparecer no swagger.json.\n{body}");
             }
 
-            var tituloDtoSchema = root.GetProperty("components").GetProperty("schemas").GetProperty("TituloDto");
-            tituloDtoSchema.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse(
-                $"o campo id foi removido do TituloDto na tarefa 38 e não deveria aparecer no schema.\n{tituloDtoSchema}");
+            var tituloResourceSchema = root.GetProperty("components").GetProperty("schemas").GetProperty("TituloResource");
+            tituloResourceSchema.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse(
+                $"o campo id foi removido do contrato público na tarefa 38 e não deveria aparecer no schema.\n{tituloResourceSchema}");
+        }
+
+        [Fact]
+        public async Task GetSwaggerJson_ShouldDocumentPaginationParamsAndRestMaturityHeaders()
+        {
+            var response = await _client.GetAsync("/swagger/v1/swagger.json", CancellationToken.None);
+            var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var paths = root.GetProperty("paths");
+
+            var precosPorCodigoGet = paths.GetProperty("/titulos/{codigo}/precos").GetProperty("get");
+            var parameterNames = precosPorCodigoGet.GetProperty("parameters").EnumerateArray()
+                .Select(p => p.GetProperty("name").GetString())
+                .ToList();
+            parameterNames.Should().Contain("page", $"page deveria estar documentado.\n{body}");
+            parameterNames.Should().Contain("pageSize", $"pageSize deveria estar documentado.\n{body}");
+
+            var okResponseHeaders = precosPorCodigoGet.GetProperty("responses").GetProperty("200").GetProperty("headers");
+            okResponseHeaders.TryGetProperty("ETag", out _).Should().BeTrue($"ETag deveria estar documentado.\n{body}");
+            okResponseHeaders.TryGetProperty("X-Total-Count", out _).Should().BeTrue(
+                $"X-Total-Count deveria estar documentado.\n{body}");
+            okResponseHeaders.TryGetProperty("Link", out _).Should().BeTrue($"Link deveria estar documentado.\n{body}");
+
+            var createTributoPost = paths.GetProperty("/configuracoes/tributos").GetProperty("post");
+            var createdResponseHeaders = createTributoPost.GetProperty("responses")
+                .GetProperty("201").GetProperty("headers");
+            createdResponseHeaders.TryGetProperty("Location", out _).Should().BeTrue(
+                $"Location deveria estar documentado.\n{body}");
+
+            var titulosGet = paths.GetProperty("/titulos").GetProperty("get");
+            var titulosSchema = titulosGet.GetProperty("responses").GetProperty("200")
+                .GetProperty("content").GetProperty("application/json").GetProperty("schema");
+            titulosSchema.GetProperty("items").GetProperty("$ref").GetString()
+                .Should().Be("#/components/schemas/TituloResource");
+
+            var tituloResourceSchema = root.GetProperty("components").GetProperty("schemas").GetProperty("TituloResource");
+            tituloResourceSchema.GetProperty("properties").TryGetProperty("_links", out _).Should().BeTrue(
+                $"_links deveria estar documentado no schema de TituloResource.\n{tituloResourceSchema}");
         }
 
         public sealed class SwaggerDevFactory : WebApplicationFactory<Program>

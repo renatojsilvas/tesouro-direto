@@ -1,6 +1,7 @@
 using MediatR;
 using TesouroDireto.API.Contracts;
 using TesouroDireto.API.Extensions;
+using TesouroDireto.API.Http;
 using TesouroDireto.Application.Tributos;
 
 namespace TesouroDireto.API.Endpoints;
@@ -9,7 +10,7 @@ public static class ConfiguracaoEndpoints
 {
     public static void MapConfiguracaoEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/configuracoes/tributos", async (
+        app.MapReadGet("/configuracoes/tributos", async (
             ISender sender,
             CancellationToken cancellationToken) =>
         {
@@ -23,6 +24,23 @@ public static class ConfiguracaoEndpoints
         .WithDescription("Retorna todos os tributos configurados (IOF, IR etc.), ativos ou não, com suas faixas.")
         .Produces<IReadOnlyCollection<TributoDto>>()
         .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        app.MapReadGet("/configuracoes/tributos/{id:guid}", async (
+            Guid id,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(new GetTributoByIdQuery(id), cancellationToken);
+
+            return result.ToHttpResult(dto => Results.Ok(dto));
+        })
+        .WithName("GetTributo")
+        .WithTags("Tributos")
+        .WithSummary("Retorna um tributo pelo id")
+        .WithDescription("Retorna o tributo identificado por id, com suas faixas. 404 se o tributo não existir.")
+        .Produces<TributoDto>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 
         app.MapPut("/configuracoes/tributos/{id:guid}", async (
             Guid id,
@@ -59,13 +77,14 @@ public static class ConfiguracaoEndpoints
                 request.Cumulativo);
             var result = await sender.Send(command, cancellationToken);
 
-            return result.ToHttpResult(id => Results.Created($"/configuracoes/tributos/{id}", new { Id = id }));
+            return result.ToHttpResult(id => Results.CreatedAtRoute("GetTributo", new { id }, new { Id = id }));
         })
         .WithName("CreateTributo")
         .WithTags("Tributos")
         .WithSummary("Cria um novo tributo")
         .WithDescription("Cria um tributo com nome, base de cálculo, tipo de cálculo, faixas, ordem e cumulatividade. " +
-            "201 com o id criado em sucesso; 400 se os dados forem inválidos.")
+            "201 com o id criado e Location resolvível (GET no Location retorna 200) em sucesso; " +
+            "400 se os dados forem inválidos.")
         .Produces(StatusCodes.Status201Created)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status401Unauthorized);
