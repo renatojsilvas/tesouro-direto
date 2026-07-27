@@ -19,14 +19,14 @@ public sealed class GetPrecosByNomeQueryHandler(
             return TituloErrors.InvalidNome;
         }
 
-        var tituloResult = await tituloReadRepository.GetByNomeAsync(request.Nome, cancellationToken);
-        if (tituloResult.IsFailure)
+        var tituloIdResult = await tituloReadRepository.GetIdByNomeAsync(request.Nome, cancellationToken);
+        if (tituloIdResult.IsFailure)
         {
-            return tituloResult.Error;
+            return tituloIdResult.Error;
         }
 
         return await precoTaxaReadRepository.GetByTituloIdAsync(
-            tituloResult.Value.Id,
+            tituloIdResult.Value,
             request.DataInicio,
             request.DataFim,
             cancellationToken);

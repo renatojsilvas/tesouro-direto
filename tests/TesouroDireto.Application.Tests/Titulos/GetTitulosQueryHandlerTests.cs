@@ -20,8 +20,8 @@ public sealed class GetTitulosQueryHandlerTests
     {
         IReadOnlyCollection<TituloDto> titulos = new[]
         {
-            new TituloDto(Guid.NewGuid(), "Tesouro Selic", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01"),
-            new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15")
+            new TituloDto("Tesouro Selic", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01"),
+            new TituloDto("Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15")
         };
 
         _repository
@@ -39,7 +39,7 @@ public sealed class GetTitulosQueryHandlerTests
     {
         IReadOnlyCollection<TituloDto> titulos = new[]
         {
-            new TituloDto(Guid.NewGuid(), "Tesouro Selic", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
+            new TituloDto("Tesouro Selic", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
         };
 
         _repository
@@ -58,7 +58,7 @@ public sealed class GetTitulosQueryHandlerTests
     {
         IReadOnlyCollection<TituloDto> titulos = new[]
         {
-            new TituloDto(Guid.NewGuid(), "Tesouro Prefixado", "2020-01-01", "Prefixado", false, true, "tesouro-prefixado-2020-01-01")
+            new TituloDto("Tesouro Prefixado", "2020-01-01", "Prefixado", false, true, "tesouro-prefixado-2020-01-01")
         };
 
         _repository

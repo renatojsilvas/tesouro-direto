@@ -23,7 +23,7 @@ public sealed class CachedPrecoTaxaReadRepositoryTests : IDisposable
     public async Task GetLatestByTituloIdAsync_CacheMiss_ShouldCallInnerAndCache()
     {
         var tituloId = Guid.NewGuid();
-        var preco = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
+        var preco = new PrecoTaxaDto("2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
         _inner.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
             .Returns(Result<PrecoTaxaDto>.Success(preco));
 
@@ -38,7 +38,7 @@ public sealed class CachedPrecoTaxaReadRepositoryTests : IDisposable
     public async Task GetLatestByTituloIdAsync_CacheHit_ShouldNotCallInner()
     {
         var tituloId = Guid.NewGuid();
-        var preco = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
+        var preco = new PrecoTaxaDto("2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
         _inner.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
             .Returns(Result<PrecoTaxaDto>.Success(preco));
 
@@ -54,8 +54,8 @@ public sealed class CachedPrecoTaxaReadRepositoryTests : IDisposable
     {
         var tituloId1 = Guid.NewGuid();
         var tituloId2 = Guid.NewGuid();
-        var preco1 = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
-        var preco2 = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 6.00m, 6.05m, 800.00m, 799.00m, 798.50m);
+        var preco1 = new PrecoTaxaDto("2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
+        var preco2 = new PrecoTaxaDto("2025-03-24", 6.00m, 6.05m, 800.00m, 799.00m, 798.50m);
 
         _inner.GetLatestByTituloIdAsync(tituloId1, Arg.Any<CancellationToken>())
             .Returns(Result<PrecoTaxaDto>.Success(preco1));
@@ -73,7 +73,7 @@ public sealed class CachedPrecoTaxaReadRepositoryTests : IDisposable
     public async Task GetLatestByTituloIdAsync_AfterInvalidation_ShouldCallInnerAgain()
     {
         var tituloId = Guid.NewGuid();
-        var preco = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
+        var preco = new PrecoTaxaDto("2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
         _inner.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
             .Returns(Result<PrecoTaxaDto>.Success(preco));
 
@@ -96,19 +96,6 @@ public sealed class CachedPrecoTaxaReadRepositoryTests : IDisposable
         await _sut.GetLatestByTituloIdAsync(tituloId, CancellationToken.None);
 
         await _inner.Received(2).GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task TituloExistsAsync_ShouldAlwaysCallInner()
-    {
-        var tituloId = Guid.NewGuid();
-        _inner.TituloExistsAsync(tituloId, Arg.Any<CancellationToken>())
-            .Returns(Result<bool>.Success(true));
-
-        await _sut.TituloExistsAsync(tituloId, CancellationToken.None);
-        await _sut.TituloExistsAsync(tituloId, CancellationToken.None);
-
-        await _inner.Received(2).TituloExistsAsync(tituloId, Arg.Any<CancellationToken>());
     }
 
     [Fact]

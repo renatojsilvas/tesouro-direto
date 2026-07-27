@@ -122,64 +122,6 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     }
 
     [Fact]
-    public async Task GetPrecos_WithPrecos_ShouldReturn200List()
-    {
-        var ids = await SeedTitulosAsync();
-        await SeedPrecosAsync(ids["Selic"]);
-
-        var response = await _client.GetAsync($"/titulos/{ids["Selic"]}/precos", CancellationToken.None);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
-        using var doc = JsonDocument.Parse(body);
-        doc.RootElement.GetArrayLength().Should().Be(3);
-    }
-
-    [Fact]
-    public async Task GetPrecos_WithDateRange_ShouldReturnSubset()
-    {
-        var ids = await SeedTitulosAsync();
-        await SeedPrecosAsync(ids["Selic"]);
-
-        var response = await _client.GetAsync(
-            $"/titulos/{ids["Selic"]}/precos?dataInicio=2024-06-01&dataFim=2024-06-30", CancellationToken.None);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
-        using var doc = JsonDocument.Parse(body);
-        doc.RootElement.GetArrayLength().Should().Be(1);
-    }
-
-    [Fact]
-    public async Task GetPrecos_WithUnknownId_ShouldReturn404()
-    {
-        var response = await _client.GetAsync($"/titulos/{Guid.NewGuid()}/precos", CancellationToken.None);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task GetPrecoAtual_WithPreco_ShouldReturn200()
-    {
-        var ids = await SeedTitulosAsync();
-        await SeedPrecosAsync(ids["Selic"]);
-
-        var response = await _client.GetAsync($"/titulos/{ids["Selic"]}/preco-atual", CancellationToken.None);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task GetPrecoAtual_WithoutPreco_ShouldReturn404()
-    {
-        var ids = await SeedTitulosAsync();
-
-        var response = await _client.GetAsync($"/titulos/{ids["IPCA"]}/preco-atual", CancellationToken.None);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
     public async Task GetPrecoAtualByNome_WithValidNome_ShouldReturn200()
     {
         var ids = await SeedTitulosAsync();
@@ -271,20 +213,17 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     }
 
     [Fact]
-    public async Task GetPrecosByCodigo_WithKnownCodigo_ShouldReturnSameShapeAsById()
+    public async Task GetPrecosByCodigo_WithKnownCodigo_ShouldReturn200List()
     {
         var ids = await SeedTitulosAsync();
         await SeedPrecosAsync(ids["Selic"]);
 
-        var responseById = await _client.GetAsync($"/titulos/{ids["Selic"]}/precos", CancellationToken.None);
-        var responseByCodigo = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/precos", CancellationToken.None);
+        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/precos", CancellationToken.None);
 
-        responseByCodigo.StatusCode.Should().Be(HttpStatusCode.OK);
-        var bodyById = await responseById.Content.ReadAsStringAsync(CancellationToken.None);
-        var bodyByCodigo = await responseByCodigo.Content.ReadAsStringAsync(CancellationToken.None);
-        using var docById = JsonDocument.Parse(bodyById);
-        using var docByCodigo = JsonDocument.Parse(bodyByCodigo);
-        docByCodigo.RootElement.GetArrayLength().Should().Be(docById.RootElement.GetArrayLength());
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetArrayLength().Should().Be(3);
     }
 
     [Fact]
@@ -313,18 +252,17 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     }
 
     [Fact]
-    public async Task GetPrecoAtualByCodigo_WithKnownCodigo_ShouldReturnSameShapeAsById()
+    public async Task GetPrecoAtualByCodigo_WithKnownCodigo_ShouldReturn200()
     {
         var ids = await SeedTitulosAsync();
         await SeedPrecosAsync(ids["Selic"]);
 
-        var responseById = await _client.GetAsync($"/titulos/{ids["Selic"]}/preco-atual", CancellationToken.None);
-        var responseByCodigo = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/preco-atual", CancellationToken.None);
+        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/preco-atual", CancellationToken.None);
 
-        responseByCodigo.StatusCode.Should().Be(HttpStatusCode.OK);
-        var bodyById = await responseById.Content.ReadFromJsonAsync<PrecoTaxaDto>(JsonOptions, CancellationToken.None);
-        var bodyByCodigo = await responseByCodigo.Content.ReadFromJsonAsync<PrecoTaxaDto>(JsonOptions, CancellationToken.None);
-        bodyByCodigo.Should().Be(bodyById);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var dto = await response.Content.ReadFromJsonAsync<PrecoTaxaDto>(JsonOptions, CancellationToken.None);
+        dto.Should().NotBeNull();
+        dto!.DataBase.Should().Be("2024-12-20");
     }
 
     [Fact]
@@ -367,18 +305,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     }
 
     [Fact]
-    public async Task GetPrecos_ById_ShouldStillRespond()
-    {
-        var ids = await SeedTitulosAsync();
-        await SeedPrecosAsync(ids["Selic"]);
-
-        var response = await _client.GetAsync($"/titulos/{ids["Selic"]}/precos", CancellationToken.None);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task GetPrecos_WithTruncatedGuidLikeSegment_ShouldReturn404()
+    public async Task GetPrecos_WithMalformedSegment_ShouldReturn404()
     {
         await SeedTitulosAsync();
 

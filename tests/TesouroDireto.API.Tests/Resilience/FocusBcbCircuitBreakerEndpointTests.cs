@@ -54,25 +54,22 @@ public sealed class FocusBcbCircuitBreakerEndpointTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
-    private async Task<Guid> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
+    private async Task<string> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
     {
-        var id = Guid.Empty;
-
         await _factory.SeedAsync(async sp =>
         {
             var db = sp.GetRequiredService<AppDbContext>();
             var titulo = Titulo.Create(tipoTitulo, DataVencimento.Create(dataVencimento).Value).Value;
             await db.Titulos.AddAsync(titulo);
             await db.SaveChangesAsync();
-            id = titulo.Id;
         });
 
-        return id;
+        return TituloCodigo.From(tipoTitulo.Name, dataVencimento);
     }
 
-    private static object RequestBody(Guid tituloId) => new
+    private static object RequestBody(string codigo) => new
     {
-        TituloId = tituloId,
+        Codigo = codigo,
         ValorInvestido = 1000m,
         DataCompra = new DateOnly(2024, 1, 2),
         TaxaContratada = 10m,
@@ -82,7 +79,7 @@ public sealed class FocusBcbCircuitBreakerEndpointTests : IAsyncLifetime
     [Fact]
     public async Task PostSimulador_WhenBcbKeepsFailing_ShouldOpenCircuitAndFallBackToCache()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2033, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2033, 1, 1));
 
         var calls = 0;
 
@@ -95,7 +92,7 @@ public sealed class FocusBcbCircuitBreakerEndpointTests : IAsyncLifetime
             };
         };
 
-        var first = await _client.PostAsJsonAsync("/simulador", RequestBody(tituloId), CancellationToken.None);
+        var first = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
         calls.Should().Be(1);
 
@@ -109,14 +106,14 @@ public sealed class FocusBcbCircuitBreakerEndpointTests : IAsyncLifetime
 
         for (var i = 0; i < 3; i++)
         {
-            var response = await _client.PostAsJsonAsync("/simulador", RequestBody(tituloId), CancellationToken.None);
+            var response = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         var callsBeforeLastRequest = calls;
 
-        var last = await _client.PostAsJsonAsync("/simulador", RequestBody(tituloId), CancellationToken.None);
+        var last = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
 
         calls.Should().Be(callsBeforeLastRequest);
 

@@ -6,7 +6,7 @@ namespace TesouroDireto.Application.Simulador;
 public sealed record CenarioInput(string Nome, decimal ProjecaoAnual);
 
 public sealed record SimularCenariosCommand(
-    Guid TituloId,
+    string Codigo,
     decimal ValorInvestido,
     DateOnly DataCompra,
     decimal TaxaContratada,

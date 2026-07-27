@@ -9,11 +9,11 @@ namespace TesouroDireto.Web.Tests;
 
 public class SimuladorTests : TestContext
 {
-    private static readonly Guid TituloId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private const string Codigo = "tesouro-selic-2029-03-01";
 
     private const string TitulosJson =
         """
-        [{"id":"11111111-1111-1111-1111-111111111111","tipoTitulo":"Tesouro Selic","dataVencimento":"2029-03-01","indexador":"Selic","pagaJurosSemestrais":false,"vencido":false}]
+        [{"codigo":"tesouro-selic-2029-03-01","tipoTitulo":"Tesouro Selic","dataVencimento":"2029-03-01","indexador":"Selic","pagaJurosSemestrais":false,"vencido":false}]
         """;
 
     private FakeHttpMessageHandler ConfigureApi(Func<HttpRequestMessage, HttpResponseMessage> postSimuladorResponder)
@@ -32,7 +32,7 @@ public class SimuladorTests : TestContext
         var cut = RenderComponent<Simulador>();
 
         cut.WaitForAssertion(() => cut.Find("#titulo").Should().NotBeNull());
-        cut.Find("#titulo").Change(TituloId.ToString());
+        cut.Find("#titulo").Change(Codigo);
         cut.Find("#valorInvestido").Change("1000");
 
         return cut;

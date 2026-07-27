@@ -21,11 +21,10 @@ public sealed class GetPrecoAtualByCodigoQueryHandlerTests
     public async Task Handle_WithValidCodigo_ShouldReturnPrecoAtual()
     {
         var tituloId = Guid.NewGuid();
-        var titulo = new TituloDto(tituloId, "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        var preco = new PrecoTaxaDto(Guid.NewGuid(), "2025-03-24", 6.50m, 6.55m, 3200.00m, 3198.00m, 3197.50m);
+        var preco = new PrecoTaxaDto("2025-03-24", 6.50m, 6.55m, 3200.00m, 3198.00m, 3197.50m);
 
-        _tituloReadRepo.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        _tituloReadRepo.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
         _precoReadRepo.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
             .Returns(Result<PrecoTaxaDto>.Success(preco));
 
@@ -39,8 +38,8 @@ public sealed class GetPrecoAtualByCodigoQueryHandlerTests
     [Fact]
     public async Task Handle_WithUnknownCodigo_ShouldReturnNotFound()
     {
-        _tituloReadRepo.GetByCodigoAsync("tesouro-inexistente-2099-01-01", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Failure(new Error("Titulo.NotFound", "not found")));
+        _tituloReadRepo.GetIdByCodigoAsync("tesouro-inexistente-2099-01-01", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(new Error("Titulo.NotFound", "not found")));
 
         var result = await _handler.Handle(
             new GetPrecoAtualByCodigoQuery("tesouro-inexistente-2099-01-01"), CancellationToken.None);
@@ -52,8 +51,8 @@ public sealed class GetPrecoAtualByCodigoQueryHandlerTests
     [Fact]
     public async Task Handle_WithMalformedCodigo_ShouldReturnInvalidCodigo()
     {
-        _tituloReadRepo.GetByCodigoAsync("nao-e-um-codigo-valido", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Failure(new Error("Titulo.InvalidCodigo", "malformed")));
+        _tituloReadRepo.GetIdByCodigoAsync("nao-e-um-codigo-valido", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(new Error("Titulo.InvalidCodigo", "malformed")));
 
         var result = await _handler.Handle(
             new GetPrecoAtualByCodigoQuery("nao-e-um-codigo-valido"), CancellationToken.None);

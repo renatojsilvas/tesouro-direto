@@ -14,6 +14,9 @@ namespace TesouroDireto.Application.Tests.Simulador;
 
 public sealed class SimularCommandHandlerTests
 {
+    private const string Codigo = "tesouro-selic-2025-01-02";
+
+    private readonly ITituloReadRepository _tituloReadRepo = Substitute.For<ITituloReadRepository>();
     private readonly ITituloWriteRepository _tituloRepo = Substitute.For<ITituloWriteRepository>();
     private readonly IDiasUteisService _diasUteisService = Substitute.For<IDiasUteisService>();
     private readonly IProjecaoMercadoService _projecaoService = Substitute.For<IProjecaoMercadoService>();
@@ -25,7 +28,7 @@ public sealed class SimularCommandHandlerTests
     public SimularCommandHandlerTests()
     {
         _handler = new SimularCommandHandler(
-            _tituloRepo, _diasUteisService, _projecaoService, _tributoRepo, _feriadoRepo, _metrics);
+            _tituloReadRepo, _tituloRepo, _diasUteisService, _projecaoService, _tributoRepo, _feriadoRepo, _metrics);
 
         _tributoRepo.GetAtivosOrdenadosAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<Tributo>>.Success(Array.Empty<Tributo>()));
@@ -41,7 +44,7 @@ public sealed class SimularCommandHandlerTests
         SetupTitulo(titulo);
         SetupDiasUteis(252);
 
-        var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 12m, null);
+        var command = new SimularCommand(Codigo, 10_000m, new DateOnly(2024, 1, 2), 12m, null);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -59,7 +62,7 @@ public sealed class SimularCommandHandlerTests
         SetupTitulo(titulo);
         SetupDiasUteis(252);
 
-        var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 12m, null);
+        var command = new SimularCommand(Codigo, 10_000m, new DateOnly(2024, 1, 2), 12m, null);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -78,7 +81,7 @@ public sealed class SimularCommandHandlerTests
             .Returns(Result<ProjecaoMercado>.Failure(
                 new Error("Projecao.HttpError", "BCB indisponível e sem cache válido.")));
 
-        var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 0.10m, null);
+        var command = new SimularCommand(Codigo, 10_000m, new DateOnly(2024, 1, 2), 0.10m, null);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -91,15 +94,29 @@ public sealed class SimularCommandHandlerTests
     [Fact]
     public async Task Handle_TituloNotFound_ShouldReturnFailure()
     {
-        _tituloRepo.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(Result<Titulo>.Failure(TituloErrors.NotFound));
+        _tituloReadRepo.GetIdByCodigoAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(TituloErrors.NotFound));
 
-        var command = new SimularCommand(Guid.NewGuid(), 10_000m, new DateOnly(2024, 1, 2), 12m, null);
+        var command = new SimularCommand("tesouro-selic-2099-01-01", 10_000m, new DateOnly(2024, 1, 2), 12m, null);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Titulo.NotFound");
+    }
+
+    [Fact]
+    public async Task Handle_MalformedCodigo_ShouldReturnFailure()
+    {
+        _tituloReadRepo.GetIdByCodigoAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(TituloErrors.InvalidCodigo));
+
+        var command = new SimularCommand("nao-e-um-codigo-valido", 10_000m, new DateOnly(2024, 1, 2), 12m, null);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Titulo.InvalidCodigo");
     }
 
     [Fact]
@@ -111,7 +128,7 @@ public sealed class SimularCommandHandlerTests
         _projecaoService.GetProjecaoAsync(Indexador.Selic, Arg.Any<CancellationToken>())
             .Returns(Result<ProjecaoMercado>.Success(CreateProjecao("Selic", 13.75m)));
 
-        var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 0.10m, null);
+        var command = new SimularCommand(Codigo, 10_000m, new DateOnly(2024, 1, 2), 0.10m, null);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -127,7 +144,7 @@ public sealed class SimularCommandHandlerTests
         SetupTitulo(titulo);
         SetupDiasUteis(252);
 
-        var command = new SimularCommand(titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 0.10m, 13.75m);
+        var command = new SimularCommand(Codigo, 10_000m, new DateOnly(2024, 1, 2), 0.10m, 13.75m);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -143,7 +160,7 @@ public sealed class SimularCommandHandlerTests
         SetupTitulo(titulo);
         SetupDiasUteis(252);
 
-        var command = new SimularCommand(titulo.Id, -100m, new DateOnly(2024, 1, 2), 12m, null);
+        var command = new SimularCommand(Codigo, -100m, new DateOnly(2024, 1, 2), 12m, null);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -162,6 +179,8 @@ public sealed class SimularCommandHandlerTests
 
     private void SetupTitulo(Titulo titulo)
     {
+        _tituloReadRepo.GetIdByCodigoAsync(Codigo, Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(titulo.Id));
         _tituloRepo.GetByIdAsync(titulo.Id, Arg.Any<CancellationToken>())
             .Returns(Result<Titulo>.Success(titulo));
     }

@@ -12,6 +12,9 @@ namespace TesouroDireto.Application.Tests.Simulador;
 
 public sealed class SimularCenariosCommandHandlerTests
 {
+    private const string Codigo = "tesouro-ipca-mais-2025-01-02";
+
+    private readonly ITituloReadRepository _tituloReadRepo = Substitute.For<ITituloReadRepository>();
     private readonly ITituloWriteRepository _tituloRepo = Substitute.For<ITituloWriteRepository>();
     private readonly IDiasUteisService _diasUteisService = Substitute.For<IDiasUteisService>();
     private readonly ITributoReadRepository _tributoRepo = Substitute.For<ITributoReadRepository>();
@@ -21,7 +24,7 @@ public sealed class SimularCenariosCommandHandlerTests
     public SimularCenariosCommandHandlerTests()
     {
         _handler = new SimularCenariosCommandHandler(
-            _tituloRepo, _diasUteisService, _tributoRepo, _feriadoRepo);
+            _tituloReadRepo, _tituloRepo, _diasUteisService, _tributoRepo, _feriadoRepo);
 
         _tributoRepo.GetAtivosOrdenadosAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<Tributo>>.Success(Array.Empty<Tributo>()));
@@ -38,6 +41,8 @@ public sealed class SimularCenariosCommandHandlerTests
     public async Task Handle_MultipleCenarios_ShouldReturnResultForEach()
     {
         var titulo = CreateTitulo(TipoTitulo.TesouroIPCA, new DateOnly(2025, 1, 2));
+        _tituloReadRepo.GetIdByCodigoAsync(Codigo, Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(titulo.Id));
         _tituloRepo.GetByIdAsync(titulo.Id, Arg.Any<CancellationToken>())
             .Returns(Result<Titulo>.Success(titulo));
 
@@ -49,7 +54,7 @@ public sealed class SimularCenariosCommandHandlerTests
         };
 
         var command = new SimularCenariosCommand(
-            titulo.Id, 10_000m, new DateOnly(2024, 1, 2), 6m, cenarios);
+            Codigo, 10_000m, new DateOnly(2024, 1, 2), 6m, cenarios);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -65,16 +70,32 @@ public sealed class SimularCenariosCommandHandlerTests
     [Fact]
     public async Task Handle_TituloNotFound_ShouldReturnFailure()
     {
-        _tituloRepo.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(Result<Titulo>.Failure(TituloErrors.NotFound));
+        _tituloReadRepo.GetIdByCodigoAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(TituloErrors.NotFound));
 
         var command = new SimularCenariosCommand(
-            Guid.NewGuid(), 10_000m, new DateOnly(2024, 1, 2), 6m,
+            "tesouro-selic-2099-01-01", 10_000m, new DateOnly(2024, 1, 2), 6m,
             [new CenarioInput("Test", 5m)]);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Handle_MalformedCodigo_ShouldReturnFailure()
+    {
+        _tituloReadRepo.GetIdByCodigoAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(TituloErrors.InvalidCodigo));
+
+        var command = new SimularCenariosCommand(
+            "nao-e-um-codigo-valido", 10_000m, new DateOnly(2024, 1, 2), 6m,
+            [new CenarioInput("Test", 5m)]);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Titulo.InvalidCodigo");
     }
 
     private static Titulo CreateTitulo(TipoTitulo tipoTitulo, DateOnly vencimento)

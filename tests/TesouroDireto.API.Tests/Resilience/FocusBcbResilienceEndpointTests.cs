@@ -38,25 +38,22 @@ public sealed class FocusBcbResilienceEndpointTests(ApiTestFactory factory) : IA
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private async Task<Guid> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
+    private async Task<string> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
     {
-        var id = Guid.Empty;
-
         await factory.SeedAsync(async sp =>
         {
             var db = sp.GetRequiredService<AppDbContext>();
             var titulo = Titulo.Create(tipoTitulo, DataVencimento.Create(dataVencimento).Value).Value;
             await db.Titulos.AddAsync(titulo);
             await db.SaveChangesAsync();
-            id = titulo.Id;
         });
 
-        return id;
+        return TituloCodigo.From(tipoTitulo.Name, dataVencimento);
     }
 
-    private static object RequestBody(Guid tituloId) => new
+    private static object RequestBody(string codigo) => new
     {
-        TituloId = tituloId,
+        Codigo = codigo,
         ValorInvestido = 1000m,
         DataCompra = new DateOnly(2024, 1, 2),
         TaxaContratada = 10m,
@@ -66,7 +63,7 @@ public sealed class FocusBcbResilienceEndpointTests(ApiTestFactory factory) : IA
     [Fact]
     public async Task PostSimulador_WhenBcbFailsTwiceThenSucceeds_ShouldRetryAndReturn200()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
 
         var calls = 0;
         factory.BcbResponder = _ =>
@@ -80,7 +77,7 @@ public sealed class FocusBcbResilienceEndpointTests(ApiTestFactory factory) : IA
                 };
         };
 
-        var response = await _client.PostAsJsonAsync("/simulador", RequestBody(tituloId), CancellationToken.None);
+        var response = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var dto = await response.Content.ReadFromJsonAsync<SimulacaoResultadoDto>(JsonOptions, CancellationToken.None);

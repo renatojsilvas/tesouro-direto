@@ -21,15 +21,14 @@ public sealed class GetPrecosByNomeQueryHandlerTests
     public async Task Handle_WithValidNome_ShouldReturnPrecos()
     {
         var tituloId = Guid.NewGuid();
-        var titulo = new TituloDto(tituloId, "Tesouro Selic", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01");
         var precos = new List<PrecoTaxaDto>
         {
-            new(Guid.NewGuid(), "2025-03-23", 0.10m, 0.04m, 15800.00m, 15790.00m, 15785.00m),
-            new(Guid.NewGuid(), "2025-03-24", 0.10m, 0.04m, 15810.00m, 15800.00m, 15795.00m)
+            new("2025-03-23", 0.10m, 0.04m, 15800.00m, 15790.00m, 15785.00m),
+            new("2025-03-24", 0.10m, 0.04m, 15810.00m, 15800.00m, 15795.00m)
         };
 
-        _tituloReadRepo.GetByNomeAsync("Tesouro Selic 2029", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        _tituloReadRepo.GetIdByNomeAsync("Tesouro Selic 2029", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
         _precoReadRepo.GetByTituloIdAsync(tituloId, null, null, Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<PrecoTaxaDto>>.Success(precos));
 
@@ -44,12 +43,11 @@ public sealed class GetPrecosByNomeQueryHandlerTests
     public async Task Handle_WithDateFilters_ShouldPassThrough()
     {
         var tituloId = Guid.NewGuid();
-        var titulo = new TituloDto(tituloId, "Tesouro Selic", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01");
         var dataInicio = new DateOnly(2025, 1, 1);
         var dataFim = new DateOnly(2025, 3, 24);
 
-        _tituloReadRepo.GetByNomeAsync("Tesouro Selic 2029", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        _tituloReadRepo.GetIdByNomeAsync("Tesouro Selic 2029", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
         _precoReadRepo.GetByTituloIdAsync(tituloId, dataInicio, dataFim, Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<PrecoTaxaDto>>.Success(new List<PrecoTaxaDto>()));
 
@@ -63,8 +61,8 @@ public sealed class GetPrecosByNomeQueryHandlerTests
     [Fact]
     public async Task Handle_WithUnknownNome_ShouldReturnNotFound()
     {
-        _tituloReadRepo.GetByNomeAsync("Tesouro Inexistente 2099", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Failure(new Error("Titulo.NotFound", "not found")));
+        _tituloReadRepo.GetIdByNomeAsync("Tesouro Inexistente 2099", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Failure(new Error("Titulo.NotFound", "not found")));
 
         var result = await _handler.Handle(
             new GetPrecosByNomeQuery("Tesouro Inexistente 2099", null, null), CancellationToken.None);

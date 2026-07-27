@@ -24,7 +24,7 @@ public sealed class CachedTituloReadRepositoryTests : IDisposable
     {
         var titulos = new List<TituloDto>
         {
-            new(Guid.NewGuid(), "Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
+            new("Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
         };
         _inner.GetFilteredAsync(null, null, Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
@@ -41,7 +41,7 @@ public sealed class CachedTituloReadRepositoryTests : IDisposable
     {
         var titulos = new List<TituloDto>
         {
-            new(Guid.NewGuid(), "Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
+            new("Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
         };
         _inner.GetFilteredAsync(null, null, Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
@@ -58,11 +58,11 @@ public sealed class CachedTituloReadRepositoryTests : IDisposable
     {
         var selicTitulos = new List<TituloDto>
         {
-            new(Guid.NewGuid(), "Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
+            new("Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
         };
         var ipcaTitulos = new List<TituloDto>
         {
-            new(Guid.NewGuid(), "Tesouro IPCA+ 2035", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15")
+            new("Tesouro IPCA+ 2035", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15")
         };
 
         _inner.GetFilteredAsync("Selic", null, Arg.Any<CancellationToken>())
@@ -97,7 +97,7 @@ public sealed class CachedTituloReadRepositoryTests : IDisposable
     {
         var titulos = new List<TituloDto>
         {
-            new(Guid.NewGuid(), "Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
+            new("Tesouro Selic 2029", "2029-03-01", "Selic", false, false, "tesouro-selic-2029-03-01")
         };
         _inner.GetFilteredAsync(null, null, Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<TituloDto>>.Success(titulos));
@@ -110,96 +110,98 @@ public sealed class CachedTituloReadRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task GetByNomeAsync_CacheMiss_ShouldCallInnerAndCache()
+    public async Task GetIdByNomeAsync_CacheMiss_ShouldCallInnerAndCache()
     {
-        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        _inner.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        var tituloId = Guid.NewGuid();
+        _inner.GetIdByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
 
-        var result = await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+        var result = await _sut.GetIdByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        await _inner.Received(1).GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
+        result.Value.Should().Be(tituloId);
+        await _inner.Received(1).GetIdByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetByNomeAsync_CacheHit_ShouldNotCallInner()
+    public async Task GetIdByNomeAsync_CacheHit_ShouldNotCallInner()
     {
-        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        _inner.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        var tituloId = Guid.NewGuid();
+        _inner.GetIdByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
 
-        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
-        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+        await _sut.GetIdByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+        await _sut.GetIdByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
 
-        await _inner.Received(1).GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
+        await _inner.Received(1).GetIdByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetByNomeAsync_CaseInsensitive_ShouldUseSameCacheKey()
+    public async Task GetIdByNomeAsync_CaseInsensitive_ShouldUseSameCacheKey()
     {
-        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        _inner.GetByNomeAsync("tesouro ipca+ 2035", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        var tituloId = Guid.NewGuid();
+        _inner.GetIdByNomeAsync("tesouro ipca+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
 
-        await _sut.GetByNomeAsync("tesouro ipca+ 2035", CancellationToken.None);
-        await _sut.GetByNomeAsync("TESOURO IPCA+ 2035", CancellationToken.None);
+        await _sut.GetIdByNomeAsync("tesouro ipca+ 2035", CancellationToken.None);
+        await _sut.GetIdByNomeAsync("TESOURO IPCA+ 2035", CancellationToken.None);
 
-        await _inner.Received(1).GetByNomeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _inner.Received(1).GetIdByNomeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetByNomeAsync_AfterInvalidation_ShouldCallInnerAgain()
+    public async Task GetIdByNomeAsync_AfterInvalidation_ShouldCallInnerAgain()
     {
-        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        _inner.GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        var tituloId = Guid.NewGuid();
+        _inner.GetIdByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
 
-        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+        await _sut.GetIdByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
         _invalidator.InvalidateTitulos();
-        await _sut.GetByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
+        await _sut.GetIdByNomeAsync("Tesouro IPCA+ 2035", CancellationToken.None);
 
-        await _inner.Received(2).GetByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
+        await _inner.Received(2).GetIdByNomeAsync("Tesouro IPCA+ 2035", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetByCodigoAsync_CacheMiss_ShouldCallInnerAndCache()
+    public async Task GetIdByCodigoAsync_CacheMiss_ShouldCallInnerAndCache()
     {
-        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        _inner.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        var tituloId = Guid.NewGuid();
+        _inner.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
 
-        var result = await _sut.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
+        var result = await _sut.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        await _inner.Received(1).GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>());
+        result.Value.Should().Be(tituloId);
+        await _inner.Received(1).GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetByCodigoAsync_CacheHit_ShouldNotCallInner()
+    public async Task GetIdByCodigoAsync_CacheHit_ShouldNotCallInner()
     {
-        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        _inner.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        var tituloId = Guid.NewGuid();
+        _inner.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
 
-        await _sut.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
-        await _sut.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
+        await _sut.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
+        await _sut.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
 
-        await _inner.Received(1).GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>());
+        await _inner.Received(1).GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetByCodigoAsync_AfterInvalidation_ShouldCallInnerAgain()
+    public async Task GetIdByCodigoAsync_AfterInvalidation_ShouldCallInnerAgain()
     {
-        var titulo = new TituloDto(Guid.NewGuid(), "Tesouro IPCA+", "2035-05-15", "IPCA", false, false, "tesouro-ipca-mais-2035-05-15");
-        _inner.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
-            .Returns(Result<TituloDto>.Success(titulo));
+        var tituloId = Guid.NewGuid();
+        _inner.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(tituloId));
 
-        await _sut.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
+        await _sut.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
         _invalidator.InvalidateTitulos();
-        await _sut.GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
+        await _sut.GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", CancellationToken.None);
 
-        await _inner.Received(2).GetByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>());
+        await _inner.Received(2).GetIdByCodigoAsync("tesouro-ipca-mais-2035-05-15", Arg.Any<CancellationToken>());
     }
 
     public void Dispose() => _cache.Dispose();

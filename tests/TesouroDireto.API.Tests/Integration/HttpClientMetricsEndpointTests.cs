@@ -30,26 +30,23 @@ public sealed class HttpClientMetricsEndpointTests(ApiTestFactory factory) : IAs
         }
         """;
 
-    private async Task<Guid> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
+    private async Task<string> SeedTituloAsync(TipoTitulo tipoTitulo, DateOnly dataVencimento)
     {
-        var id = Guid.Empty;
-
         await factory.SeedAsync(async sp =>
         {
             var db = sp.GetRequiredService<AppDbContext>();
             var titulo = Titulo.Create(tipoTitulo, DataVencimento.Create(dataVencimento).Value).Value;
             await db.Titulos.AddAsync(titulo);
             await db.SaveChangesAsync();
-            id = titulo.Id;
         });
 
-        return id;
+        return TituloCodigo.From(tipoTitulo.Name, dataVencimento);
     }
 
     [Fact]
     public async Task Metrics_AfterSimulacaoCallsBcb_ShouldExposeFocusBcbServiceHttpClientDuration()
     {
-        var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
+        var codigo = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
 
         factory.BcbResponder = _ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -58,7 +55,7 @@ public sealed class HttpClientMetricsEndpointTests(ApiTestFactory factory) : IAs
 
         var response = await _client.PostAsJsonAsync("/simulador", new
         {
-            TituloId = tituloId,
+            Codigo = codigo,
             ValorInvestido = 1000m,
             DataCompra = new DateOnly(2024, 1, 2),
             TaxaContratada = 10m,
