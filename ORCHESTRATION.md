@@ -1,4 +1,8 @@
-# Como ligar tudo
+# Kit de orquestração com subagents (Claude Code)
+
+> Este guia é sobre o **kit de agentes de IA** deste repo (subagents em `.claude/agents/`,
+> memória em grafo via MCP, modo `ultracode`) — **não** sobre subir a aplicação.
+> Para rodar o sistema (Docker, testes, deploy) veja o [`README.md`](README.md).
 
 ## 1. Copiar os arquivos
 
