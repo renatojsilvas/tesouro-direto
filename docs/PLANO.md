@@ -49,6 +49,19 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 39 | ✅ Maturidade REST completa (ETag/304 + `Cache-Control` só nas leituras 2xx; paginação `page`/`pageSize` in-memory em `/titulos/{codigo}/precos` com `Link` RFC 8288 + `X-Total-Count`, sem `page` = comportamento atual; `_links` HAL-like sibling nos títulos, raiz segue array; `Location` via `CreatedAtRoute`; 405+`Allow`, HEAD/OPTIONS; GET de recurso único `/titulos/{codigo}` e `/configuracoes/tributos/{id}`; nginx gzip + 429/`Retry-After`; Swagger refletindo tudo; **front NÃO alterado → adoção = tarefa 40**) — concluída 2026-07-27 · **4ª fase, FECHA o contrato 36–39** | Médio (contrato/DX) | Médio-baixo | 🟡 |
 | 40 | ✅ Front adota a maturidade REST (só o front; API da 39 intocada). `TesouroApiClient` faz **GET condicional** (If-None-Match→304 reusando corpo) via **store singleton bounded** (cap 128, evição FIFO por inserção, guarda ETag+bytes+snapshot de `X-Total-Count`/`Link`) compartilhado entre circuitos; novo `GetPagedAsync<T>`. `Historico.razor` **pagina de verdade** (`page`/`pageSize`, navega pelos hrefs do header `Link`), **`TakeLast(50)` removido**. Navegação por `_links`: precos via `_links.precos`, Simulador via `_links.simular`; entradas documentadas `/titulos` e `simulador/cenarios`. Raiz segue array. Seed E2E Selic 2029 25→60 (3 páginas) — concluída 2026-07-27 · **consome o contrato 36–39** | Médio (DX) | Médio-baixo | 🟡 |
 | 41 | ✅ README completo da raiz (visão geral + diagrama Mermaid de containers/fluxo + camadas e decisões-chave destiladas do MAPA; tabela de rotas com auth + link Swagger túnel-only + curls dos fluxos; setup local com `.env` por **nome** de var; deploy/operação — pipeline, secrets por nome, túnel SSH, dashboards/alertas, manutenção; índice de docs). **Regra dura: zero segredos/IP/chat_id/senha**; informação destilada, não colada; tudo verificável contra o repo — concluída 2026-07-27 · **última tarefa da fila; abre o fechamento do ciclo** | Baixo–Médio (DX/onboarding) | Baixo | 🟢 |
+| | **— Onda de auditoria (2026-07-28) —** | | | |
+| 42 | 🐛 Import CSV aborta lote por linha suja (`.Value` sem checar `IsFailure`) | **Alto (corretude)** | Baixo | 🟢 |
+| 43 | 🔒 nginx: restringir `/api/metrics` a `127.0.0.1` (hoje público) | **Alto (segurança)** | Baixo | 🟢 |
+| 44 | 🔒 TLS/HTTPS no nginx do host (Certbot + redirect + HSTS) | **Alto (segurança)** | Médio | 🔴 |
+| 45 | `Taxa.Create` → `Result<Taxa>` validado (simetria de VO; raiz do 42) | Médio (corretude) | Baixo | 🟢 |
+| 46 | Contrato Web↔API compartilhado + teste de paridade (DTOs duplicados/divergindo) | Médio (arquitetura) | Médio | 🟡 |
+| 47 | Dedup leitura de feriados + unificar cálculo de dias úteis na simulação | Médio (corretude) | Médio | 🟢 |
+| 48 | Error→HTTP por categoria (409 p/ `AlreadyExists`), fim da heurística de sufixo | Médio (contrato) | Baixo | 🟢 |
+| 49 | Testes de comportamento fiscal (IOF `TabelaDiaria`+IOF→IR) + valores-ouro + property tests | Alto (rede de segurança) | Baixo | 🟡 |
+| 50 | Isolar `CollectorRegistry` no teste de gauge (valor absoluto → flaky) | Baixo (rede de segurança) | Baixo | 🟢 |
+| 51 | Taxa de cupom no `TipoTitulo` + constantes financeiras nomeadas (após 49) | Baixo (manutenção) | Médio | 🟢 |
+| 52 | Dedup dos 2 handlers de simulação + métricas no de cenários (após 49) | Baixo (manutenção) | Baixo | 🟢 |
+| 53 | Helper `GetOrCreateAsync` nos decorators de cache + TTL por config | Baixo (manutenção) | Baixo | 🟢 |
 
 ---
 
@@ -522,6 +535,102 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Arquivos:** `src/TesouroDireto.Infrastructure/DependencyInjection.cs` (bloco `AddQuartz`); possivelmente um listener em `src/TesouroDireto.Infrastructure/` + registro.
 - **Risco:** muito baixo — só adiciona logging no boot; não altera o disparo nem a idempotência dos jobs.
 - **Verificação:** subir a API e ver, **antes do primeiro disparo**, uma linha de log por job com `JobKey` + cron + próximo disparo (`csv-import` e `feriado-import`). Ver `project_status_tarefa10_feriados_job`.
+
+---
+
+## Onda de auditoria (2026-07-28) — achados pós-fechamento do ciclo
+
+> Levantados por auditoria adversarial em 3 frentes (arquitetura/dívida, segurança/operação, testes/produto) **após** o ciclo 1–41. Só entram aqui os achados **reais confirmados no código** (verificados por leitura direta dos trechos citados). Ordenados por urgência. Backlog de produto ao final (são melhorias, não correções — registrados, não priorizados).
+
+### 🔴 Corrigir já (bug real / furo de segurança)
+
+**42. Import de CSV aborta o lote inteiro por uma linha suja** 🟢
+- **Escopo:** em `CreatePuOrNull`, `PrecoUnitario.Create(value).Value` desempacota **sem checar `IsFailure`** — `Result<T>.Value` lança `InvalidOperationException` em falha (`Domain/Common/Result.cs`), e `PrecoUnitario.Create` falha para valor negativo. Um PU negativo vindo do Tesouro Transparente **lança exceção não capturada e aborta o lote todo**, em vez de virar `linhasComErro++` como o resto do handler. `CreateTaxaOrNull` espelha o problema (hoje não lança só porque `Taxa.Create` não valida — ver **45**). Corrigir para tratar a falha como linha inválida (contabilizar em `linhasComErro`, seguir o lote).
+- **Arquivos:** `src/TesouroDireto.Application/Importacao/ImportCsvCommandHandler.cs:219-223`. Depende de **45** para o caminho da taxa.
+- **Risco:** baixo. Roda em job agendado (Quartz) → hoje uma importação inteira pode falhar silenciosamente por 1 registro.
+- **Verificação:** teste do handler com um registro de PU negativo no CSV → o lote conclui, a linha entra em `linhasComErro`, as demais persistem (hoje: exceção propaga). Não-vacuidade por reversão.
+
+**43. `/api/metrics` exposto na internet sem chave nem restrição de IP** 🟢
+- **Escopo:** `/metrics` está (corretamente) em `ApiKey:ExcludedPaths` para o Prometheus interno, mas o `nginx` **não tem** bloco `location /api/metrics` — cai no `location /api/` genérico e fica **público**, diferente de `/grafana/`, `/prometheus/` e `/api/swagger`, que têm `allow 127.0.0.1; deny all`. Anônimo lê rótulos de rota, contadores de erro por código, métricas de negócio (O8) e timings. Replicar o padrão `allow 127.0.0.1; deny all` para `/api/metrics`.
+- **Arquivos:** `infra/nginx/tesouro-direto.conf` (novo `location = /api/metrics` antes do `location /api/`).
+- **Risco:** baixo. Conferir que o Prometheus scrapeia via localhost/rede interna (não via a porta pública) — hoje já é `127.0.0.1:*` no compose.
+- **Verificação:** `curl http://host:3080/api/metrics` de fora → 403; scrape interno do Prometheus segue verde.
+
+**44. API pública em HTTP puro — sem TLS** 🔴
+- **Escopo:** o `nginx` do host só faz `listen 3080` (sem `443 ssl`). A `ApiKey` (estática, sem rotação/expiração) trafega em claro no header a cada chamada `/api/` — um único MITM captura a chave e tem acesso permanente. Provisionar TLS (Let's Encrypt/Certbot) no nginx do **host**, redirect 80→443, e só então `HSTS`.
+- **Arquivos:** `infra/nginx/tesouro-direto.conf` (server block 443 + redirect); processo de deploy (`.github/workflows/deploy.yml`) para renovação; requer um **domínio** apontando para o VPS.
+- **Risco:** médio (operacional — cert, renovação, redirect). Não mexe em código de app.
+- **Verificação:** `https://` responde com cert válido; `http://` redireciona 301→https; header `Strict-Transport-Security` presente; ApiKey nunca mais trafega em claro.
+
+### 🟡 Consistência de domínio e contrato
+
+**45. `Taxa.Create` sem validação nem `Result` (assimetria de VO)** 🟢
+- **Escopo:** `Taxa.Create(decimal) => new(value)` não valida nada e retorna `Taxa` cru, enquanto `PrecoUnitario.Create`/`DataBase.Create` retornam `Result<T>` validado. É a raiz do **42** (o call-site mistura `.Value` com chamada direta) e aceita taxa negativa silenciosamente. Padronizar para `Result<Taxa>` com a mesma invariante dos irmãos, ajustando os call-sites.
+- **Arquivos:** `src/TesouroDireto.Domain/PrecosTaxas/Taxa.cs`, call-sites (`ImportCsvCommandHandler`, mapeamentos). Fazer **junto** com **42**.
+- **Risco:** médio-baixo (muda a assinatura do factory — ajustar chamadas e testes de Domain).
+- **Verificação:** `Taxa.Create` de valor inválido → `Result.Failure`; suíte de Domain verde com o novo contrato; não-vacuidade por reversão.
+
+**46. Contrato Web↔API duplicado e já divergindo** 🟡
+- **Escopo:** `TituloItem` é redefinido como `record` privado em 4 páginas Blazor (`Simulador`/`Historico`/`Titulos`/`Cenarios`) com **shapes diferentes**, e `SimulacaoResult` (`Simulador.razor`) **omite `ProjecaoUtilizada`** que a API sempre devolve em `SimulacaoResultadoDto` → o campo some no Web silenciosamente. Sem assembly de Contracts compartilhado, cada renomeação vira `null`/`default` sem nenhum teste falhar. Extrair um contrato compartilhado (ou, no mínimo, um **teste de paridade de shape** — nomes camelCase, presença de `_links` — entre os DTOs da Application e os records consumidos pelo Web).
+- **Arquivos:** `src/TesouroDireto.Web/Components/Pages/*.razor`; novo teste em `tests/TesouroDireto.Web.Tests/` (o `TesouroApiClientTests` hoje usa um `TestDto` fictício, não o contrato real).
+- **Risco:** médio (mexe em desserialização de várias telas).
+- **Verificação:** o Web volta a exibir `ProjecaoUtilizada`; teste de paridade falha se um campo do DTO da API for renomeado/removido.
+
+**47. Feriados lidos 2× por simulação + dois cálculos de dias úteis** 🟢
+- **Escopo:** `SimularCommandHandler` chama `DiasUteisService.CalcularDiasUteisAsync` (que **já** lê feriados e roda `DiasUteisCalculator`) e **depois relê** `feriadoRepository.GetAllDatasAsync` para o `SimulacaoInput`; então `SimuladorService.SimularComCupons` **recalcula DU por conta própria** com um `DiasUteisCalculator` estático. Duas leituras e duas implementações do mesmo cálculo em paralelo — risco de divergência entre o DU do valor principal e o dos cupons. Unificar numa única fonte de DU/feriados.
+- **Arquivos:** `src/TesouroDireto.Application/Simulador/SimularCommandHandler.cs:55,84`, `src/TesouroDireto.Domain/Simulador/SimuladorService.cs`.
+- **Risco:** médio (toca o motor de cálculo — precisa de valores-ouro antes; ver **49**).
+- **Verificação:** uma só leitura de feriados por simulação; o DU do principal e o dos cupons vêm do mesmo cálculo; resultados numéricos inalterados (golden).
+
+**48. Error→HTTP por heurística de string (`AlreadyExists` vira 400, não 409)** 🟢
+- **Escopo:** `ResultExtensions` mapeia por sufixo textual — `.NotFound`→404, resto→400. `Titulo.AlreadyExists`/`PrecoTaxa.AlreadyExists` deveriam ser **409**, e não há caminho para 422/500. Introduzir uma **categoria/enum no próprio `Error`** (NotFound/Conflict/Validation/…) e mapear por ela, não por parsing de string.
+- **Arquivos:** `src/TesouroDireto.API/Extensions/ResultExtensions.cs:28`, `src/TesouroDireto.Domain/Common/Error.cs` + erros de domínio.
+- **Risco:** médio-baixo (muda status de alguns erros — atualizar testes de integração e contrato/Swagger).
+- **Verificação:** POST duplicado → 409; erros NotFound seguem 404; teste por categoria, não por string. Ver memória `feedback_result_http_status_map`.
+
+### 🟢 Rede de testes (lacunas em cálculo financeiro)
+
+**49. Cobertura de comportamento do cálculo fiscal + valores-ouro + testes de propriedade** 🟡
+- **Escopo:** três lacunas reais no trecho de maior risco: (a) o ramo **IOF `TabelaDiaria`** de `SimuladorService.ObterAliquota` **nunca é exercido** pelo simulador (só a *forma* da tabela é testada), nem a interação **IOF→IR** (IR sobre rendimento já reduzido pelo IOF); (b) os testes de integração do simulador só asseram `> 0` / ecoam o input — faltam **valores-ouro** ponta-a-ponta; (c) **zero testes de propriedade** — invariantes óbvias (`líquido ≤ bruto`, `totalTributos ≥ 0`, `DU ≤ dias corridos`, monotonicidade do rendimento na taxa, round-trip do PU) não são verificadas sobre entradas aleatórias. Também cobrir bordas de `GerarDatasCupom` (day-drift em `AddMonths(-6)` a partir de 31/xx; vencimento = data de compra).
+- **Arquivos:** `tests/TesouroDireto.Domain.Tests/Simulador/*`, `tests/TesouroDireto.API.Tests/Integration/SimuladorEndpointsTests.cs`; avaliar adicionar FsCheck a um `.csproj` de teste.
+- **Risco:** baixo (só testes) — mas é **pré-requisito de segurança** para **47** e **51** (mexem no motor).
+- **Verificação:** resgate de N dias aplica a alíquota IOF correta; golden values ponta-a-ponta com tolerância apertada; propriedades passam sobre N amostras aleatórias.
+
+**50. Isolar `CollectorRegistry` nos testes de métrica (gauge lê valor absoluto)** 🟢
+- **Escopo:** `BusinessMetricsTests.ImportSucceeded_ShouldSetGaugeToCurrentUnixTime` lê o **valor absoluto** de um gauge no **registry global** default do Prometheus — se outra coleção setar o mesmo gauge em paralelo, a assertiva de intervalo quebra de forma não determinística (os counters já usam delta before/after, mais seguros). Isolar com um `CollectorRegistry` próprio por teste (conferir também `MetricsBehaviorTests`/`PrometheusMetricsTests`). Ver memória `feedback_metricas_teste_delta_nao_absoluto`.
+- **Arquivos:** `tests/TesouroDireto.Infrastructure.Tests/Observability/BusinessMetricsTests.cs` (e correlatos).
+- **Risco:** baixo (só testes).
+- **Verificação:** o teste passa isolado **e** em paralelo com as demais classes de métrica, repetidamente.
+
+### 🔵 Refactors de dívida (menores — fazer só após 49)
+
+**51. Taxa de cupom e constantes financeiras fora do motor** 🟢
+- **Escopo:** `ObterTaxaCupomSemestral` decide por `switch` de identidade de `TipoTitulo` (10% para Prefixado-com-juros, **6% para todo o resto** — IPCA+ e IGPM+ com juros caem no genérico); mais `252.0` repetido em 3 lugares e face `1000` em 4. Mover a taxa de cupom para dentro do próprio `TipoTitulo` (que já carrega `PagaJurosSemestrais`) e nomear as constantes.
+- **Arquivos:** `src/TesouroDireto.Domain/Simulador/SimuladorService.cs:132-140,58,104,111`, `src/TesouroDireto.Domain/Titulos/TipoTitulo.cs`.
+- **Risco:** médio (regra de negócio no motor) — **exige 49** (golden values) antes.
+- **Verificação:** valores de simulação inalterados; a taxa de cupom passa a ser auditável no `TipoTitulo`.
+
+**52. Dedup dos dois handlers de simulação + métricas no de cenários** 🟢
+- **Escopo:** `SimularCommandHandler` e `SimularCenariosCommandHandler` repetem a mesma sequência (getId→getById→DU→tributos→feriados→`SimulacaoInput`→`Simular`) e `MapToDto` está copiado quase idêntico; além disso as métricas (`RecordSimulation`/`RecordSimulationFailure`) **só existem no handler single** — o de cenários não instrumenta nada. Extrair um builder/serviço compartilhado e instrumentar os dois.
+- **Arquivos:** `src/TesouroDireto.Application/Simulador/SimularCommandHandler.cs`, `.../SimularCenariosCommandHandler.cs`.
+- **Risco:** baixo-médio (**exige 49**).
+- **Verificação:** um caminho único de montagem; `/metrics` mostra série de simulação também para o endpoint de cenários.
+
+**53. Helper `GetOrCreateAsync` nos decorators de cache + TTL por configuração** 🟢
+- **Escopo:** os 4 `Cached*ReadRepository` repetem literalmente o bloco `TryGetValue → inner → SetAbsoluteExpiration(Ttl) + AddExpirationToken(CancellationChangeToken)`; o TTL é `TimeSpan.FromHours(24)` hardcoded por classe (ao contrário de `CachedProjecaoMercadoService`, que lê de `IConfiguration`). Extrair um helper `GetOrCreateAsync(key, token, factory)` e centralizar os TTLs em configuração.
+- **Arquivos:** `src/TesouroDireto.Infrastructure/Caching/Cached*ReadRepository.cs`.
+- **Risco:** baixo. Ver memória `feedback_cache_not_in_application`.
+- **Verificação:** comportamento de cache/invalidação idêntico (testes existentes verdes); TTLs vêm de config.
+
+### 💡 Backlog de produto (melhorias, não correções — registrar, não priorizar)
+
+Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponível, falta usar):
+- **P1. Marcação a mercado / resgate antecipado** — o histórico já importa `PuVenda`/`TaxaVenda`, mas o simulador só carrega até o vencimento. É *o* risco central do produto (perda em prefixado/IPCA+ na venda antecipada) e a fonte já está no domínio.
+- **P2. Rentabilidade real vs nominal** — o handler já busca a projeção de inflação no BCB Focus; falta deflacionar o resultado (essencial para IPCA+).
+- **P3. Comparação de títulos lado a lado** — `/simulador/cenarios` compara projeções do *mesmo* título; falta comparar títulos diferentes (IPCA+ 2029 vs 2035 vs Prefixado) por líquido/taxa/vencimento.
+- **P4. Reinvestimento de cupons e TIR/yield efetivo** — o fluxo de cupons já é gerado e listado; falta o cenário de reinvestimento e a rentabilidade efetiva para os títulos "com juros semestrais".
+- **P5. Alertas de preço/taxa** — o job de import + histórico persistido já dão a base para "avise quando a taxa do IPCA+ 2035 passar de X%".
+- **P6. Exportação e carteira/posição** — sem download CSV/PDF nem compartilhamento de simulação; e o produto é hoje uma calculadora sem estado (sem conceito de posições/patrimônio marcado a mercado ao longo do tempo).
 
 ---
 
