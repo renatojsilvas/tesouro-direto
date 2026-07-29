@@ -57,7 +57,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 46 | Contrato Web↔API compartilhado + teste de paridade (DTOs duplicados/divergindo) | Médio (arquitetura) | Médio | 🟡 |
 | 47 | Dedup leitura de feriados + unificar cálculo de dias úteis na simulação | Médio (corretude) | Médio | 🟢 |
 | 48 | Error→HTTP por categoria (409 p/ `AlreadyExists`), fim da heurística de sufixo | Médio (contrato) | Baixo | 🟢 |
-| 49 | Testes de comportamento fiscal (IOF `TabelaDiaria`+IOF→IR) + valores-ouro + property tests | Alto (rede de segurança) | Baixo | 🟡 |
+| 49 | ✅ Testes de comportamento fiscal (IOF `TabelaDiaria`+IOF→IR) + valores-ouro + property tests — concluída 2026-07-29 (recorte fiscal; resíduo: `GerarDatasCupom`-edges + round-trip de PU) | Alto (rede de segurança) | Baixo | 🟢 |
 | 50 | Isolar `CollectorRegistry` no teste de gauge (valor absoluto → flaky) | Baixo (rede de segurança) | Baixo | 🟢 |
 | 51 | Taxa de cupom no `TipoTitulo` + constantes financeiras nomeadas (após 49) | Baixo (manutenção) | Médio | 🟢 |
 | 52 | Dedup dos 2 handlers de simulação + métricas no de cenários (após 49) | Baixo (manutenção) | Baixo | 🟢 |
@@ -596,11 +596,12 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 
 ### 🟢 Rede de testes (lacunas em cálculo financeiro)
 
-**49. Cobertura de comportamento do cálculo fiscal + valores-ouro + testes de propriedade** 🟡
+**49. Cobertura de comportamento do cálculo fiscal + valores-ouro + testes de propriedade** ✅
 - **Escopo:** três lacunas reais no trecho de maior risco: (a) o ramo **IOF `TabelaDiaria`** de `SimuladorService.ObterAliquota` **nunca é exercido** pelo simulador (só a *forma* da tabela é testada), nem a interação **IOF→IR** (IR sobre rendimento já reduzido pelo IOF); (b) os testes de integração do simulador só asseram `> 0` / ecoam o input — faltam **valores-ouro** ponta-a-ponta; (c) **zero testes de propriedade** — invariantes óbvias (`líquido ≤ bruto`, `totalTributos ≥ 0`, `DU ≤ dias corridos`, monotonicidade do rendimento na taxa, round-trip do PU) não são verificadas sobre entradas aleatórias. Também cobrir bordas de `GerarDatasCupom` (day-drift em `AddMonths(-6)` a partir de 31/xx; vencimento = data de compra).
 - **Arquivos:** `tests/TesouroDireto.Domain.Tests/Simulador/*`, `tests/TesouroDireto.API.Tests/Integration/SimuladorEndpointsTests.cs`; avaliar adicionar FsCheck a um `.csproj` de teste.
 - **Risco:** baixo (só testes) — mas é **pré-requisito de segurança** para **47** e **51** (mexem no motor).
 - **Verificação:** resgate de N dias aplica a alíquota IOF correta; golden values ponta-a-ponta com tolerância apertada; propriedades passam sobre N amostras aleatórias.
+> **Feito (2026-07-29):** novo `tests/TesouroDireto.Application.Tests/Simulador/FiscalGoldenTests.cs` (17 testes) consumindo a config **real** `TributosPadrao.Build()` + `SimuladorService`. Cenário-base 10000/10%/DU252 ⇒ rendimento **1000,00 exato**; 10 valores-ouro (dias 1/15/29/30, fronteiras IR 180/181, 360/361, 720/721) calculados à mão e **conferidos pelo usuário**; **lock IOF→IR** no dia 1 (IR incide sobre `rendimento − IOF`: base 40 ⇒ IR 9,00, não 225,00). 5 propriedades **determinísticas** (sem FsCheck — eixo é inteiro `DiasCorridos`, enumeração exaustiva 1..800): monotonicidade IOF, IOF-zero-do-dia-30, IR≥0, líquido≤bruto, continuidade das alíquotas (≤4pp IOF / ≤2,5pp IR). Revisor confirmou **não-vacuidade** (mutar alíquota em `TributosPadrao.cs` **e** fronteira `<=`→`<` em `SimuladorService.cs` deixa golden **E** property vermelhos; revertidos) e suíte **570/570** estável em 2 execuções; zero mudança em `src/`, zero comentários. **Resíduo** do escopo amplo (fora deste recorte): bordas de `GerarDatasCupom` (day-drift `AddMonths(-6)` do dia 31; vencimento = data de compra), round-trip de PU, monotonicidade do rendimento na taxa. Ver memória [[project_status_tarefa49_fiscal_golden]], [[project_tributos_configurados]].
 
 **50. Isolar `CollectorRegistry` nos testes de métrica (gauge lê valor absoluto)** 🟢
 - **Escopo:** `BusinessMetricsTests.ImportSucceeded_ShouldSetGaugeToCurrentUnixTime` lê o **valor absoluto** de um gauge no **registry global** default do Prometheus — se outra coleção setar o mesmo gauge em paralelo, a assertiva de intervalo quebra de forma não determinística (os counters já usam delta before/after, mais seguros). Isolar com um `CollectorRegistry` próprio por teste (conferir também `MetricsBehaviorTests`/`PrometheusMetricsTests`). Ver memória `feedback_metricas_teste_delta_nao_absoluto`.
