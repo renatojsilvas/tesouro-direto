@@ -34,7 +34,7 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
                 .Select(i => PrecoTaxa.Create(
                     titulo.Id,
                     DataBase.Create(new DateOnly(2024, 1, 1).AddDays(i)).Value,
-                    Taxa.Create(10m), Taxa.Create(10m),
+                    Taxa.Create(10m).Value, Taxa.Create(10m).Value,
                     PrecoUnitario.Create(100m).Value, PrecoUnitario.Create(100m).Value, PrecoUnitario.Create(100m).Value).Value)
                 .ToArray();
 

@@ -55,15 +55,15 @@ public sealed class PrecoTaxaReadRepositoryTests : IAsyncLifetime
         var precos = new[]
         {
             PrecoTaxa.Create(_titulo.Id, DataBase.Create(new DateOnly(2024, 1, 2)).Value,
-                Taxa.Create(13.12m), Taxa.Create(13.18m),
+                Taxa.Create(13.12m).Value, Taxa.Create(13.18m).Value,
                 PrecoUnitario.Create(756.43m).Value, PrecoUnitario.Create(755.39m).Value,
                 PrecoUnitario.Create(756.43m).Value).Value,
             PrecoTaxa.Create(_titulo.Id, DataBase.Create(new DateOnly(2024, 6, 15)).Value,
-                Taxa.Create(10.50m), Taxa.Create(10.75m),
+                Taxa.Create(10.50m).Value, Taxa.Create(10.75m).Value,
                 PrecoUnitario.Create(800.00m).Value, PrecoUnitario.Create(799.00m).Value,
                 PrecoUnitario.Create(798.00m).Value).Value,
             PrecoTaxa.Create(_titulo.Id, DataBase.Create(new DateOnly(2024, 12, 20)).Value,
-                Taxa.Create(11.00m), Taxa.Create(11.25m),
+                Taxa.Create(11.00m).Value, Taxa.Create(11.25m).Value,
                 PrecoUnitario.Create(850.00m).Value, PrecoUnitario.Create(849.00m).Value,
                 PrecoUnitario.Create(848.00m).Value).Value,
         };

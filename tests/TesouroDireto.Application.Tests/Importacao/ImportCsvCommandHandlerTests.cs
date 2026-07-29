@@ -237,6 +237,45 @@ public sealed class ImportCsvCommandHandlerTests
         _metrics.Received(1).RecordPricesProcessed("error", 1);
     }
 
+    [Fact]
+    public async Task Handle_WithNegativeTaxa_ShouldImportRow()
+    {
+        var records = new[]
+        {
+            new CsvRecordLine(2, Result<CsvRecord>.Success(new CsvRecord(
+                "Tesouro Prefixado", new DateOnly(2025, 1, 1), new DateOnly(2023, 1, 2),
+                -0.5m, 13.18m, 756.43m, 755.39m, 756.43m)))
+        };
+
+        _csvImportService
+            .GetRecordsAsync(Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(records));
+
+        _tituloWriteRepository
+            .GetByTipoAndVencimentoAsync(Arg.Any<TipoTitulo>(), Arg.Any<DataVencimento>(), Arg.Any<CancellationToken>())
+            .Returns(Result<Titulo>.Failure(new Error("Titulo.NotFound", "Titulo was not found.")));
+
+        _precoTaxaWriteRepository
+            .GetExistingDatasBaseAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(Array.Empty<DateOnly>()));
+
+        IReadOnlyCollection<Domain.PrecosTaxas.PrecoTaxa>? capturedBatch = null;
+        _precoTaxaWriteRepository
+            .AddRangeAsync(
+                Arg.Do<IReadOnlyCollection<Domain.PrecosTaxas.PrecoTaxa>>(batch => capturedBatch = batch.ToList()),
+                Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
+
+        var result = await _handler.Handle(new ImportCsvCommand(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PrecosInseridos.Should().Be(1);
+        result.Value.LinhasComErro.Should().Be(0);
+
+        capturedBatch.Should().NotBeNull();
+        capturedBatch!.Single().TaxaCompra!.Value.Should().Be(-0.5m);
+    }
+
 #pragma warning disable CS1998
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> items)
 #pragma warning restore CS1998
