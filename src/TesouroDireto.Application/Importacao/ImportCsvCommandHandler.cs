@@ -200,27 +200,30 @@ public sealed class ImportCsvCommandHandler(
         var dataBaseResult = DataBase.Create(record.DataBase);
         if (dataBaseResult.IsFailure) return dataBaseResult.Error;
 
-        var taxaCompra = CreateTaxaOrNull(record.TaxaCompra);
-        var taxaVenda = CreateTaxaOrNull(record.TaxaVenda);
         var puCompra = CreatePuOrNull(record.PuCompra);
+        if (puCompra is { IsFailure: true }) return puCompra.Error;
+
         var puVenda = CreatePuOrNull(record.PuVenda);
+        if (puVenda is { IsFailure: true }) return puVenda.Error;
+
         var puBase = CreatePuOrNull(record.PuBase);
+        if (puBase is { IsFailure: true }) return puBase.Error;
 
         return PrecoTaxa.Create(
             tituloId,
             dataBaseResult.Value,
-            taxaCompra,
-            taxaVenda,
-            puCompra,
-            puVenda,
-            puBase);
+            CreateTaxaOrNull(record.TaxaCompra),
+            CreateTaxaOrNull(record.TaxaVenda),
+            puCompra?.Value,
+            puVenda?.Value,
+            puBase?.Value);
     }
 
     private static Taxa? CreateTaxaOrNull(decimal value) =>
         value == 0 ? null : Taxa.Create(value);
 
-    private static PrecoUnitario? CreatePuOrNull(decimal value) =>
-        value == 0 ? null : PrecoUnitario.Create(value).Value;
+    private static Result<PrecoUnitario>? CreatePuOrNull(decimal value) =>
+        value == 0 ? null : PrecoUnitario.Create(value);
 
     private async Task FlushBatchAsync(List<PrecoTaxa> batch, CancellationToken cancellationToken)
     {
