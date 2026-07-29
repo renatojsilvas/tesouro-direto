@@ -1,12 +1,15 @@
 #!/bin/bash
 set -e
 
-COMPOSE_FILE="docker-compose.e2e.yml"
-E2E_DIR="tests/TesouroDireto.E2E.Tests"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.e2e.yml"
+E2E_DIR="$SCRIPT_DIR/tests/TesouroDireto.E2E.Tests"
 
 cleanup() {
+  rc=$?
   echo "Destroying E2E environment..."
-  docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null
+  docker compose -f "$COMPOSE_FILE" down -v >/dev/null 2>&1 || true
+  exit $rc
 }
 trap cleanup EXIT
 
