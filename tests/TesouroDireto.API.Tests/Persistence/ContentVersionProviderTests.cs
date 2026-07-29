@@ -78,7 +78,7 @@ public sealed class ContentVersionProviderTests : IAsyncLifetime
         var before = await _provider.GetVersionAsync(CancellationToken.None);
 
         var preco = PrecoTaxa.Create(titulo.Id, DataBase.Create(new DateOnly(2024, 1, 2)).Value,
-            Taxa.Create(13.12m), Taxa.Create(13.18m),
+            Taxa.Create(13.12m).Value, Taxa.Create(13.18m).Value,
             PrecoUnitario.Create(756.43m).Value, PrecoUnitario.Create(755.39m).Value,
             PrecoUnitario.Create(756.43m).Value).Value;
         await _dbContext.PrecosTaxas.AddAsync(preco, CancellationToken.None);

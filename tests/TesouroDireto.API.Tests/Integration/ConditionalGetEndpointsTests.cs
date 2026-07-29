@@ -39,7 +39,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
             await db.SaveChangesAsync();
 
             var preco = PrecoTaxa.Create(titulo.Id, DataBase.Create(dataBase).Value,
-                Taxa.Create(10m), Taxa.Create(10m),
+                Taxa.Create(10m).Value, Taxa.Create(10m).Value,
                 PrecoUnitario.Create(100m).Value, PrecoUnitario.Create(100m).Value,
                 PrecoUnitario.Create(100m).Value).Value;
             await db.PrecosTaxas.AddAsync(preco);
@@ -57,7 +57,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
         {
             var db = sp.GetRequiredService<AppDbContext>();
             var preco = PrecoTaxa.Create(tituloId, DataBase.Create(dataBase).Value,
-                Taxa.Create(11m), Taxa.Create(11m),
+                Taxa.Create(11m).Value, Taxa.Create(11m).Value,
                 PrecoUnitario.Create(101m).Value, PrecoUnitario.Create(101m).Value,
                 PrecoUnitario.Create(101m).Value).Value;
             await db.PrecosTaxas.AddAsync(preco);

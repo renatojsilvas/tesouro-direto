@@ -209,17 +209,23 @@ public sealed class ImportCsvCommandHandler(
         var puBase = CreatePuOrNull(record.PuBase);
         if (puBase is { IsFailure: true }) return puBase.Error;
 
+        var taxaCompra = CreateTaxaOrNull(record.TaxaCompra);
+        if (taxaCompra is { IsFailure: true }) return taxaCompra.Error;
+
+        var taxaVenda = CreateTaxaOrNull(record.TaxaVenda);
+        if (taxaVenda is { IsFailure: true }) return taxaVenda.Error;
+
         return PrecoTaxa.Create(
             tituloId,
             dataBaseResult.Value,
-            CreateTaxaOrNull(record.TaxaCompra),
-            CreateTaxaOrNull(record.TaxaVenda),
+            taxaCompra?.Value,
+            taxaVenda?.Value,
             puCompra?.Value,
             puVenda?.Value,
             puBase?.Value);
     }
 
-    private static Taxa? CreateTaxaOrNull(decimal value) =>
+    private static Result<Taxa>? CreateTaxaOrNull(decimal value) =>
         value == 0 ? null : Taxa.Create(value);
 
     private static Result<PrecoUnitario>? CreatePuOrNull(decimal value) =>
