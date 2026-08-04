@@ -84,10 +84,11 @@ public static class ConfiguracaoEndpoints
         .WithSummary("Cria um novo tributo")
         .WithDescription("Cria um tributo com nome, base de cálculo, tipo de cálculo, faixas, ordem e cumulatividade. " +
             "201 com o id criado e Location resolvível (GET no Location retorna 200) em sucesso; " +
-            "400 se os dados forem inválidos.")
+            "400 se os dados forem inválidos; 409 se já existir tributo com o mesmo nome.")
         .Produces(StatusCodes.Status201Created)
         .ProducesProblem(StatusCodes.Status400BadRequest)
-        .ProducesProblem(StatusCodes.Status401Unauthorized);
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status409Conflict);
     }
 
     public sealed record UpdateTributoRequest(bool Ativo, IReadOnlyCollection<FaixaDto> Faixas);

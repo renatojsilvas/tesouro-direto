@@ -8,7 +8,7 @@ public static class ProjecaoErrors
         new("Projecao.IndexadorNaoSuportado", "Indexador Prefixado does not have market projections.");
 
     public static readonly Error NotFound =
-        new("Projecao.NotFound", "No projection found for the given indexador.");
+        new("Projecao.NotFound", "No projection found for the given indexador.", ErrorType.NotFound);
 
     public static readonly Error HttpError =
         new("Projecao.HttpError", "Failed to fetch projection from BCB Focus API.");

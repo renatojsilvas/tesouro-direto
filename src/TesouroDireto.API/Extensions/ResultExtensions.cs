@@ -25,13 +25,17 @@ public static class ResultExtensions
 
     private static IResult ToProblemResult(Error error)
     {
-        var status = error.Code.EndsWith(".NotFound", StringComparison.Ordinal)
-            ? StatusCodes.Status404NotFound
-            : StatusCodes.Status400BadRequest;
+        var status = error.Type switch
+        {
+            ErrorType.NotFound => StatusCodes.Status404NotFound,
+            ErrorType.Conflict => StatusCodes.Status409Conflict,
+            _ => StatusCodes.Status400BadRequest,
+        };
 
         var title = status switch
         {
             StatusCodes.Status404NotFound => "Recurso não encontrado",
+            StatusCodes.Status409Conflict => "Conflito de estado",
             _ => "Requisição inválida",
         };
 
