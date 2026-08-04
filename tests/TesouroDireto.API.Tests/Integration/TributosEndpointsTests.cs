@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Mime;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -191,5 +192,30 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         var response = await _client.PutAsJsonAsync($"/configuracoes/tributos/{id}", payload, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task PostConfiguracoesTributos_WithDuplicateNome_ShouldReturn409()
+    {
+        var nome = $"Tributo Dup {Guid.NewGuid()}";
+        var command = new CreateTributoCommand(
+            nome,
+            BaseCalculo.Rendimento,
+            TipoCalculo.TabelaDiaria,
+            [new FaixaDto(0, 29, null, 96m), new FaixaDto(null, null, 29, 0m)],
+            1,
+            false);
+
+        var firstResponse = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var secondResponse = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        secondResponse.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypeNames.Application.ProblemJson);
+
+        var body = await secondResponse.Content.ReadAsStringAsync(CancellationToken.None);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("code").GetString().Should().Be("Tributo.AlreadyExists");
     }
 }

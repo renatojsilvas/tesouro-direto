@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using TesouroDireto.Application.Tributos;
 using TesouroDireto.Domain.Common;
 using TesouroDireto.Domain.Tributos;
@@ -8,6 +9,13 @@ public sealed class TributoWriteRepository(AppDbContext dbContext) : ITributoWri
 {
     public async Task<Result> AddAsync(Tributo tributo, CancellationToken cancellationToken)
     {
+        var jaExiste = await dbContext.Tributos
+            .AnyAsync(t => t.Nome == tributo.Nome, cancellationToken);
+        if (jaExiste)
+        {
+            return Result.Failure(TributoErrors.AlreadyExists);
+        }
+
         await dbContext.Tributos.AddAsync(tributo, cancellationToken);
         return Result.Success();
     }
