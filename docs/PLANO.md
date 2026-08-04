@@ -52,7 +52,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | | **— Onda de auditoria (2026-07-28) —** | | | |
 | 42 | ✅ Import CSV resiliente a linha suja — PU negativo vira `linhasComErro++`+log e o lote segue (`CreatePuOrNull` → `Result<PrecoUnitario>?`, nullable externo preserva zero→null; early-return nos 3 PUs) — concluída 2026-07-28 | **Alto (corretude)** | Baixo | 🟢 |
 | 43 | ✅ nginx: restringir `/api/metrics` a `127.0.0.1` (hoje público) — concluída 2026-07-28 | **Alto (segurança)** | Baixo | 🟢 |
-| 44 | 🔒 TLS/HTTPS no nginx do host (Certbot + redirect + HSTS) | **Alto (segurança)** | Médio | 🔴 |
+| 44 | 🟠 TLS/HTTPS no nginx do host (Certbot + redirect + HSTS) — implementado 2026-08-03, deploy manual pendente | **Alto (segurança)** | Médio | 🔴 |
 | 45 | ✅ `Taxa.Create` → `Result<Taxa>` validado (invariante sinal-tolerante: rejeita só `value == 0`, o sentinela de ausência; negativo é válido — Selic deságio; call-sites propagam `Result`, EF read `.Value` como PU) — concluída 2026-07-28 | Médio (corretude) | Baixo | 🟢 |
 | 46 | Contrato Web↔API compartilhado + teste de paridade (DTOs duplicados/divergindo) | Médio (arquitetura) | Médio | 🟡 |
 | 47 | Dedup leitura de feriados + unificar cálculo de dias úteis na simulação | Médio (corretude) | Médio | 🟢 |
@@ -565,6 +565,8 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 - **Arquivos:** `infra/nginx/tesouro-direto.conf` (server block 443 + redirect); processo de deploy (`.github/workflows/deploy.yml`) para renovação; requer um **domínio** apontando para o VPS.
 - **Risco:** médio (operacional — cert, renovação, redirect). Não mexe em código de app.
 - **Verificação:** `https://` responde com cert válido; `http://` redireciona 301→https; header `Strict-Transport-Security` presente; ApiKey nunca mais trafega em claro.
+
+> **Implementado (2026-08-03) — deploy manual pendente:** hostname `dadosdotesourodireto.com.br` (+`www`) registrado no Registro.br, DNS A propagado para o VPS (NS `a`/`b.auto.dns.br`). `infra/nginx/tesouro-direto.conf` reescrito com **3 `server` blocks**: `listen 80` (redirect 301→https + `location /.well-known/acme-challenge/` para o desafio HTTP-01), `listen 443 ssl http2` (cert Let's Encrypt, os mesmos 4 `allow 127.0.0.1; deny all` de `/grafana/`, `/prometheus/`, `/api/swagger`, `/api/metrics` preservados, `Strict-Transport-Security: max-age=300` — curto de propósito, sem `includeSubDomains`/`preload` ainda) e `listen 3080` mantido **sem mudança funcional** (mesmas locations e `allow`/`deny`) como break-glass. Os três blocks ficam **no mesmo arquivo** porque o `deploy.yml` só copia `tesouro-direto.conf` para `sites-enabled` — um `include` separado quebraria o `nginx -t` no host. Emissão do certificado via `certbot --standalone` (porta 80 livre antes do deploy do conf novo evita o problema do ovo-e-galinha); renovação convertida para `--webroot` (nginx passa a ocupar a 80) com `--deploy-hook` de reload e timer `systemd` (`certbot.timer`). Roteiro completo, idempotente e numerado para o dono rodar como root no VPS em [`docs/infra/tls-certbot-roteiro.md`](./infra/tls-certbot-roteiro.md), incluindo ordem em relação ao merge, smoke test e rollback. O secret `GRAFANA_ROOT_URL` (`https://dadosdotesourodireto.com.br/grafana/`) fica por conta do dono do repositório. A nota de "Feito com o observado" (smoke test HTTPS ao vivo) só entra depois que o deploy manual do roteiro for executado no VPS.
 
 ### 🟡 Consistência de domínio e contrato
 
