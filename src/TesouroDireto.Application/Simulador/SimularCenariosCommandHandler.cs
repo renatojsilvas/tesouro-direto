@@ -11,8 +11,7 @@ public sealed class SimularCenariosCommandHandler(
     ITituloReadRepository tituloReadRepository,
     ITituloWriteRepository tituloRepository,
     IDiasUteisService diasUteisService,
-    ITributoReadRepository tributoRepository,
-    IFeriadoReadRepository feriadoRepository) : IRequestHandler<SimularCenariosCommand, Result<IReadOnlyCollection<CenarioResultadoDto>>>
+    ITributoReadRepository tributoRepository) : IRequestHandler<SimularCenariosCommand, Result<IReadOnlyCollection<CenarioResultadoDto>>>
 {
     private static readonly SimuladorService Simulador = new();
 
@@ -48,12 +47,6 @@ public sealed class SimularCenariosCommandHandler(
             return tributosResult.Error;
         }
 
-        var feriadosResult = await feriadoRepository.GetAllDatasAsync(cancellationToken);
-        if (feriadosResult.IsFailure)
-        {
-            return feriadosResult.Error;
-        }
-
         var resultados = new List<CenarioResultadoDto>();
 
         foreach (var cenario in request.Cenarios)
@@ -64,10 +57,10 @@ public sealed class SimularCenariosCommandHandler(
                 request.TaxaContratada,
                 request.DataCompra,
                 titulo.DataVencimento.Value,
-                duResult.Value,
+                duResult.Value.DiasUteis,
                 diasCorridos,
                 cenario.ProjecaoAnual,
-                feriadosResult.Value,
+                duResult.Value.Feriados,
                 tributosResult.Value);
 
             var simulacaoResult = Simulador.Simular(input);
