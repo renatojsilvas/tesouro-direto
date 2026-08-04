@@ -28,7 +28,8 @@ public sealed class DiasUteisServiceTests
             CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be(3);
+        result.Value.DiasUteis.Should().Be(3);
+        result.Value.Feriados.Should().BeEquivalentTo(feriados);
     }
 
     [Fact]
@@ -59,6 +60,6 @@ public sealed class DiasUteisServiceTests
             CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be(4);
+        result.Value.DiasUteis.Should().Be(4);
     }
 }

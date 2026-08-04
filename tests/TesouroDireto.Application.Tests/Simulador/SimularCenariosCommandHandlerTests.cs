@@ -18,23 +18,19 @@ public sealed class SimularCenariosCommandHandlerTests
     private readonly ITituloWriteRepository _tituloRepo = Substitute.For<ITituloWriteRepository>();
     private readonly IDiasUteisService _diasUteisService = Substitute.For<IDiasUteisService>();
     private readonly ITributoReadRepository _tributoRepo = Substitute.For<ITributoReadRepository>();
-    private readonly IFeriadoReadRepository _feriadoRepo = Substitute.For<IFeriadoReadRepository>();
     private readonly SimularCenariosCommandHandler _handler;
 
     public SimularCenariosCommandHandlerTests()
     {
         _handler = new SimularCenariosCommandHandler(
-            _tituloReadRepo, _tituloRepo, _diasUteisService, _tributoRepo, _feriadoRepo);
+            _tituloReadRepo, _tituloRepo, _diasUteisService, _tributoRepo);
 
         _tributoRepo.GetAtivosOrdenadosAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<Tributo>>.Success(Array.Empty<Tributo>()));
 
-        _feriadoRepo.GetAllDatasAsync(Arg.Any<CancellationToken>())
-            .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(Array.Empty<DateOnly>()));
-
         _diasUteisService.CalcularDiasUteisAsync(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
-            .Returns(Result<int>.Success(252));
+            .Returns(Result<DiasUteisFeriados>.Success(new DiasUteisFeriados(252, Array.Empty<DateOnly>())));
     }
 
     [Fact]

@@ -4,5 +4,5 @@ namespace TesouroDireto.Application.Feriados;
 
 public interface IDiasUteisService
 {
-    Task<Result<int>> CalcularDiasUteisAsync(DateOnly inicio, DateOnly fim, CancellationToken cancellationToken);
+    Task<Result<DiasUteisFeriados>> CalcularDiasUteisAsync(DateOnly inicio, DateOnly fim, CancellationToken cancellationToken);
 }

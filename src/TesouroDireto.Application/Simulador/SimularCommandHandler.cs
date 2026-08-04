@@ -16,7 +16,6 @@ public sealed class SimularCommandHandler(
     IDiasUteisService diasUteisService,
     IProjecaoMercadoService projecaoService,
     ITributoReadRepository tributoRepository,
-    IFeriadoReadRepository feriadoRepository,
     IBusinessMetrics metrics) : IRequestHandler<SimularCommand, Result<SimulacaoResultadoDto>>
 {
     private static readonly SimuladorService Simulador = new();
@@ -81,22 +80,16 @@ public sealed class SimularCommandHandler(
             return tributosResult.Error;
         }
 
-        var feriadosResult = await feriadoRepository.GetAllDatasAsync(cancellationToken);
-        if (feriadosResult.IsFailure)
-        {
-            return feriadosResult.Error;
-        }
-
         var input = new SimulacaoInput(
             titulo.TipoTitulo,
             request.ValorInvestido,
             request.TaxaContratada,
             request.DataCompra,
             titulo.DataVencimento.Value,
-            duResult.Value,
+            duResult.Value.DiasUteis,
             diasCorridos,
             projecaoAnual,
-            feriadosResult.Value,
+            duResult.Value.Feriados,
             tributosResult.Value);
 
         var simulacaoResult = Simulador.Simular(input);

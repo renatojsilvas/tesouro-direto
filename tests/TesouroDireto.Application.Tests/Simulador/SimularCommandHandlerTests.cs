@@ -21,20 +21,16 @@ public sealed class SimularCommandHandlerTests
     private readonly IDiasUteisService _diasUteisService = Substitute.For<IDiasUteisService>();
     private readonly IProjecaoMercadoService _projecaoService = Substitute.For<IProjecaoMercadoService>();
     private readonly ITributoReadRepository _tributoRepo = Substitute.For<ITributoReadRepository>();
-    private readonly IFeriadoReadRepository _feriadoRepo = Substitute.For<IFeriadoReadRepository>();
     private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly SimularCommandHandler _handler;
 
     public SimularCommandHandlerTests()
     {
         _handler = new SimularCommandHandler(
-            _tituloReadRepo, _tituloRepo, _diasUteisService, _projecaoService, _tributoRepo, _feriadoRepo, _metrics);
+            _tituloReadRepo, _tituloRepo, _diasUteisService, _projecaoService, _tributoRepo, _metrics);
 
         _tributoRepo.GetAtivosOrdenadosAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<Tributo>>.Success(Array.Empty<Tributo>()));
-
-        _feriadoRepo.GetAllDatasAsync(Arg.Any<CancellationToken>())
-            .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(Array.Empty<DateOnly>()));
     }
 
     [Fact]
@@ -189,6 +185,6 @@ public sealed class SimularCommandHandlerTests
     {
         _diasUteisService.CalcularDiasUteisAsync(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
-            .Returns(Result<int>.Success(du));
+            .Returns(Result<DiasUteisFeriados>.Success(new DiasUteisFeriados(du, Array.Empty<DateOnly>())));
     }
 }

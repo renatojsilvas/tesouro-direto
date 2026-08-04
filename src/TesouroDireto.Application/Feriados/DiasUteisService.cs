@@ -7,7 +7,7 @@ public sealed class DiasUteisService(IFeriadoReadRepository feriadoReadRepositor
 {
     private static readonly DiasUteisCalculator Calculator = new();
 
-    public async Task<Result<int>> CalcularDiasUteisAsync(DateOnly inicio, DateOnly fim, CancellationToken cancellationToken)
+    public async Task<Result<DiasUteisFeriados>> CalcularDiasUteisAsync(DateOnly inicio, DateOnly fim, CancellationToken cancellationToken)
     {
         var feriadosResult = await feriadoReadRepository.GetAllDatasAsync(cancellationToken);
         if (feriadosResult.IsFailure)
@@ -16,6 +16,6 @@ public sealed class DiasUteisService(IFeriadoReadRepository feriadoReadRepositor
         }
 
         var diasUteis = Calculator.Calcular(inicio, fim, feriadosResult.Value);
-        return diasUteis;
+        return new DiasUteisFeriados(diasUteis, feriadosResult.Value);
     }
 }
