@@ -8,6 +8,8 @@ namespace TesouroDireto.Domain.Simulador;
 public sealed class SimuladorService
 {
     private static readonly DiasUteisCalculator DuCalculator = new();
+    private const double DiasUteisPorAno = 252.0;
+    private const decimal ValorDeFace = 1000m;
 
     public Result<SimulacaoResultado> Simular(SimulacaoInput input)
     {
@@ -55,7 +57,7 @@ public sealed class SimuladorService
     private static decimal CalcularValorFuturo(decimal valorPresente, decimal taxaAnualPercent, int diasUteis)
     {
         var taxa = (double)(taxaAnualPercent / 100m);
-        var expoente = (double)diasUteis / 252.0;
+        var expoente = (double)diasUteis / DiasUteisPorAno;
         var fator = Math.Pow(1.0 + taxa, expoente);
         return valorPresente * (decimal)fator;
     }
@@ -63,7 +65,7 @@ public sealed class SimuladorService
     private Result<SimulacaoResultado> SimularComCupons(SimulacaoInput input, decimal taxaEfetiva)
     {
         var datasCupom = GerarDatasCupom(input.DataCompra, input.DataVencimento);
-        var taxaCupomSemestral = ObterTaxaCupomSemestral(input.TipoTitulo);
+        var taxaCupomSemestral = input.TipoTitulo.TaxaCupomSemestral;
 
         var puCompra = CalcularPuComCupons(
             taxaEfetiva, taxaCupomSemestral, datasCupom,
@@ -76,13 +78,13 @@ public sealed class SimuladorService
         foreach (var dataCupom in datasCupom)
         {
             var duCupom = DuCalculator.Calcular(input.DataCompra, dataCupom, input.Feriados);
-            var valorCupom = quantidade * 1000m * taxaCupomSemestral;
+            var valorCupom = quantidade * ValorDeFace * taxaCupomSemestral;
 
             cupons.Add(new FluxoCupom(dataCupom, Math.Round(valorCupom, 2), duCupom));
             valorBrutoTotal += valorCupom;
         }
 
-        var principal = quantidade * 1000m;
+        var principal = quantidade * ValorDeFace;
         valorBrutoTotal += principal;
 
         return BuildResultado(input, valorBrutoTotal, cupons);
@@ -101,14 +103,14 @@ public sealed class SimuladorService
         foreach (var dataCupom in datasCupom)
         {
             var du = DuCalculator.Calcular(dataCompra, dataCupom, feriados);
-            var expoente = (double)du / 252.0;
-            var cupomDescontado = (double)(1000m * taxaCupomSemestral) / Math.Pow(1.0 + taxa, expoente);
+            var expoente = (double)du / DiasUteisPorAno;
+            var cupomDescontado = (double)(ValorDeFace * taxaCupomSemestral) / Math.Pow(1.0 + taxa, expoente);
             pu += cupomDescontado;
         }
 
         var lastCupom = datasCupom.Last();
         var duPrincipal = DuCalculator.Calcular(dataCompra, lastCupom, feriados);
-        var principalDescontado = 1000.0 / Math.Pow(1.0 + taxa, (double)duPrincipal / 252.0);
+        var principalDescontado = (double)ValorDeFace / Math.Pow(1.0 + taxa, (double)duPrincipal / DiasUteisPorAno);
         pu += principalDescontado;
 
         return (decimal)pu;
@@ -127,16 +129,6 @@ public sealed class SimuladorService
 
         datas.Sort();
         return datas;
-    }
-
-    private static decimal ObterTaxaCupomSemestral(TipoTitulo tipoTitulo)
-    {
-        if (tipoTitulo == TipoTitulo.TesouroPrefixadoComJuros)
-        {
-            return (decimal)(Math.Pow(1.10, 0.5) - 1.0);
-        }
-
-        return (decimal)(Math.Pow(1.06, 0.5) - 1.0);
     }
 
     private static Result<SimulacaoResultado> BuildResultado(
