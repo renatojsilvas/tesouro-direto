@@ -58,7 +58,8 @@ public static class DependencyInjection
             new CachedTituloReadRepository(
                 sp.GetRequiredService<TituloReadRepository>(),
                 sp.GetRequiredService<IMemoryCache>(),
-                sp.GetRequiredService<MemoryCacheInvalidator>()));
+                sp.GetRequiredService<MemoryCacheInvalidator>(),
+                sp.GetRequiredService<IConfiguration>()));
 
         services.AddScoped<IPrecoTaxaWriteRepository, PrecoTaxaWriteRepository>();
         services.AddScoped<PrecoTaxaReadRepository>();
@@ -66,7 +67,8 @@ public static class DependencyInjection
             new CachedPrecoTaxaReadRepository(
                 sp.GetRequiredService<PrecoTaxaReadRepository>(),
                 sp.GetRequiredService<IMemoryCache>(),
-                sp.GetRequiredService<MemoryCacheInvalidator>()));
+                sp.GetRequiredService<MemoryCacheInvalidator>(),
+                sp.GetRequiredService<IConfiguration>()));
 
         services.AddScoped<ITributoWriteRepository, TributoWriteRepository>();
         services.AddScoped<TributoReadRepository>();
@@ -74,7 +76,8 @@ public static class DependencyInjection
             new CachedTributoReadRepository(
                 sp.GetRequiredService<TributoReadRepository>(),
                 sp.GetRequiredService<IMemoryCache>(),
-                sp.GetRequiredService<MemoryCacheInvalidator>()));
+                sp.GetRequiredService<MemoryCacheInvalidator>(),
+                sp.GetRequiredService<IConfiguration>()));
 
         services.AddScoped<IFeriadoWriteRepository, FeriadoWriteRepository>();
         services.AddScoped<FeriadoReadRepository>();
@@ -82,7 +85,8 @@ public static class DependencyInjection
             new CachedFeriadoReadRepository(
                 sp.GetRequiredService<FeriadoReadRepository>(),
                 sp.GetRequiredService<IMemoryCache>(),
-                sp.GetRequiredService<MemoryCacheInvalidator>()));
+                sp.GetRequiredService<MemoryCacheInvalidator>(),
+                sp.GetRequiredService<IConfiguration>()));
 
         services.AddScoped<IDiasUteisService, DiasUteisService>();
 
