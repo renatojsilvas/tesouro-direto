@@ -1,25 +1,16 @@
 using MediatR;
 using TesouroDireto.Application.Common.Interfaces;
-using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Projecoes;
-using TesouroDireto.Application.Titulos;
-using TesouroDireto.Application.Tributos;
 using TesouroDireto.Domain.Common;
-using TesouroDireto.Domain.Simulador;
 using TesouroDireto.Domain.Titulos;
 
 namespace TesouroDireto.Application.Simulador;
 
 public sealed class SimularCommandHandler(
-    ITituloReadRepository tituloReadRepository,
-    ITituloWriteRepository tituloRepository,
-    IDiasUteisService diasUteisService,
+    SimuladorApplicationService simulador,
     IProjecaoMercadoService projecaoService,
-    ITributoReadRepository tributoRepository,
     IBusinessMetrics metrics) : IRequestHandler<SimularCommand, Result<SimulacaoResultadoDto>>
 {
-    private static readonly SimuladorService Simulador = new();
-
     public async Task<Result<SimulacaoResultadoDto>> Handle(SimularCommand request, CancellationToken cancellationToken)
     {
         var indexador = "unknown";
@@ -36,29 +27,15 @@ public sealed class SimularCommandHandler(
     private async Task<Result<SimulacaoResultadoDto>> ExecuteAsync(
         SimularCommand request, Action<string> reportIndexador, CancellationToken cancellationToken)
     {
-        var tituloIdResult = await tituloReadRepository.GetIdByCodigoAsync(request.Codigo, cancellationToken);
-        if (tituloIdResult.IsFailure)
+        var contextoResult = await simulador.CarregarContextoAsync(request.Codigo, request.DataCompra, cancellationToken);
+        if (contextoResult.IsFailure)
         {
-            return tituloIdResult.Error;
+            return contextoResult.Error;
         }
 
-        var tituloResult = await tituloRepository.GetByIdAsync(tituloIdResult.Value, cancellationToken);
-        if (tituloResult.IsFailure)
-        {
-            return tituloResult.Error;
-        }
-
-        var titulo = tituloResult.Value;
+        var contexto = contextoResult.Value;
+        var titulo = contexto.Titulo;
         reportIndexador(titulo.Indexador.Name);
-
-        var duResult = await diasUteisService.CalcularDiasUteisAsync(
-            request.DataCompra, titulo.DataVencimento.Value, cancellationToken);
-        if (duResult.IsFailure)
-        {
-            return duResult.Error;
-        }
-
-        var diasCorridos = titulo.DataVencimento.Value.DayNumber - request.DataCompra.DayNumber;
 
         var projecaoAnual = request.ProjecaoAnual;
         ProjecaoMercado? projecaoUtilizada = null;
@@ -74,60 +51,12 @@ public sealed class SimularCommandHandler(
             projecaoAnual = projecaoResult.Value.MedianaAnual;
         }
 
-        var tributosResult = await tributoRepository.GetAtivosOrdenadosAsync(cancellationToken);
-        if (tributosResult.IsFailure)
-        {
-            return tributosResult.Error;
-        }
-
-        var input = new SimulacaoInput(
-            titulo.TipoTitulo,
-            request.ValorInvestido,
-            request.TaxaContratada,
-            request.DataCompra,
-            titulo.DataVencimento.Value,
-            duResult.Value.DiasUteis,
-            diasCorridos,
-            projecaoAnual,
-            duResult.Value.Feriados,
-            tributosResult.Value);
-
-        var simulacaoResult = Simulador.Simular(input);
+        var simulacaoResult = simulador.Simular(contexto, request.ValorInvestido, request.TaxaContratada, projecaoAnual);
         if (simulacaoResult.IsFailure)
         {
             return simulacaoResult.Error;
         }
 
-        return MapToDto(simulacaoResult.Value, projecaoUtilizada);
-    }
-
-    private static SimulacaoResultadoDto MapToDto(SimulacaoResultado resultado, ProjecaoMercado? projecaoUtilizada)
-    {
-        var tributos = resultado.TributosAplicados
-            .Select(t => new TributoAplicadoDto(t.Nome, t.Base, t.Aliquota, t.Valor))
-            .ToList();
-
-        var cupons = resultado.Cupons?
-            .Select(c => new FluxoCupomDto(c.Data, c.ValorBruto, c.DiasUteis))
-            .ToList();
-
-        var projecaoDto = projecaoUtilizada is null
-            ? null
-            : new ProjecaoUtilizadaDto(
-                projecaoUtilizada.MedianaAnual,
-                projecaoUtilizada.DataReferencia,
-                projecaoUtilizada.ObtidaEmUtc,
-                projecaoUtilizada.Origem);
-
-        return new SimulacaoResultadoDto(
-            resultado.ValorInvestido,
-            resultado.ValorBruto,
-            resultado.RendimentoBruto,
-            tributos,
-            resultado.TotalTributos,
-            resultado.ValorLiquido,
-            resultado.RendimentoLiquido,
-            cupons,
-            projecaoDto);
+        return SimuladorApplicationService.MapToDto(simulacaoResult.Value, projecaoUtilizada);
     }
 }

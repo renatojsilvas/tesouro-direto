@@ -1,99 +1,42 @@
 using MediatR;
-using TesouroDireto.Application.Feriados;
-using TesouroDireto.Application.Titulos;
-using TesouroDireto.Application.Tributos;
+using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Domain.Common;
-using TesouroDireto.Domain.Simulador;
 
 namespace TesouroDireto.Application.Simulador;
 
 public sealed class SimularCenariosCommandHandler(
-    ITituloReadRepository tituloReadRepository,
-    ITituloWriteRepository tituloRepository,
-    IDiasUteisService diasUteisService,
-    ITributoReadRepository tributoRepository) : IRequestHandler<SimularCenariosCommand, Result<IReadOnlyCollection<CenarioResultadoDto>>>
+    SimuladorApplicationService simulador,
+    IBusinessMetrics metrics) : IRequestHandler<SimularCenariosCommand, Result<IReadOnlyCollection<CenarioResultadoDto>>>
 {
-    private static readonly SimuladorService Simulador = new();
-
     public async Task<Result<IReadOnlyCollection<CenarioResultadoDto>>> Handle(
         SimularCenariosCommand request, CancellationToken cancellationToken)
     {
-        var tituloIdResult = await tituloReadRepository.GetIdByCodigoAsync(request.Codigo, cancellationToken);
-        if (tituloIdResult.IsFailure)
+        var indexador = "unknown";
+        var contextoResult = await simulador.CarregarContextoAsync(request.Codigo, request.DataCompra, cancellationToken);
+        if (contextoResult.IsFailure)
         {
-            return tituloIdResult.Error;
+            metrics.RecordSimulation(indexador, "failure");
+            metrics.RecordSimulationFailure(contextoResult.Error.Code);
+            return contextoResult.Error;
         }
 
-        var tituloResult = await tituloRepository.GetByIdAsync(tituloIdResult.Value, cancellationToken);
-        if (tituloResult.IsFailure)
-        {
-            return tituloResult.Error;
-        }
-
-        var titulo = tituloResult.Value;
-
-        var duResult = await diasUteisService.CalcularDiasUteisAsync(
-            request.DataCompra, titulo.DataVencimento.Value, cancellationToken);
-        if (duResult.IsFailure)
-        {
-            return duResult.Error;
-        }
-
-        var diasCorridos = titulo.DataVencimento.Value.DayNumber - request.DataCompra.DayNumber;
-
-        var tributosResult = await tributoRepository.GetAtivosOrdenadosAsync(cancellationToken);
-        if (tributosResult.IsFailure)
-        {
-            return tributosResult.Error;
-        }
+        var contexto = contextoResult.Value;
+        indexador = contexto.Titulo.Indexador.Name;
 
         var resultados = new List<CenarioResultadoDto>();
-
         foreach (var cenario in request.Cenarios)
         {
-            var input = new SimulacaoInput(
-                titulo.TipoTitulo,
-                request.ValorInvestido,
-                request.TaxaContratada,
-                request.DataCompra,
-                titulo.DataVencimento.Value,
-                duResult.Value.DiasUteis,
-                diasCorridos,
-                cenario.ProjecaoAnual,
-                duResult.Value.Feriados,
-                tributosResult.Value);
-
-            var simulacaoResult = Simulador.Simular(input);
+            var simulacaoResult = simulador.Simular(contexto, request.ValorInvestido, request.TaxaContratada, cenario.ProjecaoAnual);
+            metrics.RecordSimulation(indexador, simulacaoResult.IsSuccess ? "success" : "failure");
             if (simulacaoResult.IsFailure)
             {
+                metrics.RecordSimulationFailure(simulacaoResult.Error.Code);
                 return simulacaoResult.Error;
             }
 
-            resultados.Add(new CenarioResultadoDto(cenario.Nome, MapToDto(simulacaoResult.Value)));
+            resultados.Add(new CenarioResultadoDto(cenario.Nome, SimuladorApplicationService.MapToDto(simulacaoResult.Value)));
         }
 
         return Result<IReadOnlyCollection<CenarioResultadoDto>>.Success(resultados);
-    }
-
-    private static SimulacaoResultadoDto MapToDto(SimulacaoResultado resultado)
-    {
-        var tributos = resultado.TributosAplicados
-            .Select(t => new TributoAplicadoDto(t.Nome, t.Base, t.Aliquota, t.Valor))
-            .ToList();
-
-        var cupons = resultado.Cupons?
-            .Select(c => new FluxoCupomDto(c.Data, c.ValorBruto, c.DiasUteis))
-            .ToList();
-
-        return new SimulacaoResultadoDto(
-            resultado.ValorInvestido,
-            resultado.ValorBruto,
-            resultado.RendimentoBruto,
-            tributos,
-            resultado.TotalTributos,
-            resultado.ValorLiquido,
-            resultado.RendimentoLiquido,
-            cupons,
-            null);
     }
 }

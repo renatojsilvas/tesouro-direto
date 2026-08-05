@@ -16,6 +16,7 @@ using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Importacao;
 using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Application.Projecoes;
+using TesouroDireto.Application.Simulador;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Application.Tributos;
 using TesouroDireto.Infrastructure.Caching;
@@ -84,6 +85,8 @@ public static class DependencyInjection
                 sp.GetRequiredService<MemoryCacheInvalidator>()));
 
         services.AddScoped<IDiasUteisService, DiasUteisService>();
+
+        services.AddScoped<SimuladorApplicationService>();
 
         services.AddScoped<IContentVersionProvider, ContentVersionProvider>();
 

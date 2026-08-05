@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NSubstitute;
+using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Simulador;
 using TesouroDireto.Application.Titulos;
@@ -18,12 +19,14 @@ public sealed class SimularCenariosCommandHandlerTests
     private readonly ITituloWriteRepository _tituloRepo = Substitute.For<ITituloWriteRepository>();
     private readonly IDiasUteisService _diasUteisService = Substitute.For<IDiasUteisService>();
     private readonly ITributoReadRepository _tributoRepo = Substitute.For<ITributoReadRepository>();
+    private readonly IBusinessMetrics _metrics = Substitute.For<IBusinessMetrics>();
     private readonly SimularCenariosCommandHandler _handler;
 
     public SimularCenariosCommandHandlerTests()
     {
-        _handler = new SimularCenariosCommandHandler(
+        var simuladorService = new SimuladorApplicationService(
             _tituloReadRepo, _tituloRepo, _diasUteisService, _tributoRepo);
+        _handler = new SimularCenariosCommandHandler(simuladorService, _metrics);
 
         _tributoRepo.GetAtivosOrdenadosAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<Tributo>>.Success(Array.Empty<Tributo>()));
@@ -61,6 +64,33 @@ public sealed class SimularCenariosCommandHandlerTests
         var valores = result.Value.Select(r => r.Resultado.ValorBruto).ToList();
         valores[0].Should().BeLessThan(valores[1]);
         valores[1].Should().BeLessThan(valores[2]);
+    }
+
+    [Fact]
+    public async Task Handle_MultipleCenarios_ShouldRecordSimulationPerCenario()
+    {
+        var titulo = CreateTitulo(TipoTitulo.TesouroIPCA, new DateOnly(2025, 1, 2));
+        _tituloReadRepo.GetIdByCodigoAsync(Codigo, Arg.Any<CancellationToken>())
+            .Returns(Result<Guid>.Success(titulo.Id));
+        _tituloRepo.GetByIdAsync(titulo.Id, Arg.Any<CancellationToken>())
+            .Returns(Result<Titulo>.Success(titulo));
+
+        var cenarios = new[]
+        {
+            new CenarioInput("Otimista", 3m),
+            new CenarioInput("Base", 5m),
+            new CenarioInput("Pessimista", 7m)
+        };
+
+        var command = new SimularCenariosCommand(
+            Codigo, 10_000m, new DateOnly(2024, 1, 2), 6m, cenarios);
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _metrics.Received(3).RecordSimulation("IPCA", "success");
+        _metrics.Received(3).RecordSimulation(Arg.Any<string>(), "success");
+        _metrics.DidNotReceive().RecordSimulationFailure(Arg.Any<string>());
     }
 
     [Fact]
