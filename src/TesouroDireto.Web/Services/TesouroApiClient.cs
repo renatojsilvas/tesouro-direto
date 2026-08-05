@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace TesouroDireto.Web.Services;
 
-public sealed record ApiError(string Code, string Description);
+public sealed record ApiError(string Code, string Detail);
 
 public sealed record ApiResult<T>(bool IsSuccess, T? Data, ApiError? Error, int StatusCode, string? RawBody);
 

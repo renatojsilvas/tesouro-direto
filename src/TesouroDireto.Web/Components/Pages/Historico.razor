@@ -1,6 +1,5 @@
 @page "/historico"
 @rendermode InteractiveServer
-@using System.Text.Json.Serialization
 @using TesouroDireto.Web.Services
 @inject TesouroApiClient Api
 @inject IJSRuntime JS
@@ -285,13 +284,4 @@ else if (!loading && selectedTituloCodigo != "")
     {
         return value?.ToString("C2", Cultura) ?? "-";
     }
-
-    private sealed record TituloItem(
-        string Codigo,
-        string TipoTitulo,
-        string DataVencimento,
-        string Indexador,
-        [property: JsonPropertyName("_links")] Dictionary<string, HateoasLinkDto>? Links);
-
-    private sealed record PrecoItem(string DataBase, decimal? TaxaCompra, decimal? TaxaVenda, decimal? PuCompra, decimal? PuVenda, decimal? PuBase);
 }

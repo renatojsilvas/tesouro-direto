@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\TesouroDireto.Application\TesouroDireto.Application.csproj" />
     <ProjectReference Include="..\..\src\TesouroDireto.Infrastructure\TesouroDireto.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\TesouroDireto.API\TesouroDireto.API.csproj" />
+    <ProjectReference Include="..\..\src\TesouroDireto.Web\TesouroDireto.Web.csproj" />
   </ItemGroup>
 
 </Project>
