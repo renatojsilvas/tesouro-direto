@@ -1,6 +1,5 @@
 @page "/simulador"
 @rendermode InteractiveServer
-@using System.Text.Json.Serialization
 @using TesouroDireto.Web.Services
 @inject TesouroApiClient Api
 
@@ -178,6 +177,27 @@
                         </div>
                     </div>
                 }
+
+                @if (resultado.ProjecaoUtilizada is not null)
+                {
+                    <div class="card mb-3" data-testid="projecao-utilizada">
+                        <div class="card-body">
+                            <h5 class="card-title">Projecao Utilizada</h5>
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    <tr>
+                                        <td>Origem</td>
+                                        <td class="text-end">@resultado.ProjecaoUtilizada.Origem</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Valor Anual</td>
+                                        <td class="text-end">@resultado.ProjecaoUtilizada.ValorAnual.ToString("N2")%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
             </div>
         }
     </div>
@@ -256,7 +276,7 @@
             }
             else if (result.Error is not null)
             {
-                erro = result.Error.Description ?? $"Erro da API: HTTP {result.StatusCode}";
+                erro = result.Error.Detail ?? $"Erro da API: HTTP {result.StatusCode}";
             }
             else
             {
@@ -273,22 +293,4 @@
             simulando = false;
         }
     }
-
-    private sealed record TituloItem(
-        string Codigo,
-        string TipoTitulo,
-        string DataVencimento,
-        string Indexador,
-        bool PagaJurosSemestrais,
-        bool Vencido,
-        [property: JsonPropertyName("_links")] Dictionary<string, HateoasLinkDto>? Links);
-
-    private sealed record SimulacaoResult(
-        decimal ValorInvestido, decimal ValorBruto, decimal RendimentoBruto,
-        List<TributoResult> TributosAplicados, decimal TotalTributos,
-        decimal ValorLiquido, decimal RendimentoLiquido,
-        List<CupomResult>? Cupons);
-
-    private sealed record TributoResult(string Nome, decimal Base, decimal Aliquota, decimal Valor);
-    private sealed record CupomResult(DateOnly Data, decimal ValorBruto, int DiasUteis);
 }

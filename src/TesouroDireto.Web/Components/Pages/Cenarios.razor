@@ -241,7 +241,7 @@
             }
             else
             {
-                erro = result.Error?.Description ?? $"Erro: HTTP {result.StatusCode}";
+                erro = result.Error?.Detail ?? $"Erro: HTTP {result.StatusCode}";
             }
         }
         catch (Exception ex)
@@ -259,12 +259,4 @@
         public string Nome { get; set; } = nome;
         public decimal Projecao { get; set; } = projecao;
     }
-
-    private sealed record TituloItem(string Codigo, string TipoTitulo, string DataVencimento, string Indexador);
-
-    private sealed record CenarioResult(string Nome, SimResult Resultado);
-
-    private sealed record SimResult(
-        decimal ValorInvestido, decimal ValorBruto, decimal RendimentoBruto,
-        decimal TotalTributos, decimal ValorLiquido, decimal RendimentoLiquido);
 }

@@ -48,7 +48,7 @@ public class TesouroApiClientTests
     {
         var handler = new FakeHttpMessageHandler()
             .When(HttpMethod.Post, "itens", FakeHttpMessageHandler.JsonResponse(
-                HttpStatusCode.BadRequest, """{"code":"Item.Invalido","description":"Nome obrigatorio"}"""));
+                HttpStatusCode.BadRequest, """{"code":"Item.Invalido","detail":"Nome obrigatorio"}"""));
         var client = CreateClient(handler);
 
         var result = await client.PostAsync<TestDto>("itens", new { nome = "" });
@@ -58,7 +58,7 @@ public class TesouroApiClientTests
         result.StatusCode.Should().Be(400);
         result.Error.Should().NotBeNull();
         result.Error!.Code.Should().Be("Item.Invalido");
-        result.Error.Description.Should().Be("Nome obrigatorio");
+        result.Error.Detail.Should().Be("Nome obrigatorio");
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public class TesouroApiClientTests
     {
         var handler = new FakeHttpMessageHandler()
             .When(HttpMethod.Put, "itens/1", FakeHttpMessageHandler.JsonResponse(
-                HttpStatusCode.BadRequest, """{"code":"Item.NaoEncontrado","description":"Item nao existe"}"""));
+                HttpStatusCode.BadRequest, """{"code":"Item.NaoEncontrado","detail":"Item nao existe"}"""));
         var client = CreateClient(handler);
 
         var result = await client.PutAsync<TestDto>("itens/1", new { nome = "x" });
@@ -121,7 +121,7 @@ public class TesouroApiClientTests
         result.StatusCode.Should().Be(400);
         result.Error.Should().NotBeNull();
         result.Error!.Code.Should().Be("Item.NaoEncontrado");
-        result.Error.Description.Should().Be("Item nao existe");
+        result.Error.Detail.Should().Be("Item nao existe");
     }
 
     [Fact]

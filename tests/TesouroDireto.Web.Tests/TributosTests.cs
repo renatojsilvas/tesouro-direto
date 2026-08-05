@@ -68,7 +68,7 @@ public class TributosTests : TestContext
         ConfigureApi(
             TributosVazioJson,
             _ => FakeHttpMessageHandler.JsonResponse(
-                HttpStatusCode.BadRequest, """{"code":"Tributo.Invalido","description":"Nome ja existe"}"""));
+                HttpStatusCode.BadRequest, """{"code":"Tributo.Invalido","detail":"Nome ja existe"}"""));
 
         var cut = RenderComponent<Tributos>();
         cut.WaitForAssertion(() => cut.Find("#novo-tributo").Should().NotBeNull());

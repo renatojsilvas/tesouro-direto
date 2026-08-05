@@ -308,7 +308,7 @@ else if (!loading)
             }
             else
             {
-                erro = result.Error?.Description ?? $"Erro: HTTP {result.StatusCode}";
+                erro = result.Error?.Detail ?? $"Erro: HTTP {result.StatusCode}";
             }
         }
         catch (Exception ex)
@@ -328,10 +328,4 @@ else if (!loading)
         public int? Dia { get; set; }
         public decimal Aliquota { get; set; }
     }
-
-    private sealed record TributoItem(
-        Guid Id, string Nome, string BaseCalculo, string TipoCalculo,
-        List<FaixaItem> Faixas, bool Ativo, int Ordem, bool Cumulativo);
-
-    private sealed record FaixaItem(int? DiasMin, int? DiasMax, int? Dia, decimal Aliquota);
 }
