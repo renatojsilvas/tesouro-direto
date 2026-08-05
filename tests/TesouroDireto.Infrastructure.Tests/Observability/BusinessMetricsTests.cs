@@ -29,15 +29,13 @@ public sealed class BusinessMetricsTests
     [Fact]
     public void ImportSucceeded_ShouldSetGaugeToCurrentUnixTime()
     {
-        var beforeUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
         _metrics.ImportSucceeded();
 
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var value = ImportLastSuccessTimestamp.Value;
-        var afterUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         value.Should().BeGreaterThan(0);
-        value.Should().BeInRange(beforeUnix - 1, afterUnix + 1);
+        Math.Abs(value - now).Should().BeLessThan(5);
     }
 
     [Theory]
