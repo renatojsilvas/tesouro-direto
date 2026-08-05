@@ -26,8 +26,9 @@ public sealed class SimularCommandHandlerTests
 
     public SimularCommandHandlerTests()
     {
-        _handler = new SimularCommandHandler(
-            _tituloReadRepo, _tituloRepo, _diasUteisService, _projecaoService, _tributoRepo, _metrics);
+        var simuladorService = new SimuladorApplicationService(
+            _tituloReadRepo, _tituloRepo, _diasUteisService, _tributoRepo);
+        _handler = new SimularCommandHandler(simuladorService, _projecaoService, _metrics);
 
         _tributoRepo.GetAtivosOrdenadosAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<Tributo>>.Success(Array.Empty<Tributo>()));
