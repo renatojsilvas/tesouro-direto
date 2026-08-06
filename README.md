@@ -272,3 +272,4 @@ As decisões vivem nos docs — mantenha-os como fonte de verdade e deixe este R
 - [`docs/arch/`](docs/arch/) — ADRs: caching da API ([`ARCH-001`](docs/arch/ARCH-001-api-caching.md)) e as notas de arquitetura do simulador/BCB/dias úteis (`F7a`–`F7d`).
 - [`docs/analises/observabilidade.md`](docs/analises/observabilidade.md) — análise da stack de observabilidade (as 5 camadas).
 - [`docs/comentarios-resgatados.md`](docs/comentarios-resgatados.md) — comentários preservados na limpeza de código.
+
