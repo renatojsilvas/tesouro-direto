@@ -63,6 +63,11 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 52 | ✅ Dedup dos 2 handlers de simulação (`SimuladorApplicationService`: `CarregarContextoAsync`+`Simular`+`MapToDto` num ponto único; contexto lido 1×, dedup da 47 preservada) + instrumentação O8 no de cenários (`RecordSimulation`/`RecordSimulationFailure` por cenário, labels `indexador`+`outcome` idênticos, sem série/cardinalidade nova) — refactor puro, valores intactos; 576/576 + E2E 23/23 — concluída 2026-08-05 | Baixo (manutenção) | Baixo | 🟢 |
 | 53 | ✅ Helper `GetOrCreateResultAsync` nos decorators de cache + TTL por config — concluída 2026-08-05 · **fecha a onda de auditoria** | Baixo (manutenção) | Baixo | 🟢 |
 | 54 | Golden de valor exato de cupom/PU em título com juros semestrais (rede que faltava — achado da 51) | **Alto (rede de segurança)** | Baixo | 🟢 |
+| | **— Rumo a API pública (2026-08-06) —** | | | |
+| 55 | Composition root por camada (`Add*` por projeto; `Program.cs` magro) | Médio (arquitetura) | Baixo | 🟢 |
+| 56 | ADR — Autenticação e API pública multi-cliente (Google OAuth + API keys self-service) · **design** | Alto (produto/segurança) | Baixo | 🟡 |
+| 57 | ADR — Versionamento da API `/v1` · **design** | Médio (contrato) | Baixo | 🟡 |
+| 58 | Teste de carga com k6 (API + site SignalR), sob demanda | Médio (capacidade) | Baixo | 🟡 |
 
 ---
 
@@ -677,6 +682,39 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
 - **P4. Reinvestimento de cupons e TIR/yield efetivo** — o fluxo de cupons já é gerado e listado; falta o cenário de reinvestimento e a rentabilidade efetiva para os títulos "com juros semestrais".
 - **P5. Alertas de preço/taxa** — o job de import + histórico persistido já dão a base para "avise quando a taxa do IPCA+ 2035 passar de X%".
 - **P6. Exportação e carteira/posição** — sem download CSV/PDF nem compartilhamento de simulação; e o produto é hoje uma calculadora sem estado (sem conceito de posições/patrimônio marcado a mercado ao longo do tempo).
+
+---
+
+## Rumo a API pública (2026-08-06) — composition root, auth, versionamento e carga
+
+> Nova frente **pós-onda de auditoria (42–54)**, orientada a transformar o tesouro-direto numa **API pública multi-cliente** (1º cliente: sistema de carteira externo; terceiros depois). Duas tarefas são **ADR (design, não código)** e produzem `docs/arch/*.md` para aprovação **antes** de virar execução; as outras duas são trabalho concreto — um refactor puro (**55**) e uma suíte de carga sob demanda (**58**). Dependências: **55** é independente e pode começar já; **56** (auth) precede **57** (versionamento, que apresenta os dois lados sobre sequência vs. auth); em **58** a parte de capacidade da API pode começar já, mas o modo "validar rate limit" depende de **56**.
+
+### 55. Composition root por camada 🟢
+> O `Program.cs` acumulou o wiring de todas as camadas; extrair para extension methods por camada deixa o `Program` magro e cada camada dona do seu registro.
+- **Escopo:** cada projeto expõe um extension method de `IServiceCollection` num `DependencyInjection.cs` próprio — `AddApplication` (MediatR, behaviors, validators), `AddInfrastructure(IConfiguration)` (DbContext, Dapper, repos, typed clients, cache/decorators, Polly, observabilidade), `AddApiServices` (auth/ApiKey, swagger, problem+json, health). `Program.cs` vira orquestração: encadeia os `Add*` + monta o pipeline; **zero registro direto de serviço de camada** nele.
+- **Risco:** baixo — refactor puro; preservar a **ORDEM** de registro (behaviors, decorators) e a config via `IConfiguration`/`IOptions`.
+- **Verificação:** app sobe e `/health/ready` 200; suíte + integração verdes; grep em `Program.cs` sem `AddScoped`/`Singleton`/`Transient`/`DbContext` direto de serviço de camada; `Architecture.Tests` verdes; diff sem comentários.
+
+### 56. Design de autenticação e API pública multi-cliente (ADR) 🟡 · design
+> Tornar o tesouro-direto uma API pública multi-cliente (1º cliente: sistema de carteira externo; terceiros depois). Produz `docs/arch/ADR-auth.md` — **NÃO** código; a execução vira tarefas próprias após aprovação.
+- **Decisões de produto fixadas:** login Google (OAuth) no site, sem senha/SMTP no v1; self-service de API keys por cliente (hasheada, mostrada uma vez); a key identifica o **cliente-sistema**, não o usuário final; chamadas programáticas seguem por `X-Api-Key`; cadastro semi-aberto com aprovação por **TELA DE ADMIN** (nada no banco na mão); admin inicial por seed no boot (`ADMIN_EMAIL`, padrão CQRS); consulta anônima permanece; service key do Web sobrevive; rate limit por cliente em memória (uma instância; gancho Redis registrado, não implementado).
+- **Levantamento (só leitura):** `ApiKeyMiddleware` (de onde lê, como valida, onde no pipeline); como o `TesouroApiClient` injeta o `X-Api-Key`; correlação/log; modelo de dados atual; seed no boot.
+- **O ADR contém:** modelo de dados (`usuarios`: google_sub, email, nome, papel, aprovado; `api_keys`: hash, dono, ativa, criada_em); fluxo Google OAuth no Blazor (`AddGoogle`) + cookie httpOnly; convivência das duas credenciais; `ApiKeyMiddleware` validando contra a tabela + injetando identidade no log/métrica; tela de keys e tela de admin; seed de admin; rate limit por cliente em memória (429 problem+json + `Retry-After`); as **FATIAS** em ordem de dependência no formato do `PLANO.md`; riscos com trade-off.
+- **Verificação:** ADR cobre os itens e a lista de fatias; o dono aprova antes de qualquer execução.
+
+### 57. Design de versionamento da API `/v1` (ADR) 🟡 · design
+> Mesma origem da anterior — API pública exige estabilidade. Separada de propósito: é **transversal** (toca todo o contrato, inclusive os hrefs dos `_links`). Produz `docs/arch/ADR-versionamento.md`.
+- **Levantamento:** registro de rotas hoje (Minimal API); geração de hrefs dos `_links`; impacto no `TesouroApiClient` e specs E2E.
+- **O ADR decide:** estratégia (`/v1` no path vs header, com trade-off); versionar sem quebrar o Web atual; `_links` já com versão; se health/metrics/swagger ficam fora; sequência em relação à auth (antes vs depois, apresentando os dois lados); as fatias no formato do `PLANO.md`.
+- **Verificação:** ADR cobre estratégia, migração do Web, `_links` versionados e a recomendação de sequência; o dono aprova antes de virar tarefas.
+
+### 58. Teste de carga com k6 (API + site), sob demanda 🟡
+> Conhecer os limites de capacidade da API e do site. **NÃO** entra na pipeline; roda sob demanda contra ambiente de teste, com métricas no Grafana existente.
+- **Escopo:** (a) **API** — scripts k6 dos fluxos quentes (listar com ETag, preco-atual, histórico paginado, simulador); smoke + ramp até o joelho de p95/erro; thresholds. (b) **SITE** (Blazor Server) — cenário separado medindo conexões de circuito SignalR simultâneas e memória/CPU por circuito (WebSocket, não RPS). (c) métricas do k6 no Prometheus/Grafana + painel de load test. (d) `docs/load/` com como rodar e o baseline.
+- **Rate limit (após a auth, tarefa 56):** key de teste em dois modos — **capacidade** (limite alto, achar o teto) e **validar rate limit** (confirmar 429 + `Retry-After`). Não confundir num run.
+- **Fora do escopo:** pipeline; rodar contra produção (alvo explícito obrigatório, **sem default para prod**).
+- **Verificação:** k6 reporta p95/erro dos 4 fluxos; cenário de site mede circuitos simultâneos; métricas no Grafana durante o run; baseline documentado; nada aponta para prod por default.
+- **Sequência:** capacidade da API pode começar já; validar rate limit completa após a **56** (auth).
 
 ---
 
