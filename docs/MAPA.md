@@ -89,14 +89,17 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **Tributos** — agregado rico `Tributo` com coleção encapsulada `_faixas`, métodos `Ativar/Desativar/AtualizarFaixas`. VO `Faixa` (record: DiasMin/DiasMax/Dia/Aliquota). Enums `BaseCalculo`, `TipoCalculo`. Único agregado com ctor sem parâmetros para EF.
 - **Feriados** — `Feriado` + VO `DataFeriado`.
 - **Simulador / DiasUteis** — objetos de cálculo transitórios, **não persistidos** (sem DbSet).
+- **Usuarios / ApiKeys** (tarefa 59) — agregados de identidade: `Usuario` (`Entity<Guid>`, `google_sub` nullable até o 1º login, VO `Email`, enum `PapelUsuario`, campos de aprovação/auditoria `aprovado`/`aprovado_em`/`aprovado_por`) e `ApiKey` (agregado próprio, FK `dono_usuario_id`, VO `ApiKeyHash` = SHA-256 hex da key gerada em `FromRawKey` — **só o hash e o `prefixo` não-secreto** persistidos, nunca a key em claro). Base da onda de auth (56); middleware/seed/geração de key ficam para 60/61/63.
 
-**Persistência** (`src/TesouroDireto.Infrastructure/Persistence`): `AppDbContext` implementa `IUnitOfWork`; 4 DbSets (Titulos, PrecosTaxas, Tributos, Feriados). Tabelas snake_case:
+**Persistência** (`src/TesouroDireto.Infrastructure/Persistence`): `AppDbContext` implementa `IUnitOfWork`; 6 DbSets (Titulos, PrecosTaxas, Tributos, Feriados, Usuarios, ApiKeys — as 2 últimas na tarefa 59). Tabelas snake_case:
 - `titulos` (PK uuid `ValueGeneratedNever`; índice único `ix_titulos_tipo_vencimento` em tipo+vencimento; desde a tarefa 12: `ix_titulos_data_vencimento` para filtro "vencido" e `ix_titulos_nome_upper` — índice funcional que torna `GetByNomeAsync` sargável). Desde a **tarefa 36**: identificador público `codigo` (slug tipo+data completa, ex. `tesouro-selic-2029-03-01`) **derivado na leitura** por `TituloCodigo.From` — **não persistido**, sem coluna nem migration; o lookup reverso (`GetByCodigoAsync`) filtra por `data_vencimento` (reusa `ix_titulos_data_vencimento`) e casa o slug em memória. O uuid `id` é chave sintética interna, agora marcada DEPRECATED nos contratos (extinção na tarefa 38).
 - `precos_taxas` (FK `titulo_id` CASCADE; índice único `ix_precos_taxas_titulo_data`; valores numeric nuláveis)
 - `tributos` + `tributo_faixas` (`OwnsMany`; índice único `ix_tributos_nome`)
 - `feriados` (índice único `ix_feriados_data`)
+- `usuarios` (tarefa 59; PK uuid `ValueGeneratedNever`; uniques `ix_usuarios_google_sub` e `ix_usuarios_email`; self-FK `aprovado_por`→`usuarios` `Restrict` com `ix_usuarios_aprovado_por`; `papel` via `HasConversion<string>`)
+- `api_keys` (tarefa 59; unique `ix_api_keys_hash`; FK `dono_usuario_id`→`usuarios` `Restrict` com `ix_api_keys_dono_usuario_id`; `hash` via `HasConversion` do VO `ApiKeyHash`; `ultimo_uso_em` nullable — gravação com throttle fica para a tarefa 61)
 
-3 migrations (`InitialCreate`, `MakePrecoTaxaValuesNullable`, `AddFeriados`) + snapshot alinhado (sem drift aparente).
+4 migrations (`InitialCreate`, `MakePrecoTaxaValuesNullable`, `AddFeriados`, `AddUsuarioApiKey`) + snapshot alinhado (sem drift aparente). A `AddUsuarioApiKey` (tarefa 59) é **aditiva** e reversível (`Down` dropa `api_keys` antes de `usuarios`); aplicada em Postgres real e round-trip dos repos **confirmados no CI** (Testcontainers). Leitura Dapper de `timestamptz` exige o `DateTimeOffsetTypeHandler` em `DapperTypeHandlers` (Npgsql devolve `DateTime`).
 
 ### Como se conecta
 
