@@ -142,12 +142,13 @@ public sealed class UsuarioRepositoryTests : IAsyncLifetime
     public async Task UpdateAsync_AfterAprovar_ShouldPersistApprovalFields()
     {
         var usuario = NovoUsuario("aprovar@exemplo.com");
+        var admin = NovoUsuario("admin-aprovador@exemplo.com");
         await _repository.AddAsync(usuario, CancellationToken.None);
+        await _repository.AddAsync(admin, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var adminId = Guid.NewGuid();
         var quando = new DateTimeOffset(2026, 8, 7, 9, 0, 0, TimeSpan.Zero);
-        usuario.Aprovar(adminId, quando);
+        usuario.Aprovar(admin.Id, quando);
 
         var updateResult = await _repository.UpdateAsync(usuario, CancellationToken.None);
         await _dbContext.SaveChangesAsync(CancellationToken.None);
@@ -160,7 +161,7 @@ public sealed class UsuarioRepositoryTests : IAsyncLifetime
 
         found!.Aprovado.Should().BeTrue();
         found.AprovadoEm.Should().Be(quando);
-        found.AprovadoPor.Should().Be(adminId);
+        found.AprovadoPor.Should().Be(admin.Id);
     }
 
     [Fact]
