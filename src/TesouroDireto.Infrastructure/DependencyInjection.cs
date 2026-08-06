@@ -10,6 +10,7 @@ using Npgsql;
 using Polly;
 using Prometheus;
 using Quartz;
+using TesouroDireto.Application.ApiKeys;
 using TesouroDireto.Application.Common.Interfaces;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Importacao;
@@ -18,6 +19,7 @@ using TesouroDireto.Application.Projecoes;
 using TesouroDireto.Application.Simulador;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Application.Tributos;
+using TesouroDireto.Application.Usuarios;
 using TesouroDireto.Infrastructure.Caching;
 using TesouroDireto.Infrastructure.CsvImport;
 using TesouroDireto.Infrastructure.Feriados;
@@ -85,6 +87,10 @@ public static class DependencyInjection
                 sp.GetRequiredService<IMemoryCache>(),
                 sp.GetRequiredService<MemoryCacheInvalidator>(),
                 sp.GetRequiredService<IConfiguration>()));
+
+        services.AddScoped<IUsuarioWriteRepository, UsuarioWriteRepository>();
+        services.AddScoped<IApiKeyWriteRepository, ApiKeyWriteRepository>();
+        services.AddScoped<IApiKeyReadRepository, ApiKeyReadRepository>();
 
         services.AddScoped<IDiasUteisService, DiasUteisService>();
 
