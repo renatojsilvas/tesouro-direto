@@ -90,4 +90,57 @@ public sealed class UsuarioTests
         result.Error.Code.Should().Be("Usuario.GoogleSubJaVinculado");
         usuario.GoogleSub.Should().Be("sub-original");
     }
+
+    [Fact]
+    public void GarantirAdminAprovado_WhenUserAndNotAprovado_ShouldReturnTrueAndPromote()
+    {
+        var usuario = Usuario.Create(ValidEmail, "Fulano", PapelUsuario.User, CriadoEm).Value;
+        var quando = CriadoEm.AddDays(1);
+
+        var alterou = usuario.GarantirAdminAprovado(quando);
+
+        alterou.Should().BeTrue();
+        usuario.Papel.Should().Be(PapelUsuario.Admin);
+        usuario.Aprovado.Should().BeTrue();
+        usuario.AprovadoEm.Should().Be(quando);
+    }
+
+    [Fact]
+    public void GarantirAdminAprovado_WhenUserAndNotAprovado_ShouldNotSetAprovadoPor()
+    {
+        var usuario = Usuario.Create(ValidEmail, "Fulano", PapelUsuario.User, CriadoEm).Value;
+        var quando = CriadoEm.AddDays(1);
+
+        usuario.GarantirAdminAprovado(quando);
+
+        usuario.AprovadoPor.Should().BeNull();
+    }
+
+    [Fact]
+    public void GarantirAdminAprovado_WhenAlreadyAdminAndAprovado_ShouldReturnFalseAndKeepAprovadoEm()
+    {
+        var usuario = Usuario.Create(ValidEmail, "Fulano", PapelUsuario.Admin, CriadoEm).Value;
+        var quando1 = CriadoEm.AddDays(1);
+        var quando2 = CriadoEm.AddDays(2);
+        usuario.GarantirAdminAprovado(quando1);
+
+        var alterou = usuario.GarantirAdminAprovado(quando2);
+
+        alterou.Should().BeFalse();
+        usuario.AprovadoEm.Should().Be(quando1);
+    }
+
+    [Fact]
+    public void GarantirAdminAprovado_WhenAdminButNotAprovado_ShouldReturnTrueAndApprove()
+    {
+        var usuario = Usuario.Create(ValidEmail, "Fulano", PapelUsuario.Admin, CriadoEm).Value;
+        var quando = CriadoEm.AddDays(1);
+
+        var alterou = usuario.GarantirAdminAprovado(quando);
+
+        alterou.Should().BeTrue();
+        usuario.Papel.Should().Be(PapelUsuario.Admin);
+        usuario.Aprovado.Should().BeTrue();
+        usuario.AprovadoEm.Should().Be(quando);
+    }
 }

@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Tributos;
+using TesouroDireto.Application.Usuarios;
 using TesouroDireto.Infrastructure.Persistence;
 
 namespace TesouroDireto.API.Extensions;
@@ -65,6 +66,14 @@ public sealed class DatabaseInitializer(
                     "Import de feriados no primeiro boot falhou (seguindo sem abortar): {Code} {Description}",
                     import.Error.Code, import.Error.Description);
             }
+        }
+
+        var admin = await sender.Send(new SeedAdminCommand(), ct);
+        if (admin.IsFailure)
+        {
+            logger.LogWarning(
+                "Seed de admin no boot falhou (seguindo sem abortar): {Code} {Description}",
+                admin.Error.Code, admin.Error.Description);
         }
     }
 }
