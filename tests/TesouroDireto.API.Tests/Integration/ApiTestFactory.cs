@@ -112,7 +112,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         await db.Database.ExecuteSqlRawAsync(
-            """TRUNCATE TABLE "titulos", "precos_taxas", "tributos", "feriados" RESTART IDENTITY CASCADE""");
+            """TRUNCATE TABLE "titulos", "precos_taxas", "tributos", "feriados", "usuarios", "api_keys" RESTART IDENTITY CASCADE""");
 
         var invalidator = scope.ServiceProvider.GetRequiredService<MemoryCacheInvalidator>();
         invalidator.InvalidateTitulos();

@@ -28,7 +28,7 @@ public sealed class Usuario : Entity<Guid>
     public string? GoogleSub { get; private set; }
     public Email Email { get; }
     public string Nome { get; }
-    public PapelUsuario Papel { get; }
+    public PapelUsuario Papel { get; private set; }
     public bool Aprovado { get; private set; }
     public DateTimeOffset CriadoEm { get; }
     public DateTimeOffset? AprovadoEm { get; private set; }
@@ -56,6 +56,26 @@ public sealed class Usuario : Entity<Guid>
         Aprovado = true;
         AprovadoEm = quando;
         AprovadoPor = adminId;
+    }
+
+    public bool GarantirAdminAprovado(DateTimeOffset quando)
+    {
+        var alterou = false;
+
+        if (Papel != PapelUsuario.Admin)
+        {
+            Papel = PapelUsuario.Admin;
+            alterou = true;
+        }
+
+        if (!Aprovado)
+        {
+            Aprovado = true;
+            AprovadoEm = quando;
+            alterou = true;
+        }
+
+        return alterou;
     }
 
     public Result DefinirGoogleSub(string sub)
