@@ -99,7 +99,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - `usuarios` (tarefa 59; PK uuid `ValueGeneratedNever`; uniques `ix_usuarios_google_sub` e `ix_usuarios_email`; self-FK `aprovado_por`→`usuarios` `Restrict` com `ix_usuarios_aprovado_por`; `papel` via `HasConversion<string>`)
 - `api_keys` (tarefa 59; unique `ix_api_keys_hash`; FK `dono_usuario_id`→`usuarios` `Restrict` com `ix_api_keys_dono_usuario_id`; `hash` via `HasConversion` do VO `ApiKeyHash`; `ultimo_uso_em` nullable — gravação com throttle fica para a tarefa 61)
 
-4 migrations (`InitialCreate`, `MakePrecoTaxaValuesNullable`, `AddFeriados`, `AddUsuarioApiKey`) + snapshot alinhado (sem drift aparente). A `AddUsuarioApiKey` (tarefa 59) é **aditiva** e reversível (`Down` dropa `api_keys` antes de `usuarios`); aplicar+reverter em Postgres real pendente de ambiente com Docker.
+4 migrations (`InitialCreate`, `MakePrecoTaxaValuesNullable`, `AddFeriados`, `AddUsuarioApiKey`) + snapshot alinhado (sem drift aparente). A `AddUsuarioApiKey` (tarefa 59) é **aditiva** e reversível (`Down` dropa `api_keys` antes de `usuarios`); aplicada em Postgres real e round-trip dos repos **confirmados no CI** (Testcontainers). Leitura Dapper de `timestamptz` exige o `DateTimeOffsetTypeHandler` em `DapperTypeHandlers` (Npgsql devolve `DateTime`).
 
 ### Como se conecta
 

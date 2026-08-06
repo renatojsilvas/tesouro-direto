@@ -69,7 +69,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 57 | ADR — Versionamento da API `/v1` · **design** | Médio (contrato) | Baixo | 🟡 |
 | 58 | Teste de carga com k6 (API + site SignalR), sob demanda | Médio (capacidade) | Baixo | 🟡 |
 | | **— Onda de autenticação (execução da 56, 2026-08-06) —** | | | |
-| 59 | ✅ Modelo de dados `usuarios` + `api_keys` (entidades `Usuario`/`ApiKey`, VOs `Email`/`ApiKeyHash` SHA-256, EF configs snake_case, migration reversível, repos `Result`) — concluída 2026-08-06 (Domain 189/189 + Architecture 14/14 + build 0 warning; round-trip Testcontainers e aplicar+reverter em Postgres real pendentes de ambiente com Docker) | Alto (base) | Baixo | 🟡 |
+| 59 | ✅ Modelo de dados `usuarios` + `api_keys` (entidades `Usuario`/`ApiKey`, VOs `Email`/`ApiKeyHash` SHA-256, EF configs snake_case, migration reversível, repos `Result`) — concluída 2026-08-06 (Domain 189/189 + Architecture 14/14 + build 0 warning; round-trip Testcontainers + migration em Postgres real **confirmados no CI**; o CI pegou 2 bugs que o ambiente local sem Docker não viu — leitura Dapper de `timestamptz` como `DateTimeOffset` e teste que violava a self-FK `aprovado_por`, ambos corrigidos) | Alto (base) | Baixo | 🟡 |
 | 60 | Seed de admin por `ADMIN_EMAIL` no boot (CQRS idempotente) | Médio (bootstrap) | Baixo | 🟢 |
 | 61 | `ApiKeyMiddleware` v2: valida contra a tabela + identidade no log/métrica | **Alto (segurança)** | Médio | 🟡 |
 | 62 | Endpoints de gestão — admin sobre usuários (`sync`/pendentes/aprovar, BFF) | Alto (produto) | Médio | 🟡 |
