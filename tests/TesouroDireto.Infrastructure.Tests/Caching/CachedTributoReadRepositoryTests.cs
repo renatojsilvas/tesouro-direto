@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Primitives;
 using NSubstitute;
 using TesouroDireto.Application.Tributos;
 using TesouroDireto.Domain.Common;
@@ -17,7 +19,7 @@ public sealed class CachedTributoReadRepositoryTests : IDisposable
 
     public CachedTributoReadRepositoryTests()
     {
-        _sut = new CachedTributoReadRepository(_inner, _cache, _invalidator);
+        _sut = new CachedTributoReadRepository(_inner, _cache, _invalidator, new ConfigurationBuilder().Build());
     }
 
     [Fact]
@@ -111,6 +113,45 @@ public sealed class CachedTributoReadRepositoryTests : IDisposable
         await _sut.GetAllAsync(CancellationToken.None);
 
         await _inner.Received(2).GetAllAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetAllAsync_NoConfig_ShouldUseDefaultTtlOfTwentyFourHours()
+    {
+        var entry = Substitute.For<ICacheEntry>();
+        entry.ExpirationTokens.Returns(new List<IChangeToken>());
+        entry.PostEvictionCallbacks.Returns(new List<PostEvictionCallbackRegistration>());
+        var cache = Substitute.For<IMemoryCache>();
+        cache.CreateEntry(Arg.Any<object>()).Returns(entry);
+        var sut = new CachedTributoReadRepository(_inner, cache, _invalidator, new ConfigurationBuilder().Build());
+        var tributos = CreateTributos();
+        _inner.GetAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Result<IReadOnlyCollection<Tributo>>.Success(tributos));
+
+        await sut.GetAllAsync(CancellationToken.None);
+
+        entry.AbsoluteExpirationRelativeToNow.Should().Be(TimeSpan.FromHours(24));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ConfigPresent_ShouldOverrideDefault()
+    {
+        var entry = Substitute.For<ICacheEntry>();
+        entry.ExpirationTokens.Returns(new List<IChangeToken>());
+        entry.PostEvictionCallbacks.Returns(new List<PostEvictionCallbackRegistration>());
+        var cache = Substitute.For<IMemoryCache>();
+        cache.CreateEntry(Arg.Any<object>()).Returns(entry);
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Caching:Tributos"] = "1.00:00:00" })
+            .Build();
+        var sut = new CachedTributoReadRepository(_inner, cache, _invalidator, config);
+        var tributos = CreateTributos();
+        _inner.GetAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Result<IReadOnlyCollection<Tributo>>.Success(tributos));
+
+        await sut.GetAllAsync(CancellationToken.None);
+
+        entry.AbsoluteExpirationRelativeToNow.Should().Be(TimeSpan.FromDays(1));
     }
 
     private static IReadOnlyCollection<Tributo> CreateTributos()

@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Primitives;
 using NSubstitute;
 using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Domain.Common;
@@ -16,7 +18,7 @@ public sealed class CachedPrecoTaxaReadRepositoryTests : IDisposable
 
     public CachedPrecoTaxaReadRepositoryTests()
     {
-        _sut = new CachedPrecoTaxaReadRepository(_inner, _cache, _invalidator);
+        _sut = new CachedPrecoTaxaReadRepository(_inner, _cache, _invalidator, new ConfigurationBuilder().Build());
     }
 
     [Fact]
@@ -110,6 +112,47 @@ public sealed class CachedPrecoTaxaReadRepositoryTests : IDisposable
         await _sut.GetByTituloIdAsync(tituloId, null, null, CancellationToken.None);
 
         await _inner.Received(2).GetByTituloIdAsync(tituloId, null, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetLatestByTituloIdAsync_NoConfig_ShouldUseDefaultTtlOfSixHours()
+    {
+        var entry = Substitute.For<ICacheEntry>();
+        entry.ExpirationTokens.Returns(new List<IChangeToken>());
+        entry.PostEvictionCallbacks.Returns(new List<PostEvictionCallbackRegistration>());
+        var cache = Substitute.For<IMemoryCache>();
+        cache.CreateEntry(Arg.Any<object>()).Returns(entry);
+        var sut = new CachedPrecoTaxaReadRepository(_inner, cache, _invalidator, new ConfigurationBuilder().Build());
+        var tituloId = Guid.NewGuid();
+        var preco = new PrecoTaxaDto("2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
+        _inner.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
+            .Returns(Result<PrecoTaxaDto>.Success(preco));
+
+        await sut.GetLatestByTituloIdAsync(tituloId, CancellationToken.None);
+
+        entry.AbsoluteExpirationRelativeToNow.Should().Be(TimeSpan.FromHours(6));
+    }
+
+    [Fact]
+    public async Task GetLatestByTituloIdAsync_ConfigPresent_ShouldOverrideDefault()
+    {
+        var entry = Substitute.For<ICacheEntry>();
+        entry.ExpirationTokens.Returns(new List<IChangeToken>());
+        entry.PostEvictionCallbacks.Returns(new List<PostEvictionCallbackRegistration>());
+        var cache = Substitute.For<IMemoryCache>();
+        cache.CreateEntry(Arg.Any<object>()).Returns(entry);
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Caching:PrecosTaxas"] = "1.00:00:00" })
+            .Build();
+        var sut = new CachedPrecoTaxaReadRepository(_inner, cache, _invalidator, config);
+        var tituloId = Guid.NewGuid();
+        var preco = new PrecoTaxaDto("2025-03-24", 11.50m, 11.55m, 1050.00m, 1049.00m, 1048.50m);
+        _inner.GetLatestByTituloIdAsync(tituloId, Arg.Any<CancellationToken>())
+            .Returns(Result<PrecoTaxaDto>.Success(preco));
+
+        await sut.GetLatestByTituloIdAsync(tituloId, CancellationToken.None);
+
+        entry.AbsoluteExpirationRelativeToNow.Should().Be(TimeSpan.FromDays(1));
     }
 
     public void Dispose() => _cache.Dispose();
