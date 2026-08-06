@@ -65,9 +65,19 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 54 | Golden de valor exato de cupom/PU em título com juros semestrais (rede que faltava — achado da 51) | **Alto (rede de segurança)** | Baixo | 🟢 |
 | | **— Rumo a API pública (2026-08-06) —** | | | |
 | 55 | ✅ Composition root por camada — `AddApplication`/`AddInfrastructure(IConfiguration)`/`AddApiServices`, cada camada dona do seu `DependencyInjection.cs`; `Program.cs` magro (só orquestração); ordem de behaviors MediatR (Logging→Metrics→Cache) preservada via `AddApplication` antes de `AddInfrastructure` — concluída 2026-08-06 (refactor puro; 358/358 não-Docker + composição real travada por `DependencyInjectionCompositionTests` 2/2; `/health/ready` + integração Testcontainers pendentes de ambiente com Docker) | Médio (arquitetura) | Baixo | 🟢 |
-| 56 | ADR — Autenticação e API pública multi-cliente (Google OAuth + API keys self-service) · **design** | Alto (produto/segurança) | Baixo | 🟡 |
+| 56 | ✅ ADR — Autenticação e API pública multi-cliente (Google OAuth + API keys self-service) · **design** — aprovado (direção) 2026-08-06; produz [`docs/arch/ADR-auth.md`](./arch/ADR-auth.md); execução = tarefas 59–67 | Alto (produto/segurança) | Baixo | 🟡 |
 | 57 | ADR — Versionamento da API `/v1` · **design** | Médio (contrato) | Baixo | 🟡 |
 | 58 | Teste de carga com k6 (API + site SignalR), sob demanda | Médio (capacidade) | Baixo | 🟡 |
+| | **— Onda de autenticação (execução da 56, 2026-08-06) —** | | | |
+| 59 | Modelo de dados `usuarios` + `api_keys` (entidades, EF configs, migration, repos Result) | Alto (base) | Baixo | 🟡 |
+| 60 | Seed de admin por `ADMIN_EMAIL` no boot (CQRS idempotente) | Médio (bootstrap) | Baixo | 🟢 |
+| 61 | `ApiKeyMiddleware` v2: valida contra a tabela + identidade no log/métrica | **Alto (segurança)** | Médio | 🟡 |
+| 62 | Endpoints de gestão — admin sobre usuários (`sync`/pendentes/aprovar, BFF) | Alto (produto) | Médio | 🟡 |
+| 63 | Endpoints de gestão — self-service de keys (`me/keys`, BFF) + invalidação de cache | Alto (produto) | Médio | 🟡 |
+| 64 | Google OAuth + cookie httpOnly no Web (wiring; consulta anônima intacta) | Alto (produto) | Médio | 🟡 |
+| 65 | Telas Web: "Minhas API Keys" (self-service) + "Admin" (aprovação) | Médio (DX) | Médio-baixo | 🟡 |
+| 66 | Rate limit por cliente em memória (60/min; 429 problem+json + `Retry-After`; gancho Redis) | Médio (proteção) | Médio-baixo | 🟡 |
+| 67 | Limiter por IP nas falhas de autenticação (anti-DoS do hot path) | Médio (segurança) | Baixo | 🟢 |
 
 ---
 
@@ -696,8 +706,9 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
 - **Verificação:** app sobe e `/health/ready` 200; suíte + integração verdes; grep em `Program.cs` sem `AddScoped`/`Singleton`/`Transient`/`DbContext` direto de serviço de camada; `Architecture.Tests` verdes; diff sem comentários.
 > **Feito (2026-08-06):** refactor puro. Dois `DependencyInjection.cs` novos — `AddApplication()` (Application: `AddMediatR(RegisterServicesFromAssembly)` + `AddTransient(IPipelineBehavior<,>, LoggingBehavior<,>)`) e `AddApiServices()` (API: `AddHealthChecks().AddDbContextCheck<AppDbContext>().ForwardToPrometheus()`, `IDatabaseInitializer`/`IDatabaseMigrator`, `ConfigureHttpJsonOptions` JSON-enum, `AddEndpointsApiExplorer`, `AddSwaggerGen` corpo idêntico, `AddProblemDetails` corpo idêntico). **Camada dona:** `IDatabaseInitializer`/`IDatabaseMigrator` são tipos de `API.Extensions` → o registro foi para `AddApiServices`, não para a Infra. `Infrastructure/DependencyInjection.cs` só perdeu a linha do `LoggingBehavior` (migrou p/ Application); `MetricsBehavior`/`BusinessMetrics`/`CacheInvalidationBehavior` intocados. `Program.cs` virou 4 linhas de registro (`AddSerilog(); AddApplication(); AddInfrastructure(builder.Configuration); AddApiServices();`) + pipeline pós-`Build()` intocado. **Ordem crítica preservada:** `AddApplication()` **antes** de `AddInfrastructure()` mantém a ordem efetiva dos pipeline behaviors do MediatR (Logging→Metrics→Cache) — o MediatR resolve `IEnumerable<IPipelineBehavior<,>>` na ordem de registro no container; a posição do `AddMediatR` é irrelevante (sem `AddOpenBehavior`). **Verificação (executor→revisor adversarial, 5 alvos CONFIRMADOS):** build Release 0/0; grep de registro em `Program.cs` vazio; suíte não-Docker **358/358** (Domain 152 · Application 95 · Infrastructure 66 · Web 31 · Architecture 14); `API.Tests` = 92 verde + **134 falhas 100% `DockerUnavailableException`** (Testcontainers, sem Docker no ambiente — classificadas via parse estruturado do `.trx`, zero regressão de DI mascarada); **`DependencyInjectionCompositionTests` 2/2** sobe o `Program.cs` real com connstring fake (sem Docker) e prova que o grafo de DI recomposto builda e resolve. **Pendente de ambiente com Docker:** `/health/ready` 200 ao vivo + integração Testcontainers (rodar no CI). Zero comentário novo; Application não referencia Infra/API (Architecture.Tests verde). Ver memória [[feedback_composition_root_por_camada]] e [[loggingbehavior_application_vs_infra]].
 
-### 56. Design de autenticação e API pública multi-cliente (ADR) 🟡 · design
+### 56. Design de autenticação e API pública multi-cliente (ADR) 🟡 · design ✅ Aprovada (direção) 2026-08-06
 > Tornar o tesouro-direto uma API pública multi-cliente (1º cliente: sistema de carteira externo; terceiros depois). Produz `docs/arch/ADR-auth.md` — **NÃO** código; a execução vira tarefas próprias após aprovação.
+> **Feito (2026-08-06):** [`docs/arch/ADR-auth.md`](./arch/ADR-auth.md) escrito e **aprovado na direção** pelo dono. Ciclo: 4 `Explore` paralelos levantaram o código real (`ApiKeyMiddleware`/`ApiKeyGuard`, correlação/log, modelo de dados, seed) → ADR → `revisor` adversarial (0 erros de fidelidade em ~25 citações `arquivo:linha`; 8 defeitos + sugestões, **todos incorporados**: `email_verified` no casamento do admin, grafo de dependência F5→F4a, acoplamento de cache F3↔F4b, split de F4, logout, expiração de cookie, DoS de auth, concorrência do `sync`, CSRF, entropia da key). **Decisões do dono:** R1 Web BFF com service key; R3 rate 60 req/min por cliente (service key isenta; abaixo do teto por-IP do nginx); R9 limiter por IP só nas falhas de auth; R10 cookie 8h+sliding; R2/R8 SHA-256/key 32 bytes/`email_verified` como recomendado. **Execução = tarefas 59–67** (fatias F1–F7b do ADR). Pendentes de confirmar ao executar: R5 (label `cliente` na métrica), R6 (colunas de auditoria), R11 (CSRF), R12 (concorrência). Não cobre versionamento (**57**): se `/v1` vier antes, as rotas de auth nascem versionadas.
 - **Decisões de produto fixadas:** login Google (OAuth) no site, sem senha/SMTP no v1; self-service de API keys por cliente (hasheada, mostrada uma vez); a key identifica o **cliente-sistema**, não o usuário final; chamadas programáticas seguem por `X-Api-Key`; cadastro semi-aberto com aprovação por **TELA DE ADMIN** (nada no banco na mão); admin inicial por seed no boot (`ADMIN_EMAIL`, padrão CQRS); consulta anônima permanece; service key do Web sobrevive; rate limit por cliente em memória (uma instância; gancho Redis registrado, não implementado).
 - **Levantamento (só leitura):** `ApiKeyMiddleware` (de onde lê, como valida, onde no pipeline); como o `TesouroApiClient` injeta o `X-Api-Key`; correlação/log; modelo de dados atual; seed no boot.
 - **O ADR contém:** modelo de dados (`usuarios`: google_sub, email, nome, papel, aprovado; `api_keys`: hash, dono, ativa, criada_em); fluxo Google OAuth no Blazor (`AddGoogle`) + cookie httpOnly; convivência das duas credenciais; `ApiKeyMiddleware` validando contra a tabela + injetando identidade no log/métrica; tela de keys e tela de admin; seed de admin; rate limit por cliente em memória (429 problem+json + `Retry-After`); as **FATIAS** em ordem de dependência no formato do `PLANO.md`; riscos com trade-off.
@@ -716,6 +727,75 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
 - **Fora do escopo:** pipeline; rodar contra produção (alvo explícito obrigatório, **sem default para prod**).
 - **Verificação:** k6 reporta p95/erro dos 4 fluxos; cenário de site mede circuitos simultâneos; métricas no Grafana durante o run; baseline documentado; nada aponta para prod por default.
 - **Sequência:** capacidade da API pode começar já; validar rate limit completa após a **56** (auth).
+
+---
+
+## Onda de autenticação — execução da 56 (2026-08-06)
+
+> Fatias do [`docs/arch/ADR-auth.md`](./arch/ADR-auth.md) (aprovado). Ordem de dependência: **59** destrava tudo → **60**/**61** → **66**/**67** (rate limit, dep. só de 61); **62**+**63** (gestão BFF); **64** (OAuth, wiring paralelo, mas o `sync` no 1º login depende de **62**) → **65** (telas, dep. 62+63+64). Decisões do dono fixadas no ADR (§ topo). Confirmar ao executar: R5 label métrica, R6 colunas de auditoria, R11 CSRF, R12 concorrência do `sync`.
+
+### 59. Modelo de dados `usuarios` + `api_keys` 🟡
+> Base de tudo. Duas tabelas novas no padrão do projeto (`Entity<Guid>`, snake_case, `IEntityTypeConfiguration`, migration EF). **Aditivo** — não toca as 4 tabelas atuais.
+- **Escopo:** entidades `Usuario`(google_sub·email·nome·papel·aprovado·criado_em·aprovado_em·aprovado_por) e `ApiKey`(nome·hash·prefixo·dono_usuario_id·ativa·criada_em·revogada_em·[ultimo_uso_em opcional, R6]); `DbSet` no `AppDbContext`; configs em `Persistence/Configurations/` (uniques em `google_sub`/`email`/`hash`, FK `aprovado_por`/`dono_usuario_id`); migration EF; read/write repos no padrão `Result` (leitura por `hash` e por `dono`, Dapper+DTO; escrita EF via `IUnitOfWork`) — **sem** decorator de cache ainda.
+- **Arquivos:** `Domain/Usuarios/*`, `Domain/ApiKeys/*`, `Infrastructure/Persistence/Configurations/*`, nova migration, `AppDbContext.cs`, repos, interfaces em `Application/Common/Interfaces/`.
+- **Risco:** baixo — aditivo. Cuidar dos uniques e das FKs.
+- **Verificação:** migration aplica; repos round-trip contra Postgres (Testcontainers, padrão da 24); `Architecture.Tests` verdes.
+
+### 60. Seed de admin por `ADMIN_EMAIL` no boot 🟢
+> Admin inicial sem tocar o banco à mão. No molde idempotente de `SeedTributosCommand` (tarefa 9).
+- **Escopo:** `SeedAdminCommand`+handler idempotente (lê `ADMIN_EMAIL`; ausente/vazio ⇒ no-op logado, não aborta; existe ⇒ garante `papel=Admin`+`aprovado=true` sem duplicar; senão cria com `google_sub` nulo). Encaixe no `DatabaseInitializer.InitializeAsync` **após** tributos/feriados, fora de `Testing`. `ADMIN_EMAIL` na config/compose (`${ADMIN_EMAIL:?}`, padrão sem fallback).
+- **Arquivos:** `Application/Usuarios/SeedAdminCommand*.cs`, `API/Extensions/DatabaseInitializer.cs`, `appsettings`/`docker-compose.yml`.
+- **Risco:** baixo. `google_sub` fica nulo até o 1º login (casado por e-mail **com `email_verified`**, ver 62).
+- **Verificação:** rodar 2× ⇒ 1 admin (`aprovado=true`, `papel=Admin`); teste de integração do boot.
+
+### 61. `ApiKeyMiddleware` v2 — tabela + identidade no log/métrica 🟡
+> Passa a aceitar **duas** credenciais: a service key do Web (fast-path in-memory, como hoje) **e** keys por cliente (hash na tabela). Hot path e gate de segurança.
+- **Escopo:** fast-path `FixedTimeEquals` contra a service key (inalterado) → fallback SHA-256 + lookup `api_keys` (`ativa=true`) com **decorator de cache** (padrão `CachedTituloReadRepository`) + método `InvalidateApiKeys()` no invalidador (o `case` que o chama vem na **63**); anexar `ClienteId` via `LogContext.PushProperty` **e** `IDiagnosticContext.Set` (este alcança o request-summary do `UseSerilogRequestLogging`, que roda fora do middleware); counter dedicado `api_key_requests_total{cliente,outcome}` (label bounded, R5). 401 problem+json inalterado; `ApiKeyGuard` de boot intacto.
+- **Arquivos:** `API/Middleware/ApiKeyMiddleware.cs`, `IApiKeyReadRepository`+cache decorator, `Infrastructure/Caching/*`, `Infrastructure/Observability/*`, DI.
+- **Risco:** médio — hot path. Service key **continua** valendo; key revogada/desconhecida ⇒ 401; invalidação de cache ao revogar/gerar.
+- **Verificação:** integração HTTP (padrão da 8): service key ok; key válida resolve identidade e loga `ClienteId`; revogada ⇒ 401; asserção de métrica por **delta** (padrão da 50).
+
+### 62. Endpoints de gestão — admin sobre usuários (BFF) 🟡
+> Superfície BFF chamada **só** pelo Web (service key + usuário asserido). Regra `[Admin]`.
+- **Escopo:** `POST /admin/usuarios/sync` (upsert idempotente no 1º login, **exige `email_verified`**, trata concorrência com `ON CONFLICT`/captura de `DbUpdateException`+releitura — R12), `GET /admin/usuarios?pendentes`, `POST /admin/usuarios/{sub}/aprovar` (grava `aprovado_em`/`aprovado_por`). Comandos/queries CQRS + problem+json; contratos em `API/Contracts/` + DTOs pareados em `Web/Contracts/` + `ContractParityTests` (padrão da 46).
+- **Arquivos:** `Application/Usuarios/*`, endpoints na API, `API/Contracts/*`, `Web/Contracts/*`.
+- **Risco:** médio — trust boundary do BFF (R1); `email_verified` (R8); concorrência (R12). Aprovação só por admin.
+- **Verificação:** integração HTTP: `sync` 2× não duplica nem estoura unique sob corrida; não-admin ⇒ 403; pendentes listados.
+
+### 63. Endpoints de gestão — self-service de keys (BFF) 🟡
+> Regra "usuário **aprovado** sobre os próprios recursos". Liga a invalidação de cache da **61**.
+- **Escopo:** `GET /me/keys` (sem texto puro; mostra `prefixo`), `POST /me/keys` (gera random alta entropia — 32 bytes, prefixo `td_`, R2 — guarda `hash`+`prefixo`, retorna texto puro **uma vez**), `POST /me/keys/{id}/revogar`. Adiciona `case GenerateApiKeyCommand/RevokeApiKeyCommand ⇒ InvalidateApiKeys()` no `CacheInvalidationBehavior`. Contratos pareados (padrão da 46).
+- **Arquivos:** `Application/ApiKeys/*`, endpoints na API, `Infrastructure/Caching/CacheInvalidationBehavior.cs`, `API/Contracts/*`, `Web/Contracts/*`.
+- **Risco:** médio — nunca reexpor o texto puro (log/render); não-aprovado ⇒ 403.
+- **Verificação:** integração HTTP: gerar ⇒ texto 1× (2ª leitura sem texto), listar sem texto, revogar ⇒ a key dá 401 no `X-Api-Key` (cache invalidado); não-aprovado ⇒ 403.
+
+### 64. Google OAuth + cookie httpOnly no Web (wiring) 🟡
+> 1ª autenticação do site. Consulta anônima **permanece**; login só destrava a geração de key.
+- **Escopo:** pacotes `Authentication.Google`+cookie; `AddAuthentication/AddCookie/AddGoogle`; **`UseAuthentication()`→`UseAuthorization()` após `UseStaticFiles()` e antes de `UseAntiforgery()`/`MapRazorComponents`**; `CascadingAuthenticationState`+`AuthorizeRouteView`; cookie `HttpOnly+Secure+SameSite=Lax` + `ExpireTimeSpan=8h`+`SlidingExpiration` (R10); **logout** (`SignOutAsync`); exige `email_verified` (R8); `Google:*` via user-secrets/env (**sem** segredo commitado). `sync` no 1º login **depende da 62**.
+- **Arquivos:** `Web/Program.cs`, `Web/Components/Routes.razor`, `_Imports.razor`, `Web/appsettings.json` (bloco `Google` sem segredo), `Web.csproj`.
+- **Risco:** médio — não quebrar navegação anônima; `RedirectUri` público atrás do nginx/TLS (tarefa 44). **CI:** login Google real não roda em CI — `TestAuthenticationHandler` sob `UseEnvironment("Testing")` (padrão da `webappfactory_needs_db_config`).
+- **Verificação:** login seta cookie; logout limpa; páginas de consulta seguem anônimas (bUnit/E2E com handler de teste); não-aprovado vê "aguardando" (fim-a-fim só com a 62).
+
+### 65. Telas Web: "Minhas API Keys" + "Admin" 🟡
+> Self-service + aprovação, consumindo a superfície BFF via `TesouroApiClient`.
+- **Escopo:** `/api-keys` (gerar com banner do texto puro mostrado **1×** + aviso "copie agora"; listar `prefixo`/`nome`/`ativa`/`criada_em`; revogar; não-aprovado vê "aguardando aprovação") e `/admin` (`[Authorize(Roles=Admin)]`; lista pendentes + aprovar); nav gated em `NavMenu.razor` (seções "Conta"/"Admin"); logout na nav.
+- **Arquivos:** `Web/Components/Pages/ApiKeys.razor`, `Admin.razor`, `NavMenu.razor`, serviços do Web.
+- **Risco:** médio-baixo — depende de **62+63+64**. Não vazar texto puro após o 1º show.
+- **Verificação:** bUnit + E2E (padrão `e2e_behavioral_tests`): gerar/listar/revogar; admin aprova e o usuário passa a gerar key.
+
+### 66. Rate limit por cliente em memória 🟡
+> Uma instância; gancho Redis **declarado, não implementado**. Depende só da identidade da **61**.
+- **Escopo:** `AddRateLimiter` particionado por identidade (`apiKeyId`); **60 req/min por cliente**, service key isenta; **429 problem+json + `Retry-After`** (via `OnRejected`, reusando `IProblemDetailsService`); `IRateLimitStore` **em memória** com gancho Redis registrado e não implementado. Depois da `ApiKeyMiddleware`, antes dos endpoints.
+- **Arquivos:** `API/Program.cs`/`DependencyInjection.cs`, `Infrastructure/RateLimiting/*`.
+- **Risco:** médio-baixo. Não afetar rotas isentas (health/metrics/swagger); o nginx já limita por **IP** em outra camada (`infra/nginx/tesouro-direto.conf`) — não confundir.
+- **Verificação:** integração: exceder ⇒ 429 + `Retry-After`; service key não limitada; sob o teto ⇒ 200. Base para o modo "validar rate limit" do k6 (tarefa 58).
+
+### 67. Limiter por IP nas falhas de autenticação 🟢
+> Fecha o vetor de DoS do hot path: keys inválidas não passam pelo limite por cliente (66). Complementa — não duplica — o limite por-IP grosso do nginx.
+- **Escopo:** limiter **por IP** (via `X-Forwarded-For` do nginx) que conta **só falhas de auth** (key inválida/ausente), disparando 429 após um teto apertado.
+- **Arquivos:** `API/Middleware/ApiKeyMiddleware.cs` (contabiliza a falha) + `API/Program.cs` (política).
+- **Risco:** baixo — depende da **61**. Confiar em `X-Forwarded-For` só atrás do nginx (rede interna).
+- **Verificação:** integração: N falhas seguidas do mesmo IP ⇒ 429; request com key **válida** do mesmo IP **não** é bloqueada.
 
 ---
 
