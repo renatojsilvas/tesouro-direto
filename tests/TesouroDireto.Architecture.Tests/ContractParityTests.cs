@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using TesouroDireto.API.Http;
+using TesouroDireto.Application.ApiKeys;
 using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Application.Simulador;
 using TesouroDireto.Application.Tributos;
@@ -29,6 +30,8 @@ public sealed class ContractParityTests
         [typeof(CenarioResult)] = typeof(CenarioResultadoDto),
         [typeof(UsuarioPendenteItem)] = typeof(UsuarioPendenteDto),
         [typeof(UsuarioSyncResult)] = typeof(UsuarioSyncDto),
+        [typeof(ApiKeyItem)] = typeof(ApiKeyDto),
+        [typeof(GeneratedApiKeyResult)] = typeof(GeneratedApiKeyDto),
     };
 
     [Fact]

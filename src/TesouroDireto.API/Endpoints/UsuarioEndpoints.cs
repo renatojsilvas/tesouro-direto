@@ -22,14 +22,17 @@ public static class UsuarioEndpoints
 
             return result.ToHttpResult(dto => Results.Ok(dto));
         })
+        .AddEndpointFilter<ServiceKeyOnlyFilter>()
         .WithName("SyncUsuario")
         .WithTags("Usuarios")
         .WithSummary("Sincroniza a identidade de um usuário autenticado via Google")
         .WithDescription("Upsert idempotente: busca por google_sub, senão por email (casa o registro seed do admin), " +
-            "senão cria um usuário novo não aprovado. 400 se o e-mail não foi verificado pelo provedor de identidade.")
+            "senão cria um usuário novo não aprovado. 400 se o e-mail não foi verificado pelo provedor de identidade. " +
+            "Exige a service key (chamada apenas pelo BFF).")
         .Produces<UsuarioSyncDto>()
         .ProducesProblem(StatusCodes.Status400BadRequest)
-        .ProducesProblem(StatusCodes.Status401Unauthorized);
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
 
         app.MapGet("/admin/usuarios", async (
             bool? pendentes,

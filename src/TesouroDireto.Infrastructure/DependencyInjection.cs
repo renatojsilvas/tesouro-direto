@@ -20,6 +20,7 @@ using TesouroDireto.Application.Simulador;
 using TesouroDireto.Application.Titulos;
 using TesouroDireto.Application.Tributos;
 using TesouroDireto.Application.Usuarios;
+using TesouroDireto.Infrastructure.ApiKeys;
 using TesouroDireto.Infrastructure.Caching;
 using TesouroDireto.Infrastructure.CsvImport;
 using TesouroDireto.Infrastructure.Feriados;
@@ -99,6 +100,8 @@ public static class DependencyInjection
                 sp.GetRequiredService<IMemoryCache>(),
                 sp.GetRequiredService<MemoryCacheInvalidator>(),
                 sp.GetRequiredService<IConfiguration>()));
+
+        services.AddSingleton<IApiKeyGenerator, ApiKeyGenerator>();
 
         services.AddScoped<IDiasUteisService, DiasUteisService>();
 
