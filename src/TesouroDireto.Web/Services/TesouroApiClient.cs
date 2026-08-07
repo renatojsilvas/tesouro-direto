@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using TesouroDireto.Web.Contracts;
 
 namespace TesouroDireto.Web.Services;
 
@@ -14,6 +15,8 @@ public sealed record PagedResponse<T>(IReadOnlyList<T> Items, int TotalCount, Pa
 
 public sealed class TesouroApiClient(HttpClient httpClient, IConditionalGetStore etagStore)
 {
+    private const string ActingUserSubHeader = "X-Acting-User-Sub";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -21,15 +24,15 @@ public sealed class TesouroApiClient(HttpClient httpClient, IConditionalGetStore
 
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<T?> GetAsync<T>(string relativeUri)
+    public async Task<T?> GetAsync<T>(string relativeUri, string? actingUserSub = null)
     {
-        var (body, _) = await ConditionalGetAsync(relativeUri);
+        var (body, _) = await ConditionalGetAsync(relativeUri, actingUserSub);
         return DeserializeBody<T>(body);
     }
 
-    public async Task<PagedResponse<T>> GetPagedAsync<T>(string relativeUri)
+    public async Task<PagedResponse<T>> GetPagedAsync<T>(string relativeUri, string? actingUserSub = null)
     {
-        var (body, headers) = await ConditionalGetAsync(relativeUri);
+        var (body, headers) = await ConditionalGetAsync(relativeUri, actingUserSub);
         var items = DeserializeBody<List<T>>(body) ?? [];
         var totalCount = headers.TryGetValue("X-Total-Count", out var totalCountValue) && int.TryParse(totalCountValue, out var parsedTotalCount)
             ? parsedTotalCount
@@ -39,19 +42,39 @@ public sealed class TesouroApiClient(HttpClient httpClient, IConditionalGetStore
         return new PagedResponse<T>(items, totalCount, links);
     }
 
-    public async Task<ApiResult<T>> PostAsync<T>(string relativeUri, object body)
+    public async Task<ApiResult<T>> PostAsync<T>(string relativeUri, object body, string? actingUserSub = null)
     {
-        var response = await httpClient.PostAsJsonAsync(relativeUri, body);
+        var response = actingUserSub is null
+            ? await httpClient.PostAsJsonAsync(relativeUri, body)
+            : await SendWithBodyAsync(HttpMethod.Post, relativeUri, body, actingUserSub);
+
         return await BuildResultAsync<T>(response);
     }
 
-    public async Task<ApiResult<T>> PutAsync<T>(string relativeUri, object body)
+    public async Task<ApiResult<T>> PutAsync<T>(string relativeUri, object body, string? actingUserSub = null)
     {
-        var response = await httpClient.PutAsJsonAsync(relativeUri, body);
+        var response = actingUserSub is null
+            ? await httpClient.PutAsJsonAsync(relativeUri, body)
+            : await SendWithBodyAsync(HttpMethod.Put, relativeUri, body, actingUserSub);
+
         return await BuildResultAsync<T>(response);
     }
 
-    private async Task<(byte[] Body, IReadOnlyDictionary<string, string> Headers)> ConditionalGetAsync(string uri)
+    public Task<ApiResult<UsuarioSyncResult>> SyncUsuarioAsync(SyncUsuarioRequest request)
+        => PostAsync<UsuarioSyncResult>("/admin/usuarios/sync", request);
+
+    private async Task<HttpResponseMessage> SendWithBodyAsync(HttpMethod method, string relativeUri, object body, string actingUserSub)
+    {
+        using var request = new HttpRequestMessage(method, relativeUri)
+        {
+            Content = JsonContent.Create(body, options: WebJsonOptions)
+        };
+        request.Headers.TryAddWithoutValidation(ActingUserSubHeader, actingUserSub);
+
+        return await httpClient.SendAsync(request);
+    }
+
+    private async Task<(byte[] Body, IReadOnlyDictionary<string, string> Headers)> ConditionalGetAsync(string uri, string? actingUserSub = null)
     {
         var hasCached = etagStore.TryGet(uri, out var cached);
 
@@ -59,6 +82,11 @@ public sealed class TesouroApiClient(HttpClient httpClient, IConditionalGetStore
         if (hasCached && cached is not null)
         {
             request.Headers.TryAddWithoutValidation("If-None-Match", cached.ETag);
+        }
+
+        if (actingUserSub is not null)
+        {
+            request.Headers.TryAddWithoutValidation(ActingUserSubHeader, actingUserSub);
         }
 
         var response = await httpClient.SendAsync(request);

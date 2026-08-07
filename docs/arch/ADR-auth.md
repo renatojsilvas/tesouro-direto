@@ -243,7 +243,7 @@ F5 OAuth+cookie (Web, wiring puro) ──> [sync depende de F4a] ─────
 - **Risco:** médio — nunca reexpor o texto puro (nem em log/render); usuário não-aprovado ⇒ 403; entropia mínima da key declarada (R2).
 - **Verificação:** integração HTTP: gerar ⇒ texto 1× (2ª leitura não traz texto), listar sem texto, revogar ⇒ a key revogada dá 401 no `X-Api-Key` (F3, com cache invalidado); não-aprovado ⇒ 403.
 
-### F5. OAuth Google + cookie no Web (wiring) 🟡
+### F5. OAuth Google + cookie no Web (wiring) ✅ (tarefa 64, concluída 2026-08-07)
 - **Escopo:** pacotes Google+cookie; `AddAuthentication/AddCookie/AddGoogle`; **`UseAuthentication()` → `UseAuthorization()` posicionados após `UseStaticFiles()` e antes de `UseAntiforgery()`/`MapRazorComponents`** (ordem exata, §2.5); `CascadingAuthenticationState`+`AuthorizeRouteView`; cookie `HttpOnly+Secure+SameSite=Lax` + `ExpireTimeSpan`+`SlidingExpiration` (R10); **logout** (`SignOutAsync`); exige `email_verified` (R8); `Google:*` via user-secrets/env. **Consulta anônima intacta** (`[AllowAnonymous]` default). O passo **`sync` no 1º login depende de F4a**.
 - **Arquivos:** `Web/Program.cs`, `Web/Components/Routes.razor`, `_Imports.razor`, `Web/appsettings.json` (bloco `Google` **sem segredo**), `Web.csproj`.
 - **Risco:** médio — 1ª auth do site. Não quebrar navegação anônima; redirect Google atrás do nginx/TLS (tarefa 44) — conferir `RedirectUri` público. **Testabilidade em CI:** login Google real não roda em CI — prever `TestAuthenticationHandler` sob `UseEnvironment("Testing")` (padrão `webappfactory_needs_db_config`).
