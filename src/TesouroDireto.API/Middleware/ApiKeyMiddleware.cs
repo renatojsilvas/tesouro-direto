@@ -2,12 +2,22 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
+using Serilog.Context;
+using TesouroDireto.Application.ApiKeys;
+using TesouroDireto.Domain.ApiKeys;
+using TesouroDireto.Infrastructure.Observability;
 
 namespace TesouroDireto.API.Middleware;
 
 public sealed class ApiKeyMiddleware
 {
     private const string ApiKeyHeader = "X-Api-Key";
+    private const string ServiceIdentity = "service";
+    private const string UnknownIdentity = "unknown";
+    private const string AuthorizedOutcome = "authorized";
+    private const string UnauthorizedOutcome = "unauthorized";
+    private const string ClienteIdProperty = "ClienteId";
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ApiKeyMiddleware> _logger;
@@ -33,18 +43,58 @@ public sealed class ApiKeyMiddleware
         if (!TryGetValidApiKey(context, out var providedKey))
         {
             _logger.LogWarning("Request without API key to {Path}", context.Request.Path);
+            RecordUnauthorized(context);
             await WriteUnauthorizedAsync(context);
             return;
         }
 
-        if (!IsKeyValid(providedKey, _configuredKey))
+        if (IsKeyValid(providedKey, _configuredKey))
+        {
+            await AuthorizeAsync(context, ServiceIdentity);
+            return;
+        }
+
+        var clienteId = await TryResolveClienteIdAsync(context, providedKey);
+
+        if (clienteId is null)
         {
             _logger.LogWarning("Invalid API key attempt to {Path}", context.Request.Path);
+            RecordUnauthorized(context);
             await WriteUnauthorizedAsync(context);
             return;
         }
 
-        await _next(context);
+        await AuthorizeAsync(context, clienteId);
+    }
+
+    private async Task AuthorizeAsync(HttpContext context, string clienteId)
+    {
+        var diagnosticContext = context.RequestServices.GetRequiredService<IDiagnosticContext>();
+        var metrics = context.RequestServices.GetRequiredService<IApiKeyMetrics>();
+
+        diagnosticContext.Set(ClienteIdProperty, clienteId);
+        metrics.RecordRequest(clienteId, AuthorizedOutcome);
+
+        using (LogContext.PushProperty(ClienteIdProperty, clienteId))
+        {
+            await _next(context);
+        }
+    }
+
+    private static void RecordUnauthorized(HttpContext context)
+    {
+        var metrics = context.RequestServices.GetRequiredService<IApiKeyMetrics>();
+        metrics.RecordRequest(UnknownIdentity, UnauthorizedOutcome);
+    }
+
+    private static async Task<string?> TryResolveClienteIdAsync(HttpContext context, string providedKey)
+    {
+        var repository = context.RequestServices.GetRequiredService<IApiKeyReadRepository>();
+        var hash = ApiKeyHash.FromRawKey(providedKey).Value;
+
+        var result = await repository.GetActiveByHashAsync(hash, context.RequestAborted);
+
+        return result.IsSuccess ? result.Value.Id.ToString() : null;
     }
 
     private static async Task WriteUnauthorizedAsync(HttpContext context)

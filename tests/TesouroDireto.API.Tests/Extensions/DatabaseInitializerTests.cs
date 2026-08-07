@@ -8,6 +8,7 @@ using NSubstitute.Core;
 using TesouroDireto.API.Extensions;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Tributos;
+using TesouroDireto.Application.Usuarios;
 using TesouroDireto.Domain.Common;
 
 namespace TesouroDireto.API.Tests.Extensions;
@@ -43,6 +44,8 @@ public sealed class DatabaseInitializerTests
 
         _sender.Send(Arg.Any<SeedTributosCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
+        _sender.Send(Arg.Any<SeedAdminCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
         _feriadoReadRepository.GetAllDatasAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(Array.Empty<DateOnly>()));
         _sender.Send(Arg.Any<ImportFeriadosCommand>(), Arg.Any<CancellationToken>())
@@ -54,6 +57,7 @@ public sealed class DatabaseInitializerTests
         await _migrator.Received(1).MigrateAsync(Arg.Any<CancellationToken>());
         await _sender.Received(1).Send(Arg.Any<SeedTributosCommand>(), Arg.Any<CancellationToken>());
         await _sender.Received(1).Send(Arg.Any<ImportFeriadosCommand>(), Arg.Any<CancellationToken>());
+        await _sender.Received(1).Send(Arg.Any<SeedAdminCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -81,6 +85,8 @@ public sealed class DatabaseInitializerTests
 
         _sender.Send(Arg.Any<SeedTributosCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
+        _sender.Send(Arg.Any<SeedAdminCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
         _feriadoReadRepository.GetAllDatasAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(Array.Empty<DateOnly>()));
         _sender.Send(Arg.Any<ImportFeriadosCommand>(), Arg.Any<CancellationToken>())
@@ -107,6 +113,8 @@ public sealed class DatabaseInitializerTests
 
         _sender.Send(Arg.Any<SeedTributosCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
+        _sender.Send(Arg.Any<SeedAdminCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
         _feriadoReadRepository.GetAllDatasAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<DateOnly>>.Failure(new Error("Feriados.Error", "Checagem quebrada")));
 
@@ -130,6 +138,8 @@ public sealed class DatabaseInitializerTests
         var sut = BuildSut("Production");
 
         _sender.Send(Arg.Any<SeedTributosCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
+        _sender.Send(Arg.Any<SeedAdminCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
         _feriadoReadRepository.GetAllDatasAsync(Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyCollection<DateOnly>>.Success(new[] { new DateOnly(2026, 1, 1) }));

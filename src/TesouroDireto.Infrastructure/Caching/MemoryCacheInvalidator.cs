@@ -7,18 +7,21 @@ public sealed class MemoryCacheInvalidator
     private CancellationTokenSource _tributosCts = new();
     private CancellationTokenSource _feriadosCts = new();
     private CancellationTokenSource _projecoesCts = new();
+    private CancellationTokenSource _apiKeysCts = new();
 
     public CancellationToken GetTitulosToken() => _titulosCts.Token;
     public CancellationToken GetPrecosToken() => _precosCts.Token;
     public CancellationToken GetTributosToken() => _tributosCts.Token;
     public CancellationToken GetFeriadosToken() => _feriadosCts.Token;
     public CancellationToken GetProjecoesToken() => _projecoesCts.Token;
+    public CancellationToken GetApiKeysToken() => _apiKeysCts.Token;
 
     public void InvalidateTitulos() => Invalidate(ref _titulosCts);
     public void InvalidatePrecos() => Invalidate(ref _precosCts);
     public void InvalidateTributos() => Invalidate(ref _tributosCts);
     public void InvalidateFeriados() => Invalidate(ref _feriadosCts);
     public void InvalidateProjecoes() => Invalidate(ref _projecoesCts);
+    public void InvalidateApiKeys() => Invalidate(ref _apiKeysCts);
 
     private static void Invalidate(ref CancellationTokenSource cts)
     {
