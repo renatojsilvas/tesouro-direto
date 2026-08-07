@@ -2,6 +2,7 @@ using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Primitives;
+using TesouroDireto.Application.ApiKeys;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Importacao;
 using TesouroDireto.Application.Tributos;
@@ -111,6 +112,35 @@ public sealed class CacheInvalidationBehaviorTests : IDisposable
             CancellationToken.None);
 
         _cache.TryGetValue("tributos:ativos", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GenerateApiKeyCommand_Success_ShouldInvalidateApiKeys()
+    {
+        var behavior = CreateBehavior<GenerateApiKeyCommand, Result<GeneratedApiKeyDto>>();
+        SetCacheEntry("apikey:abc", _invalidator.GetApiKeysToken());
+
+        var dto = new GeneratedApiKeyDto(Guid.NewGuid(), "Sistema", "td_abcdef", "td_abcdefghij", DateTimeOffset.UtcNow);
+        await behavior.Handle(
+            new GenerateApiKeyCommand(Guid.NewGuid(), "Sistema"),
+            _ => Task.FromResult(Result<GeneratedApiKeyDto>.Success(dto)),
+            CancellationToken.None);
+
+        _cache.TryGetValue("apikey:abc", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RevokeApiKeyCommand_Success_ShouldInvalidateApiKeys()
+    {
+        var behavior = CreateBehavior<RevokeApiKeyCommand, Result>();
+        SetCacheEntry("apikey:abc", _invalidator.GetApiKeysToken());
+
+        await behavior.Handle(
+            new RevokeApiKeyCommand(Guid.NewGuid(), Guid.NewGuid()),
+            _ => Task.FromResult(Result.Success()),
+            CancellationToken.None);
+
+        _cache.TryGetValue("apikey:abc", out _).Should().BeFalse();
     }
 
     [Fact]

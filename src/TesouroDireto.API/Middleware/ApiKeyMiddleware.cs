@@ -12,6 +12,10 @@ namespace TesouroDireto.API.Middleware;
 
 public sealed class ApiKeyMiddleware
 {
+    public const string IdentityKindItemsKey = "ApiKeyIdentityKind";
+    public const string ServiceIdentityKind = "service";
+    public const string ClientIdentityKind = "client";
+
     private const string ApiKeyHeader = "X-Api-Key";
     private const string ServiceIdentity = "service";
     private const string UnknownIdentity = "unknown";
@@ -50,7 +54,7 @@ public sealed class ApiKeyMiddleware
 
         if (IsKeyValid(providedKey, _configuredKey))
         {
-            await AuthorizeAsync(context, ServiceIdentity);
+            await AuthorizeAsync(context, ServiceIdentity, ServiceIdentityKind);
             return;
         }
 
@@ -64,14 +68,15 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
-        await AuthorizeAsync(context, clienteId);
+        await AuthorizeAsync(context, clienteId, ClientIdentityKind);
     }
 
-    private async Task AuthorizeAsync(HttpContext context, string clienteId)
+    private async Task AuthorizeAsync(HttpContext context, string clienteId, string identityKind)
     {
         var diagnosticContext = context.RequestServices.GetRequiredService<IDiagnosticContext>();
         var metrics = context.RequestServices.GetRequiredService<IApiKeyMetrics>();
 
+        context.Items[IdentityKindItemsKey] = identityKind;
         diagnosticContext.Set(ClienteIdProperty, clienteId);
         metrics.RecordRequest(clienteId, AuthorizedOutcome);
 

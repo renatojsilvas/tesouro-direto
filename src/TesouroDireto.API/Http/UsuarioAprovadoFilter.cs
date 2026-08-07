@@ -1,13 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using TesouroDireto.Application.Usuarios;
-using TesouroDireto.Domain.Usuarios;
 
 namespace TesouroDireto.API.Http;
 
-public sealed class AdminOnlyFilter : IEndpointFilter
+public sealed class UsuarioAprovadoFilter : IEndpointFilter
 {
-    public const string ActingUserSubHeader = "X-Acting-User-Sub";
-    public const string AdminUsuarioItemsKey = "AdminUsuario";
+    public const string UsuarioAprovadoItemsKey = "UsuarioAprovado";
 
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
@@ -19,7 +17,7 @@ public sealed class AdminOnlyFilter : IEndpointFilter
             return Results.Empty;
         }
 
-        if (!httpContext.Request.Headers.TryGetValue(ActingUserSubHeader, out var subHeader)
+        if (!httpContext.Request.Headers.TryGetValue(AdminOnlyFilter.ActingUserSubHeader, out var subHeader)
             || string.IsNullOrWhiteSpace(subHeader))
         {
             await WriteForbiddenAsync(httpContext);
@@ -29,13 +27,13 @@ public sealed class AdminOnlyFilter : IEndpointFilter
         var repository = httpContext.RequestServices.GetRequiredService<IUsuarioWriteRepository>();
         var result = await repository.GetByGoogleSubAsync(subHeader.ToString(), httpContext.RequestAborted);
 
-        if (result.IsFailure || result.Value.Papel != PapelUsuario.Admin || !result.Value.Aprovado || !result.Value.Ativo)
+        if (result.IsFailure || !result.Value.Aprovado || !result.Value.Ativo)
         {
             await WriteForbiddenAsync(httpContext);
             return Results.Empty;
         }
 
-        httpContext.Items[AdminUsuarioItemsKey] = result.Value;
+        httpContext.Items[UsuarioAprovadoItemsKey] = result.Value;
 
         return await next(context);
     }

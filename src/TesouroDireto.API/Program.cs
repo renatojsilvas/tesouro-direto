@@ -43,6 +43,7 @@ app.MapImportacaoEndpoints();
 app.MapTituloEndpoints();
 app.MapConfiguracaoEndpoints();
 app.MapUsuarioEndpoints();
+app.MapApiKeyEndpoints();
 app.MapSimuladorEndpoints();
 app.MapMetrics();
 

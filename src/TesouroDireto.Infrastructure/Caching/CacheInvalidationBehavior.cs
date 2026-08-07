@@ -1,4 +1,5 @@
 using MediatR;
+using TesouroDireto.Application.ApiKeys;
 using TesouroDireto.Application.Feriados;
 using TesouroDireto.Application.Importacao;
 using TesouroDireto.Application.Tributos;
@@ -41,6 +42,10 @@ public sealed class CacheInvalidationBehavior<TRequest, TResponse>(
             case UpdateTributoCommand:
             case SeedTributosCommand:
                 invalidator.InvalidateTributos();
+                break;
+            case GenerateApiKeyCommand:
+            case RevokeApiKeyCommand:
+                invalidator.InvalidateApiKeys();
                 break;
         }
     }
