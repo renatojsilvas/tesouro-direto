@@ -22,6 +22,7 @@ public sealed class Usuario : Entity<Guid>
         Nome = nome;
         Papel = papel;
         Aprovado = false;
+        Ativo = true;
         CriadoEm = criadoEm;
     }
 
@@ -30,6 +31,7 @@ public sealed class Usuario : Entity<Guid>
     public string Nome { get; }
     public PapelUsuario Papel { get; private set; }
     public bool Aprovado { get; private set; }
+    public bool Ativo { get; private set; }
     public DateTimeOffset CriadoEm { get; }
     public DateTimeOffset? AprovadoEm { get; private set; }
     public Guid? AprovadoPor { get; private set; }
@@ -53,9 +55,19 @@ public sealed class Usuario : Entity<Guid>
 
     public void Aprovar(Guid adminId, DateTimeOffset quando)
     {
+        if (Aprovado)
+        {
+            return;
+        }
+
         Aprovado = true;
         AprovadoEm = quando;
         AprovadoPor = adminId;
+    }
+
+    public void Desativar()
+    {
+        Ativo = false;
     }
 
     public bool GarantirAdminAprovado(DateTimeOffset quando)

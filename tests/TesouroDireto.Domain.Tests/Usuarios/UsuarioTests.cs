@@ -23,6 +23,7 @@ public sealed class UsuarioTests
         result.Value.AprovadoPor.Should().BeNull();
         result.Value.GoogleSub.Should().BeNull();
         result.Value.Id.Should().NotBe(Guid.Empty);
+        result.Value.Ativo.Should().BeTrue();
     }
 
     [Theory]
@@ -66,6 +67,31 @@ public sealed class UsuarioTests
         usuario.Aprovado.Should().BeTrue();
         usuario.AprovadoEm.Should().Be(quando);
         usuario.AprovadoPor.Should().Be(adminId);
+    }
+
+    [Fact]
+    public void Aprovar_WhenAlreadyAprovado_ShouldBeNoOpAndKeepOriginalAuditFields()
+    {
+        var usuario = Usuario.Create(ValidEmail, "Fulano", PapelUsuario.User, CriadoEm).Value;
+        var primeiroAdminId = Guid.NewGuid();
+        var primeiraAprovacao = CriadoEm.AddDays(1);
+        usuario.Aprovar(primeiroAdminId, primeiraAprovacao);
+
+        usuario.Aprovar(Guid.NewGuid(), CriadoEm.AddDays(5));
+
+        usuario.Aprovado.Should().BeTrue();
+        usuario.AprovadoEm.Should().Be(primeiraAprovacao);
+        usuario.AprovadoPor.Should().Be(primeiroAdminId);
+    }
+
+    [Fact]
+    public void Desativar_ShouldSetAtivoFalse()
+    {
+        var usuario = Usuario.Create(ValidEmail, "Fulano", PapelUsuario.User, CriadoEm).Value;
+
+        usuario.Desativar();
+
+        usuario.Ativo.Should().BeFalse();
     }
 
     [Fact]

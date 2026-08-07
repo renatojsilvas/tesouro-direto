@@ -90,6 +90,7 @@ public static class DependencyInjection
                 sp.GetRequiredService<IConfiguration>()));
 
         services.AddScoped<IUsuarioWriteRepository, UsuarioWriteRepository>();
+        services.AddScoped<IUsuarioReadRepository, UsuarioReadRepository>();
         services.AddScoped<IApiKeyWriteRepository, ApiKeyWriteRepository>();
         services.AddScoped<ApiKeyReadRepository>();
         services.AddScoped<IApiKeyReadRepository>(sp =>

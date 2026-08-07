@@ -8,4 +8,7 @@ public static class UsuarioErrors
     public static readonly Error InvalidNome = new("Usuario.InvalidNome", "Nome must not be empty.");
     public static readonly Error AlreadyExists = new("Usuario.AlreadyExists", "Usuario already exists with same email.", ErrorType.Conflict);
     public static readonly Error GoogleSubJaVinculado = new("Usuario.GoogleSubJaVinculado", "Google sub is already linked to this usuario.");
+    public static readonly Error EmailNaoVerificado = new("Usuario.EmailNaoVerificado", "Email must be verified by the identity provider.");
+    public static readonly Error GoogleSubObrigatorio = new("Usuario.GoogleSubObrigatorio", "GoogleSub must not be empty.");
+    public static readonly Error FiltroPendentesObrigatorio = new("Usuario.FiltroPendentesObrigatorio", "Query parameter 'pendentes' must be true.");
 }
