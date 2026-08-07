@@ -78,6 +78,7 @@ Cada tarefa tem: **Escopo** (o que fazer) · **Arquivos** · **Risco** (o que po
 | 65 | Telas Web: "Minhas API Keys" (self-service) + "Admin" (aprovação) | Médio (DX) | Médio-baixo | 🟡 |
 | 66 | Rate limit por cliente em memória (60/min; 429 problem+json + `Retry-After`; gancho Redis) | Médio (proteção) | Médio-baixo | 🟡 |
 | 67 | Limiter por IP nas falhas de autenticação (anti-DoS do hot path) | Médio (segurança) | Baixo | 🟢 |
+| 68 | Portabilidade do `run-e2e.sh` — trocar `timeout` (ausente no macOS) por espera portável, para o E2E local não dar falso-verde | Baixo (DX/tooling) | Baixo | 🟡 |
 
 ---
 
@@ -806,6 +807,13 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
 - **Arquivos:** `API/Middleware/ApiKeyMiddleware.cs` (contabiliza a falha) + `API/Program.cs` (política).
 - **Risco:** baixo — depende da **61**. Confiar em `X-Forwarded-For` só atrás do nginx (rede interna).
 - **Verificação:** integração: N falhas seguidas do mesmo IP ⇒ 429; request com key **válida** do mesmo IP **não** é bloqueada.
+
+### 68. Portabilidade do `run-e2e.sh` (dev tooling) 🟡
+> Recorrente: o script usa `timeout` nas esperas de saúde da API/Web; no **macOS `timeout` não existe** (`command not found`), então a espera falha e o script encerra **sem rodar o Playwright** — um **falso-verde** (o CWD/echo mascara o rc). Já reincidiu em várias tarefas (registrado nas notas de Feito da 52 e na memória [[project_followup_run_e2e_teardown_bug]]); a "correção" da 41 na verdade *introduziu* o `timeout`. Descoberto de novo ao verificar a **64** (rodei uma espera portável à mão para provar a consulta anônima).
+- **Escopo:** substituir `timeout 120 bash -c 'until …'` por um laço de espera **portável** (ex.: `until curl -sf …; do sleep 2; n=$((n+1)); [ $n -gt 60 ] && exit 1; done`) para API e Web — sem depender de `timeout`/`gtimeout`. Manter o `trap cleanup`/paths absolutos já corretos (não regredir o fix do PR #16). Opcional: detectar `gtimeout` e usá-lo se presente.
+- **Arquivos:** `run-e2e.sh` (e conferir que o job `e2e` do `.github/workflows/deploy.yml`, que chama o script, segue verde no Linux).
+- **Risco:** baixo — só tooling; não toca código de produção. **Cuidado:** o job `e2e` só roda em `push`→`main` (não em PR), então a mudança só é exercitada pelo CI **após merge** (mesma ressalva da 41).
+- **Verificação:** rodar `./run-e2e.sh` no macOS de ponta a ponta (Playwright executa, não falso-verde) **e** confirmar que o run pós-merge no CI Linux segue verde.
 
 ---
 
