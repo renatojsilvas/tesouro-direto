@@ -5,6 +5,7 @@ using TesouroDireto.API.Http;
 using TesouroDireto.Application.PrecosTaxas;
 using TesouroDireto.Application.Simulador;
 using TesouroDireto.Application.Tributos;
+using TesouroDireto.Application.Usuarios;
 using TesouroDireto.Web.Contracts;
 using TesouroDireto.Web.Services;
 
@@ -26,6 +27,8 @@ public sealed class ContractParityTests
         [typeof(TributoItem)] = typeof(TributoDto),
         [typeof(FaixaItem)] = typeof(FaixaDto),
         [typeof(CenarioResult)] = typeof(CenarioResultadoDto),
+        [typeof(UsuarioPendenteItem)] = typeof(UsuarioPendenteDto),
+        [typeof(UsuarioSyncResult)] = typeof(UsuarioSyncDto),
     };
 
     [Fact]

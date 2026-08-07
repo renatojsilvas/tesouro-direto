@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using TesouroDireto.Application.Usuarios;
 using TesouroDireto.Domain.Common;
 using TesouroDireto.Domain.Usuarios;
@@ -19,6 +20,31 @@ public sealed class UsuarioWriteRepository(AppDbContext dbContext) : IUsuarioWri
 
         await dbContext.Usuarios.AddAsync(usuario, cancellationToken);
         return Result.Success();
+    }
+
+    public async Task<Result<Usuario>> AddOrGetExistingAsync(Usuario usuario, CancellationToken cancellationToken)
+    {
+        await dbContext.Usuarios.AddAsync(usuario, cancellationToken);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Result<Usuario>.Success(usuario);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            dbContext.Entry(usuario).State = EntityState.Detached;
+
+            var existente = usuario.GoogleSub is not null
+                ? await dbContext.Usuarios.FirstOrDefaultAsync(u => u.GoogleSub == usuario.GoogleSub, cancellationToken)
+                : null;
+
+            existente ??= await dbContext.Usuarios.FirstOrDefaultAsync(u => u.Email == usuario.Email, cancellationToken);
+
+            return existente is not null
+                ? Result<Usuario>.Success(existente)
+                : Result<Usuario>.Failure(UsuarioErrors.NotFound);
+        }
     }
 
     public Task<Result> UpdateAsync(Usuario usuario, CancellationToken cancellationToken)

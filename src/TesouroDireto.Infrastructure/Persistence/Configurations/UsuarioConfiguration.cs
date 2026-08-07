@@ -44,6 +44,11 @@ public sealed class UsuarioConfiguration : IEntityTypeConfiguration<Usuario>
             .HasColumnName("aprovado")
             .IsRequired();
 
+        builder.Property(u => u.Ativo)
+            .HasColumnName("ativo")
+            .IsRequired()
+            .HasDefaultValue(true);
+
         builder.Property(u => u.CriadoEm)
             .HasColumnName("criado_em")
             .IsRequired();

@@ -179,6 +179,40 @@ public sealed class UsuarioRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AddOrGetExistingAsync_WhenGoogleSubAlreadyPersisted_ShouldReturnExistingInsteadOfThrowing()
+    {
+        var existente = NovoUsuario("concorrente@exemplo.com", "sub-concorrente");
+        await _repository.AddAsync(existente, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+        _dbContext.ChangeTracker.Clear();
+
+        var concorrente = NovoUsuario("outro-email@exemplo.com", "sub-concorrente");
+
+        var result = await _repository.AddOrGetExistingAsync(concorrente, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(existente.Id);
+
+        var total = await _dbContext.Usuarios.CountAsync(u => u.GoogleSub == "sub-concorrente", CancellationToken.None);
+        total.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task AddOrGetExistingAsync_WhenNoConflict_ShouldPersistAndReturnCreatedUsuario()
+    {
+        var usuario = NovoUsuario("sem-conflito@exemplo.com", "sub-sem-conflito");
+
+        var result = await _repository.AddOrGetExistingAsync(usuario, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(usuario.Id);
+
+        _dbContext.ChangeTracker.Clear();
+        var found = await _dbContext.Usuarios.FirstOrDefaultAsync(u => u.Id == usuario.Id, CancellationToken.None);
+        found.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task Aprovar_ShouldAllowSelfReferencingAprovadoPor()
     {
         var admin = NovoUsuario("admin-self@exemplo.com");

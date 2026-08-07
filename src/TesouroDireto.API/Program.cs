@@ -42,6 +42,7 @@ app.MapGet("/", () => "Hello World!").ExcludeFromDescription();
 app.MapImportacaoEndpoints();
 app.MapTituloEndpoints();
 app.MapConfiguracaoEndpoints();
+app.MapUsuarioEndpoints();
 app.MapSimuladorEndpoints();
 app.MapMetrics();
 
