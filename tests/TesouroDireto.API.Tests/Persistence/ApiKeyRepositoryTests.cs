@@ -190,6 +190,46 @@ public sealed class ApiKeyRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetActiveByHashAsync_WhenActive_ShouldReturnDto()
+    {
+        var apiKey = NovaApiKey("chave-ativa");
+        await _writeRepository.AddAsync(apiKey, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetActiveByHashAsync(ApiKeyHash.FromRawKey("chave-ativa").Value, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(apiKey.Id);
+        result.Value.Ativa.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetActiveByHashAsync_WhenRevoked_ShouldReturnNotFound()
+    {
+        var apiKey = NovaApiKey("chave-revogada-lookup");
+        await _writeRepository.AddAsync(apiKey, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        apiKey.Revogar(new DateTimeOffset(2026, 8, 8, 10, 0, 0, TimeSpan.Zero));
+        await _writeRepository.UpdateAsync(apiKey, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetActiveByHashAsync(ApiKeyHash.FromRawKey("chave-revogada-lookup").Value, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("ApiKey.NotFound");
+    }
+
+    [Fact]
+    public async Task GetActiveByHashAsync_WhenNotFound_ShouldReturnNotFound()
+    {
+        var result = await _readRepository.GetActiveByHashAsync(ApiKeyHash.FromRawKey("chave-inexistente-ativa").Value, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("ApiKey.NotFound");
+    }
+
+    [Fact]
     public async Task ListByDonoAsync_ShouldReturnAllKeysOfDono()
     {
         var apiKey1 = NovaApiKey("chave-lista-1");

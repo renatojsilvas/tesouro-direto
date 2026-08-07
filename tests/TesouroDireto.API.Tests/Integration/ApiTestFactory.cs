@@ -120,6 +120,7 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         invalidator.InvalidateTributos();
         invalidator.InvalidateFeriados();
         invalidator.InvalidateProjecoes();
+        invalidator.InvalidateApiKeys();
 
         BcbResponder = null;
     }

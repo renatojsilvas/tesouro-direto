@@ -66,6 +66,17 @@ public sealed class MemoryCacheInvalidatorTests
     }
 
     [Fact]
+    public void InvalidateApiKeys_ShouldCancelPreviousToken()
+    {
+        var token = _invalidator.GetApiKeysToken();
+
+        _invalidator.InvalidateApiKeys();
+
+        token.IsCancellationRequested.Should().BeTrue();
+        _invalidator.GetApiKeysToken().IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
     public void InvalidateTitulos_ShouldExpireCacheEntries()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());

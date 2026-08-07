@@ -35,6 +35,28 @@ public sealed class ApiKeyReadRepository(NpgsqlDataSource dataSource) : IApiKeyR
         return Result<ApiKeyDto>.Success(row.ToDto());
     }
 
+    public async Task<Result<ApiKeyDto>> GetActiveByHashAsync(string hash, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        var row = await connection.QueryFirstOrDefaultAsync<ApiKeyDtoRow>(
+            new CommandDefinition(
+                """
+                SELECT id, nome, prefixo, dono_usuario_id, ativa, criada_em, ultimo_uso_em
+                FROM api_keys
+                WHERE hash = @Hash AND ativa
+                """,
+                new { Hash = hash },
+                cancellationToken: cancellationToken));
+
+        if (row is null)
+        {
+            return Result<ApiKeyDto>.Failure(ApiKeyErrors.NotFound);
+        }
+
+        return Result<ApiKeyDto>.Success(row.ToDto());
+    }
+
     public async Task<Result<IReadOnlyCollection<ApiKeyDto>>> ListByDonoAsync(Guid donoUsuarioId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);

@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddSingleton<MemoryCacheInvalidator>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(MetricsBehavior<,>));
         services.AddSingleton<IBusinessMetrics, BusinessMetrics>();
+        services.AddSingleton<IApiKeyMetrics, ApiKeyMetrics>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
 
         services.AddScoped<ITituloWriteRepository, TituloWriteRepository>();
@@ -90,7 +91,13 @@ public static class DependencyInjection
 
         services.AddScoped<IUsuarioWriteRepository, UsuarioWriteRepository>();
         services.AddScoped<IApiKeyWriteRepository, ApiKeyWriteRepository>();
-        services.AddScoped<IApiKeyReadRepository, ApiKeyReadRepository>();
+        services.AddScoped<ApiKeyReadRepository>();
+        services.AddScoped<IApiKeyReadRepository>(sp =>
+            new CachedApiKeyReadRepository(
+                sp.GetRequiredService<ApiKeyReadRepository>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<MemoryCacheInvalidator>(),
+                sp.GetRequiredService<IConfiguration>()));
 
         services.AddScoped<IDiasUteisService, DiasUteisService>();
 
