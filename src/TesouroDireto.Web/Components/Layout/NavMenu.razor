@@ -1,3 +1,5 @@
+@inject TesouroDireto.Web.Services.GoogleAuthAvailability GoogleAuthAvailability
+
 <div class="sidebar-header">
     <a class="brand" href="">
         <span class="brand-icon">
@@ -97,5 +99,29 @@
                 About
             </NavLink>
         </div>
+
+        <div class="nav-section-label">Conta</div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <span class="nav-link">@(context.User.Identity?.Name ?? context.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value)</span>
+                </div>
+                <div class="nav-item px-3">
+                    <form method="post" action="/auth/logout">
+                        <AntiforgeryToken />
+                        <button type="submit" class="nav-link btn btn-link p-0 text-start">Sair</button>
+                    </form>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                @if (GoogleAuthAvailability.Configurado)
+                {
+                    <div class="nav-item px-3">
+                        <a class="nav-link" href="/auth/login">Entrar com Google</a>
+                    </div>
+                }
+            </NotAuthorized>
+        </AuthorizeView>
     </nav>
 </div>

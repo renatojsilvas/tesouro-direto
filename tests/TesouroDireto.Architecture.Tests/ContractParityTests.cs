@@ -9,6 +9,7 @@ using TesouroDireto.Application.Tributos;
 using TesouroDireto.Application.Usuarios;
 using TesouroDireto.Web.Contracts;
 using TesouroDireto.Web.Services;
+using ApiSyncUsuarioRequest = TesouroDireto.API.Contracts.SyncUsuarioRequest;
 
 namespace TesouroDireto.Architecture.Tests;
 
@@ -32,6 +33,7 @@ public sealed class ContractParityTests
         [typeof(UsuarioSyncResult)] = typeof(UsuarioSyncDto),
         [typeof(ApiKeyItem)] = typeof(ApiKeyDto),
         [typeof(GeneratedApiKeyResult)] = typeof(GeneratedApiKeyDto),
+        [typeof(SyncUsuarioRequest)] = typeof(ApiSyncUsuarioRequest),
     };
 
     [Fact]
