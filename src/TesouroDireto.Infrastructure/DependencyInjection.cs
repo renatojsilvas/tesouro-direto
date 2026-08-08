@@ -181,6 +181,17 @@ public static class DependencyInjection
                 : new InMemoryRateLimitStore(sp.GetRequiredService<RateLimitingOptions>());
         });
 
+        services.AddSingleton(sp =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var permitLimit = config.GetValue<int?>("RateLimiting:AuthFailure:PermitLimit") ?? 10;
+            var windowSeconds = config.GetValue<int?>("RateLimiting:AuthFailure:WindowSeconds") ?? 60;
+            return new AuthFailureRateLimitingOptions(permitLimit, TimeSpan.FromSeconds(windowSeconds));
+        });
+
+        services.AddSingleton<IAuthFailureRateLimiter>(sp =>
+            new InMemoryAuthFailureRateLimiter(sp.GetRequiredService<AuthFailureRateLimitingOptions>()));
+
         return services;
     }
 

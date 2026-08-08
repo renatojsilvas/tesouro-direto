@@ -18,6 +18,7 @@ using TesouroDireto.Application.ApiKeys;
 using TesouroDireto.Domain.ApiKeys;
 using TesouroDireto.Domain.Common;
 using TesouroDireto.Infrastructure.Observability;
+using TesouroDireto.Infrastructure.RateLimiting;
 
 namespace TesouroDireto.API.Tests.Middleware;
 
@@ -356,7 +357,10 @@ public sealed class ApiKeyMiddlewareLogContextTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["ApiKey:Key"] = ServiceKey })
             .Build();
 
-        return new ApiKeyMiddleware(next, configuration, NullLogger<ApiKeyMiddleware>.Instance);
+        var authFailureLimiter = new InMemoryAuthFailureRateLimiter(
+            new AuthFailureRateLimitingOptions(1000, TimeSpan.FromMinutes(1)));
+
+        return new ApiKeyMiddleware(next, configuration, NullLogger<ApiKeyMiddleware>.Instance, authFailureLimiter);
     }
 
     private static IReadOnlyDictionary<string, LogEventPropertyValue> CaptureLogContextProperties()
