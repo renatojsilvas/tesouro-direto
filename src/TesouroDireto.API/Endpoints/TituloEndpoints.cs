@@ -106,6 +106,7 @@ public static class TituloEndpoints
             int? page,
             int? pageSize,
             HttpContext httpContext,
+            LinkGenerator linkGenerator,
             ISender sender,
             CancellationToken cancellationToken) =>
         {
@@ -120,7 +121,7 @@ public static class TituloEndpoints
                 if (page is not null)
                 {
                     httpContext.Response.Headers["Link"] =
-                        BuildPaginationLinkHeader(codigo, page, pageSize, paged.TotalCount);
+                        BuildPaginationLinkHeader(httpContext, linkGenerator, codigo, page, pageSize, paged.TotalCount);
                 }
 
                 return Results.Ok(paged.Items);
@@ -160,13 +161,22 @@ public static class TituloEndpoints
         .ProducesProblem(StatusCodes.Status404NotFound);
     }
 
-    private static string BuildPaginationLinkHeader(string codigo, int? page, int? pageSize, int totalCount)
+    private static string BuildPaginationLinkHeader(
+        HttpContext httpContext,
+        LinkGenerator linkGenerator,
+        string codigo,
+        int? page,
+        int? pageSize,
+        int totalCount)
     {
         var (normalizedPage, effectivePageSize) = PaginationDefaults.Normalize(page, pageSize);
         var lastPage = Math.Max(1, (int)Math.Ceiling(totalCount / (double)effectivePageSize));
         var effectivePage = Math.Min(normalizedPage, lastPage);
 
-        string Href(int targetPage) => $"/titulos/{codigo}/precos?page={targetPage}&pageSize={effectivePageSize}";
+        string Href(int targetPage) => linkGenerator.GetPathByName(
+            httpContext,
+            "GetPrecosPorCodigo",
+            new { codigo, page = targetPage, pageSize = effectivePageSize })!;
 
         var links = new List<string> { $"<{Href(1)}>; rel=\"first\"" };
 
