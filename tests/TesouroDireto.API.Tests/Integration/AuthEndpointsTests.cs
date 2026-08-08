@@ -16,7 +16,7 @@ public sealed class AuthEndpointsTests(ApiTestFactory factory) : IAsyncLifetime
     [Fact]
     public async Task GetTitulos_WithoutApiKey_ShouldReturn401()
     {
-        var response = await _client.GetAsync("/titulos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -24,7 +24,7 @@ public sealed class AuthEndpointsTests(ApiTestFactory factory) : IAsyncLifetime
     [Fact]
     public async Task PostSimulador_WithInvalidApiKey_ShouldReturn401()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/simulador")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/simulador")
         {
             Content = JsonContent.Create(new
             {
@@ -45,7 +45,7 @@ public sealed class AuthEndpointsTests(ApiTestFactory factory) : IAsyncLifetime
     [Fact]
     public async Task GetConfiguracoesTributos_WithoutApiKey_ShouldReturn401()
     {
-        var response = await _client.GetAsync("/configuracoes/tributos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/configuracoes/tributos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

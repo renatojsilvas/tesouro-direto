@@ -92,7 +92,7 @@ public sealed class FocusBcbCircuitBreakerEndpointTests : IAsyncLifetime
             };
         };
 
-        var first = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
+        var first = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(codigo), CancellationToken.None);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
         calls.Should().Be(1);
 
@@ -106,14 +106,14 @@ public sealed class FocusBcbCircuitBreakerEndpointTests : IAsyncLifetime
 
         for (var i = 0; i < 3; i++)
         {
-            var response = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
+            var response = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(codigo), CancellationToken.None);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         var callsBeforeLastRequest = calls;
 
-        var last = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
+        var last = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(codigo), CancellationToken.None);
 
         calls.Should().Be(callsBeforeLastRequest);
 

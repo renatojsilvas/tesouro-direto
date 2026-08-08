@@ -78,7 +78,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var titulos = await response.Content.ReadFromJsonAsync<List<TituloDto>>(JsonOptions, CancellationToken.None);
@@ -90,7 +90,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos?indexador=IPCA", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos?indexador=IPCA", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var titulos = await response.Content.ReadFromJsonAsync<List<TituloDto>>(JsonOptions, CancellationToken.None);
@@ -103,7 +103,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos?vencido=true", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos?vencido=true", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var titulos = await response.Content.ReadFromJsonAsync<List<TituloDto>>(JsonOptions, CancellationToken.None);
@@ -116,7 +116,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos?indexador=XPTO", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos?indexador=XPTO", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -127,7 +127,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var ids = await SeedTitulosAsync();
         await SeedPrecosAsync(ids["Selic"]);
 
-        var response = await _client.GetAsync("/titulos/preco-atual?nome=Tesouro Selic 2029", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/preco-atual?nome=Tesouro Selic 2029", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -137,7 +137,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/preco-atual?nome=Tesouro Inexistente 2099", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/preco-atual?nome=Tesouro Inexistente 2099", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -148,7 +148,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var ids = await SeedTitulosAsync();
         await SeedPrecosAsync(ids["Selic"]);
 
-        var response = await _client.GetAsync("/titulos/precos?nome=Tesouro Selic 2029", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/precos?nome=Tesouro Selic 2029", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
@@ -161,7 +161,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/precos?nome=Tesouro Inexistente 2099", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/precos?nome=Tesouro Inexistente 2099", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -171,7 +171,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/preco-atual?nome=", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/preco-atual?nome=", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -186,7 +186,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/precos?nome=", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/precos?nome=", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -201,7 +201,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var titulos = await response.Content.ReadFromJsonAsync<List<TituloDto>>(JsonOptions, CancellationToken.None);
@@ -218,7 +218,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var ids = await SeedTitulosAsync();
         await SeedPrecosAsync(ids["Selic"]);
 
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/precos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2029-03-01/precos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
@@ -231,7 +231,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-13-40/precos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2029-13-40/precos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -246,7 +246,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2099-01-01/precos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2099-01-01/precos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -257,7 +257,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var ids = await SeedTitulosAsync();
         await SeedPrecosAsync(ids["Selic"]);
 
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-03-01/preco-atual", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2029-03-01/preco-atual", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var dto = await response.Content.ReadFromJsonAsync<PrecoTaxaDto>(JsonOptions, CancellationToken.None);
@@ -270,7 +270,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-13-40/preco-atual", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2029-13-40/preco-atual", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -285,7 +285,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2099-01-01/preco-atual", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2099-01-01/preco-atual", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -296,7 +296,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var ids = await SeedTitulosAsync();
         await SeedPrecosAsync(ids["IPCA"]);
 
-        var response = await _client.GetAsync("/titulos/tesouro-ipca-mais-2035-05-15/precos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-ipca-mais-2035-05-15/precos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
@@ -309,7 +309,7 @@ public sealed class TitulosEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         await SeedTitulosAsync();
 
-        var response = await _client.GetAsync("/titulos/12345678-1234-1234/precos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/12345678-1234-1234/precos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

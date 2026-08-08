@@ -85,18 +85,18 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var pendente = await SeedUsuarioAsync("pendente-fluxo@exemplo.com", "sub-pendente-fluxo", PapelUsuario.User, aprovado: false);
         var paraDesativar = await SeedUsuarioAsync("desativar-fluxo@exemplo.com", "sub-desativar-fluxo", PapelUsuario.User, aprovado: false);
 
-        using var listaInicialRequest = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", admin.GoogleSub);
+        using var listaInicialRequest = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", admin.GoogleSub);
         var listaInicialResponse = await _client.SendAsync(listaInicialRequest, CancellationToken.None);
         listaInicialResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var listaInicial = (await listaInicialResponse.Content.ReadFromJsonAsync<List<UsuarioPendenteDto>>(cancellationToken: CancellationToken.None))!;
         listaInicial.Select(u => u.GoogleSub).Should().Contain([pendente.GoogleSub, paraDesativar.GoogleSub]);
         listaInicial.Select(u => u.GoogleSub).Should().NotContain(admin.GoogleSub);
 
-        using var aprovarRequest = BuildRequest(HttpMethod.Post, $"/admin/usuarios/{pendente.GoogleSub}/aprovar", admin.GoogleSub);
+        using var aprovarRequest = BuildRequest(HttpMethod.Post, $"/v1/admin/usuarios/{pendente.GoogleSub}/aprovar", admin.GoogleSub);
         var aprovarResponse = await _client.SendAsync(aprovarRequest, CancellationToken.None);
         aprovarResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        using var desativarRequest = BuildRequest(HttpMethod.Post, $"/admin/usuarios/{paraDesativar.GoogleSub}/desativar", admin.GoogleSub);
+        using var desativarRequest = BuildRequest(HttpMethod.Post, $"/v1/admin/usuarios/{paraDesativar.GoogleSub}/desativar", admin.GoogleSub);
         var desativarResponse = await _client.SendAsync(desativarRequest, CancellationToken.None);
         desativarResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
@@ -111,7 +111,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var desativadoNoBanco = await db.Usuarios.FirstAsync(u => u.Id == paraDesativar.Id, CancellationToken.None);
         desativadoNoBanco.Ativo.Should().BeFalse();
 
-        using var listaFinalRequest = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", admin.GoogleSub);
+        using var listaFinalRequest = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", admin.GoogleSub);
         var listaFinalResponse = await _client.SendAsync(listaFinalRequest, CancellationToken.None);
         var listaFinal = await listaFinalResponse.Content.ReadFromJsonAsync<List<UsuarioPendenteDto>>(cancellationToken: CancellationToken.None);
         listaFinal!.Select(u => u.GoogleSub).Should().NotContain([pendente.GoogleSub, paraDesativar.GoogleSub, admin.GoogleSub]);
@@ -124,31 +124,31 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var naoAdmin = await SeedUsuarioAsync("nao-admin@exemplo.com", "sub-nao-admin", PapelUsuario.User, aprovado: true);
         var alvo = await SeedUsuarioAsync("alvo-naovazio@exemplo.com", "sub-alvo-naovazio", PapelUsuario.User, aprovado: false);
 
-        using var pendentesComNaoAdmin = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", naoAdmin.GoogleSub);
+        using var pendentesComNaoAdmin = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", naoAdmin.GoogleSub);
         (await _client.SendAsync(pendentesComNaoAdmin, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var aprovarComNaoAdmin = BuildRequest(HttpMethod.Post, $"/admin/usuarios/{alvo.GoogleSub}/aprovar", naoAdmin.GoogleSub);
+        using var aprovarComNaoAdmin = BuildRequest(HttpMethod.Post, $"/v1/admin/usuarios/{alvo.GoogleSub}/aprovar", naoAdmin.GoogleSub);
         (await _client.SendAsync(aprovarComNaoAdmin, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var desativarComNaoAdmin = BuildRequest(HttpMethod.Post, $"/admin/usuarios/{alvo.GoogleSub}/desativar", naoAdmin.GoogleSub);
+        using var desativarComNaoAdmin = BuildRequest(HttpMethod.Post, $"/v1/admin/usuarios/{alvo.GoogleSub}/desativar", naoAdmin.GoogleSub);
         (await _client.SendAsync(desativarComNaoAdmin, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var pendentesComAdmin = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", admin.GoogleSub);
+        using var pendentesComAdmin = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", admin.GoogleSub);
         (await _client.SendAsync(pendentesComAdmin, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using var aprovarComAdmin = BuildRequest(HttpMethod.Post, $"/admin/usuarios/{alvo.GoogleSub}/aprovar", admin.GoogleSub);
+        using var aprovarComAdmin = BuildRequest(HttpMethod.Post, $"/v1/admin/usuarios/{alvo.GoogleSub}/aprovar", admin.GoogleSub);
         (await _client.SendAsync(aprovarComAdmin, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         await RebaixarParaUserAsync(admin.Id);
 
-        using var pendentesComAdminRebaixado = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", admin.GoogleSub);
+        using var pendentesComAdminRebaixado = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", admin.GoogleSub);
         (await _client.SendAsync(pendentesComAdminRebaixado, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]
     public async Task AdminRoutes_WithoutActingUserSubHeader_ShouldReturn403WithProblemJson()
     {
-        using var request = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", actingUserSub: null);
+        using var request = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", actingUserSub: null);
 
         var response = await _client.SendAsync(request, CancellationToken.None);
 
@@ -161,7 +161,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         var adminNaoAprovado = await SeedUsuarioAsync("admin-nao-aprovado@exemplo.com", "sub-admin-nao-aprovado", PapelUsuario.Admin, aprovado: false);
 
-        using var request = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", adminNaoAprovado.GoogleSub);
+        using var request = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", adminNaoAprovado.GoogleSub);
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -172,7 +172,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         var adminInativo = await SeedUsuarioAsync("admin-inativo@exemplo.com", "sub-admin-inativo", PapelUsuario.Admin, aprovado: true, ativo: false);
 
-        using var request = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", adminInativo.GoogleSub);
+        using var request = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", adminInativo.GoogleSub);
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -183,16 +183,16 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         var admin = await SeedUsuarioAsync("admin-filtro@exemplo.com", "sub-admin-filtro", PapelUsuario.Admin, aprovado: true);
 
-        using var semQueryRequest = BuildRequest(HttpMethod.Get, "/admin/usuarios", admin.GoogleSub);
+        using var semQueryRequest = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios", admin.GoogleSub);
         var semQueryResponse = await _client.SendAsync(semQueryRequest, CancellationToken.None);
         semQueryResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         semQueryResponse.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypeNames.Application.ProblemJson);
 
-        using var pendentesFalseRequest = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=false", admin.GoogleSub);
+        using var pendentesFalseRequest = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=false", admin.GoogleSub);
         var pendentesFalseResponse = await _client.SendAsync(pendentesFalseRequest, CancellationToken.None);
         pendentesFalseResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        using var pendentesTrueRequest = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", admin.GoogleSub);
+        using var pendentesTrueRequest = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", admin.GoogleSub);
         var pendentesTrueResponse = await _client.SendAsync(pendentesTrueRequest, CancellationToken.None);
         pendentesTrueResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -202,7 +202,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         var admin = await SeedUsuarioAsync("admin-404@exemplo.com", "sub-admin-404", PapelUsuario.Admin, aprovado: true);
 
-        using var request = BuildRequest(HttpMethod.Post, "/admin/usuarios/sub-nunca-existiu/aprovar", admin.GoogleSub);
+        using var request = BuildRequest(HttpMethod.Post, "/v1/admin/usuarios/sub-nunca-existiu/aprovar", admin.GoogleSub);
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -218,7 +218,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         var admin = await SeedUsuarioAsync("admin-404-desativar@exemplo.com", "sub-admin-404-desativar", PapelUsuario.Admin, aprovado: true);
 
-        using var request = BuildRequest(HttpMethod.Post, "/admin/usuarios/sub-nunca-existiu/desativar", admin.GoogleSub);
+        using var request = BuildRequest(HttpMethod.Post, "/v1/admin/usuarios/sub-nunca-existiu/desativar", admin.GoogleSub);
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -234,7 +234,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var json = """{"Email":"sem-sub@exemplo.com","Nome":"Fulano","EmailVerified":true}""";
         using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        var response = await _client.PostAsync("/admin/usuarios/sync", content, CancellationToken.None);
+        var response = await _client.PostAsync("/v1/admin/usuarios/sync", content, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -251,7 +251,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
         var json = """{"Email":"attacker@evil.com","Nome":"X","EmailVerified":true}""";
         using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        var response = await _client.PostAsync("/admin/usuarios/sync", content, CancellationToken.None);
+        var response = await _client.PostAsync("/v1/admin/usuarios/sync", content, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -272,7 +272,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         var command = new { GoogleSub = "sub-nao-verificado", Email = "nao-verificado@exemplo.com", Nome = "Fulano", EmailVerified = false };
 
-        var response = await _client.PostAsJsonAsync("/admin/usuarios/sync", command, CancellationToken.None);
+        var response = await _client.PostAsJsonAsync("/v1/admin/usuarios/sync", command, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypeNames.Application.ProblemJson);
@@ -287,11 +287,11 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
     {
         var command = new { GoogleSub = "sub-idempotente", Email = "idempotente@exemplo.com", Nome = "Fulano", EmailVerified = true };
 
-        var firstResponse = await _client.PostAsJsonAsync("/admin/usuarios/sync", command, CancellationToken.None);
+        var firstResponse = await _client.PostAsJsonAsync("/v1/admin/usuarios/sync", command, CancellationToken.None);
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var first = await firstResponse.Content.ReadFromJsonAsync<UsuarioSyncDto>(cancellationToken: CancellationToken.None);
 
-        var secondResponse = await _client.PostAsJsonAsync("/admin/usuarios/sync", command, CancellationToken.None);
+        var secondResponse = await _client.PostAsJsonAsync("/v1/admin/usuarios/sync", command, CancellationToken.None);
         secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var second = await secondResponse.Content.ReadFromJsonAsync<UsuarioSyncDto>(cancellationToken: CancellationToken.None);
 
@@ -317,7 +317,7 @@ public sealed class UsuarioEndpointsTests(ApiTestFactory factory) : IAsyncLifeti
             EmailVerified = true
         };
 
-        var response = await _client.PostAsJsonAsync("/admin/usuarios/sync", command, CancellationToken.None);
+        var response = await _client.PostAsJsonAsync("/v1/admin/usuarios/sync", command, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var dto = await response.Content.ReadFromJsonAsync<UsuarioSyncDto>(cancellationToken: CancellationToken.None);

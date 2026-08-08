@@ -48,7 +48,7 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
     {
         await SeedTituloComPrecosAsync(120);
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}/precos", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}/precos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var precos = await response.Content.ReadFromJsonAsync<List<PrecoTaxaDto>>(cancellationToken: CancellationToken.None);
@@ -63,7 +63,7 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
     {
         await SeedTituloComPrecosAsync(120);
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}/precos?page=1&pageSize=50", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}/precos?page=1&pageSize=50", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var precos = await response.Content.ReadFromJsonAsync<List<PrecoTaxaDto>>(cancellationToken: CancellationToken.None);
@@ -74,9 +74,9 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
 
         response.Headers.TryGetValues("Link", out var linkValues).Should().BeTrue();
         var link = linkValues!.Single();
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=1&pageSize=50>; rel=\"first\"");
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=2&pageSize=50>; rel=\"next\"");
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=3&pageSize=50>; rel=\"last\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=1&pageSize=50>; rel=\"first\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=2&pageSize=50>; rel=\"next\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=3&pageSize=50>; rel=\"last\"");
         link.Should().NotContain("rel=\"prev\"");
     }
 
@@ -85,7 +85,7 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
     {
         await SeedTituloComPrecosAsync(120);
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}/precos?page=3&pageSize=50", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}/precos?page=3&pageSize=50", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var precos = await response.Content.ReadFromJsonAsync<List<PrecoTaxaDto>>(cancellationToken: CancellationToken.None);
@@ -96,9 +96,9 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
 
         response.Headers.TryGetValues("Link", out var linkValues).Should().BeTrue();
         var link = linkValues!.Single();
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=1&pageSize=50>; rel=\"first\"");
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=2&pageSize=50>; rel=\"prev\"");
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=3&pageSize=50>; rel=\"last\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=1&pageSize=50>; rel=\"first\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=2&pageSize=50>; rel=\"prev\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=3&pageSize=50>; rel=\"last\"");
         link.Should().NotContain("rel=\"next\"");
     }
 
@@ -107,7 +107,7 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
     {
         await SeedTituloComPrecosAsync(120);
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}/precos?page=2&pageSize=50", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}/precos?page=2&pageSize=50", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var precos = await response.Content.ReadFromJsonAsync<List<PrecoTaxaDto>>(cancellationToken: CancellationToken.None);
@@ -126,7 +126,7 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
     {
         await SeedTituloComPrecosAsync(150);
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}/precos?page=1", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}/precos?page=1", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var precos = await response.Content.ReadFromJsonAsync<List<PrecoTaxaDto>>(cancellationToken: CancellationToken.None);
@@ -138,7 +138,7 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
     {
         await SeedTituloComPrecosAsync(120);
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}/precos?page=10&pageSize=50", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}/precos?page=10&pageSize=50", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var precos = await response.Content.ReadFromJsonAsync<List<PrecoTaxaDto>>(cancellationToken: CancellationToken.None);
@@ -149,9 +149,9 @@ public sealed class PrecosPaginacaoEndpointsTests(ApiTestFactory factory) : IAsy
 
         response.Headers.TryGetValues("Link", out var linkValues).Should().BeTrue();
         var link = linkValues!.Single();
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=1&pageSize=50>; rel=\"first\"");
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=2&pageSize=50>; rel=\"prev\"");
-        link.Should().Contain("</titulos/tesouro-selic-2029-03-01/precos?page=3&pageSize=50>; rel=\"last\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=1&pageSize=50>; rel=\"first\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=2&pageSize=50>; rel=\"prev\"");
+        link.Should().Contain("</v1/titulos/tesouro-selic-2029-03-01/precos?page=3&pageSize=50>; rel=\"last\"");
         link.Should().NotContain("rel=\"next\"");
     }
 }

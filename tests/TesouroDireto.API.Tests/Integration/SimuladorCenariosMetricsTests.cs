@@ -36,7 +36,7 @@ public sealed class SimuladorCenariosMetricsTests(ApiTestFactory factory) : IAsy
 
         var before = await ScrapeSimulationsTotalAsync();
 
-        var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador/cenarios", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,

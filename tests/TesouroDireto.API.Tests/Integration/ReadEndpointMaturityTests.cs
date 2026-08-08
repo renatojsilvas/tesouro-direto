@@ -30,7 +30,7 @@ public sealed class ReadEndpointMaturityTests(ApiTestFactory factory) : IAsyncLi
     [Fact]
     public async Task DeleteTitulos_ShouldReturn405WithAllowHeader()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Delete, "/titulos");
+        using var request = new HttpRequestMessage(HttpMethod.Delete, "/v1/titulos");
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
@@ -45,7 +45,7 @@ public sealed class ReadEndpointMaturityTests(ApiTestFactory factory) : IAsyncLi
     {
         await SeedTituloAsync();
 
-        using var request = new HttpRequestMessage(HttpMethod.Head, "/titulos");
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/v1/titulos");
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -56,7 +56,7 @@ public sealed class ReadEndpointMaturityTests(ApiTestFactory factory) : IAsyncLi
     [Fact]
     public async Task OptionsTitulos_ShouldReturn204WithAllowHeader()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Options, "/titulos");
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/v1/titulos");
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -69,7 +69,7 @@ public sealed class ReadEndpointMaturityTests(ApiTestFactory factory) : IAsyncLi
     [Fact]
     public async Task DeletePrecosByCodigo_ShouldReturn405WithAllowHeader()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Delete, "/titulos/tesouro-selic-2029-03-01/precos");
+        using var request = new HttpRequestMessage(HttpMethod.Delete, "/v1/titulos/tesouro-selic-2029-03-01/precos");
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);

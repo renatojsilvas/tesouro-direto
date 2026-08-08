@@ -58,7 +58,7 @@ public sealed class ApiKeyIdentityGuardTests(ApiTestFactory factory) : IAsyncLif
 
     private async Task<string> GerarClientKeyAsync(Usuario dono, string nome)
     {
-        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/me/keys")
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/me/keys")
         {
             Content = JsonContent.Create(new CreateApiKeyRequest(nome))
         };
@@ -93,16 +93,16 @@ public sealed class ApiKeyIdentityGuardTests(ApiTestFactory factory) : IAsyncLif
         using var attackerClient = factory.CreateClient();
         attackerClient.DefaultRequestHeaders.Add(ApiTestFactory.ApiKeyHeader, clientKey);
 
-        using var listRequest = BuildRequest(HttpMethod.Get, "/me/keys", vitima.GoogleSub);
+        using var listRequest = BuildRequest(HttpMethod.Get, "/v1/me/keys", vitima.GoogleSub);
         var listResponse = await attackerClient.SendAsync(listRequest, CancellationToken.None);
         listResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var createRequest = BuildRequest(HttpMethod.Post, "/me/keys", vitima.GoogleSub);
+        using var createRequest = BuildRequest(HttpMethod.Post, "/v1/me/keys", vitima.GoogleSub);
         createRequest.Content = JsonContent.Create(new CreateApiKeyRequest("Chave Forjada"));
         var createResponse = await attackerClient.SendAsync(createRequest, CancellationToken.None);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/me/keys/{Guid.NewGuid()}/revogar", vitima.GoogleSub);
+        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/v1/me/keys/{Guid.NewGuid()}/revogar", vitima.GoogleSub);
         var revokeResponse = await attackerClient.SendAsync(revokeRequest, CancellationToken.None);
         revokeResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -118,11 +118,11 @@ public sealed class ApiKeyIdentityGuardTests(ApiTestFactory factory) : IAsyncLif
         using var attackerClient = factory.CreateClient();
         attackerClient.DefaultRequestHeaders.Add(ApiTestFactory.ApiKeyHeader, clientKey);
 
-        using var pendentesRequest = BuildRequest(HttpMethod.Get, "/admin/usuarios?pendentes=true", admin.GoogleSub);
+        using var pendentesRequest = BuildRequest(HttpMethod.Get, "/v1/admin/usuarios?pendentes=true", admin.GoogleSub);
         var pendentesResponse = await attackerClient.SendAsync(pendentesRequest, CancellationToken.None);
         pendentesResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var aprovarRequest = BuildRequest(HttpMethod.Post, $"/admin/usuarios/{Guid.NewGuid()}/aprovar", admin.GoogleSub);
+        using var aprovarRequest = BuildRequest(HttpMethod.Post, $"/v1/admin/usuarios/{Guid.NewGuid()}/aprovar", admin.GoogleSub);
         var aprovarResponse = await attackerClient.SendAsync(aprovarRequest, CancellationToken.None);
         aprovarResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -137,7 +137,7 @@ public sealed class ApiKeyIdentityGuardTests(ApiTestFactory factory) : IAsyncLif
         attackerClient.DefaultRequestHeaders.Add(ApiTestFactory.ApiKeyHeader, clientKey);
 
         var command = new { GoogleSub = "sub-forjado", Email = "forjado@exemplo.com", Nome = "Forjado", EmailVerified = true };
-        var response = await attackerClient.PostAsJsonAsync("/admin/usuarios/sync", command, CancellationToken.None);
+        var response = await attackerClient.PostAsJsonAsync("/v1/admin/usuarios/sync", command, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -145,10 +145,10 @@ public sealed class ApiKeyIdentityGuardTests(ApiTestFactory factory) : IAsyncLif
     [Fact]
     public async Task ServiceKey_WithoutActingUserSubHeader_ShouldReturn403OnMeKeysRoutes()
     {
-        using var listRequest = BuildRequest(HttpMethod.Get, "/me/keys", actingUserSub: null);
+        using var listRequest = BuildRequest(HttpMethod.Get, "/v1/me/keys", actingUserSub: null);
         (await _serviceClient.SendAsync(listRequest, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/me/keys/{Guid.NewGuid()}/revogar", actingUserSub: null);
+        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/v1/me/keys/{Guid.NewGuid()}/revogar", actingUserSub: null);
         (await _serviceClient.SendAsync(revokeRequest, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
@@ -157,10 +157,10 @@ public sealed class ApiKeyIdentityGuardTests(ApiTestFactory factory) : IAsyncLif
     {
         var inativo = await SeedUsuarioAsync("inativo-me-keys@exemplo.com", "sub-inativo-me-keys", PapelUsuario.User, aprovado: true, ativo: false);
 
-        using var listRequest = BuildRequest(HttpMethod.Get, "/me/keys", inativo.GoogleSub);
+        using var listRequest = BuildRequest(HttpMethod.Get, "/v1/me/keys", inativo.GoogleSub);
         (await _serviceClient.SendAsync(listRequest, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/me/keys/{Guid.NewGuid()}/revogar", inativo.GoogleSub);
+        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/v1/me/keys/{Guid.NewGuid()}/revogar", inativo.GoogleSub);
         (await _serviceClient.SendAsync(revokeRequest, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
@@ -169,10 +169,10 @@ public sealed class ApiKeyIdentityGuardTests(ApiTestFactory factory) : IAsyncLif
     {
         var pendente = await SeedUsuarioAsync("pendente-me-keys@exemplo.com", "sub-pendente-me-keys", PapelUsuario.User, aprovado: false);
 
-        using var listRequest = BuildRequest(HttpMethod.Get, "/me/keys", pendente.GoogleSub);
+        using var listRequest = BuildRequest(HttpMethod.Get, "/v1/me/keys", pendente.GoogleSub);
         (await _serviceClient.SendAsync(listRequest, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/me/keys/{Guid.NewGuid()}/revogar", pendente.GoogleSub);
+        using var revokeRequest = BuildRequest(HttpMethod.Post, $"/v1/me/keys/{Guid.NewGuid()}/revogar", pendente.GoogleSub);
         (await _serviceClient.SendAsync(revokeRequest, CancellationToken.None)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 }

@@ -42,7 +42,7 @@ public sealed class HateoasLinksEndpointsTests(ApiTestFactory factory) : IAsyncL
     {
         await SeedTituloComPrecoAsync();
 
-        var response = await _client.GetAsync("/titulos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos", CancellationToken.None);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
 
         using var doc = JsonDocument.Parse(body);
@@ -50,12 +50,12 @@ public sealed class HateoasLinksEndpointsTests(ApiTestFactory factory) : IAsyncL
             .First(e => e.GetProperty("codigo").GetString() == Codigo);
 
         var links = item.GetProperty("_links");
-        links.GetProperty("self").GetProperty("href").GetString().Should().Be($"/titulos/{Codigo}");
-        links.GetProperty("precos").GetProperty("href").GetString().Should().Be($"/titulos/{Codigo}/precos");
-        links.GetProperty("preco-atual").GetProperty("href").GetString().Should().Be($"/titulos/{Codigo}/preco-atual");
+        links.GetProperty("self").GetProperty("href").GetString().Should().Be($"/v1/titulos/{Codigo}");
+        links.GetProperty("precos").GetProperty("href").GetString().Should().Be($"/v1/titulos/{Codigo}/precos");
+        links.GetProperty("preco-atual").GetProperty("href").GetString().Should().Be($"/v1/titulos/{Codigo}/preco-atual");
 
         var simular = links.GetProperty("simular");
-        simular.GetProperty("href").GetString().Should().Be("/simulador");
+        simular.GetProperty("href").GetString().Should().Be("/v1/simulador");
         simular.GetProperty("method").GetString().Should().Be("POST");
         simular.GetProperty("templated").GetBoolean().Should().BeTrue();
     }
@@ -65,7 +65,7 @@ public sealed class HateoasLinksEndpointsTests(ApiTestFactory factory) : IAsyncL
     {
         await SeedTituloComPrecoAsync();
 
-        var listResponse = await _client.GetAsync("/titulos", CancellationToken.None);
+        var listResponse = await _client.GetAsync("/v1/titulos", CancellationToken.None);
         var listBody = await listResponse.Content.ReadAsStringAsync(CancellationToken.None);
 
         using var doc = JsonDocument.Parse(listBody);
@@ -86,14 +86,14 @@ public sealed class HateoasLinksEndpointsTests(ApiTestFactory factory) : IAsyncL
     {
         await SeedTituloComPrecoAsync();
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var doc = JsonDocument.Parse(body);
         doc.RootElement.GetProperty("codigo").GetString().Should().Be(Codigo);
         doc.RootElement.GetProperty("_links").GetProperty("self").GetProperty("href").GetString()
-            .Should().Be($"/titulos/{Codigo}");
+            .Should().Be($"/v1/titulos/{Codigo}");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class HateoasLinksEndpointsTests(ApiTestFactory factory) : IAsyncL
     {
         await SeedTituloComPrecoAsync();
 
-        var response = await _client.GetAsync($"/titulos/{Codigo}/precos", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/titulos/{Codigo}/precos", CancellationToken.None);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
 
         using var doc = JsonDocument.Parse(body);
