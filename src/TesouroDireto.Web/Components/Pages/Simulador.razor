@@ -221,7 +221,7 @@
     {
         try
         {
-            titulos = await Api.GetAsync<List<TituloItem>>("titulos?vencido=false");
+            titulos = await Api.GetAsync<List<TituloItem>>("v1/titulos?vencido=false");
         }
         catch
         {
@@ -266,7 +266,7 @@
             var tituloSelecionado = titulos?.FirstOrDefault(t => t.Codigo == selectedTituloCodigo);
             var simularHref = tituloSelecionado?.Links is not null && tituloSelecionado.Links.TryGetValue("simular", out var simularLink)
                 ? simularLink.Href
-                : "simulador";
+                : "v1/simulador";
 
             var result = await Api.PostAsync<SimulacaoResult>(simularHref, request);
 

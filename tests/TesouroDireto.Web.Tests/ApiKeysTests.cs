@@ -39,11 +39,11 @@ public class ApiKeysTests : TestContext
         Func<HttpRequestMessage, HttpResponseMessage>? postResponder = null)
     {
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Get, "me/keys", FakeHttpMessageHandler.JsonResponse(getStatusCode, getResponseJson));
+            .When(HttpMethod.Get, "v1/me/keys", FakeHttpMessageHandler.JsonResponse(getStatusCode, getResponseJson));
 
         if (postResponder is not null)
         {
-            handler.When(HttpMethod.Post, "me/keys", postResponder);
+            handler.When(HttpMethod.Post, "v1/me/keys", postResponder);
         }
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
@@ -92,7 +92,7 @@ public class ApiKeysTests : TestContext
         var handler = ConfigureApi(HttpStatusCode.OK, KeysComItemJson);
         handler.When(
             HttpMethod.Post,
-            "me/keys/33333333-3333-3333-3333-333333333333/revogar",
+            "v1/me/keys/33333333-3333-3333-3333-333333333333/revogar",
             FakeHttpMessageHandler.NoContentResponse());
 
         var cut = RenderComponent<ApiKeys>();

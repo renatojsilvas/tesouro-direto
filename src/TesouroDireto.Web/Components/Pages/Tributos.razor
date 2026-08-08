@@ -222,7 +222,7 @@ else if (!loading)
         loading = true;
         try
         {
-            tributos = await Api.GetAsync<List<TributoItem>>("configuracoes/tributos");
+            tributos = await Api.GetAsync<List<TributoItem>>("v1/configuracoes/tributos");
         }
         catch (Exception ex)
         {
@@ -292,12 +292,12 @@ else if (!loading)
                     ordem = formOrdem,
                     cumulativo = formCumulativo
                 };
-                result = await Api.PostAsync<object>("configuracoes/tributos", body);
+                result = await Api.PostAsync<object>("v1/configuracoes/tributos", body);
             }
             else
             {
                 var body = new { ativo = formAtivo, faixas };
-                result = await Api.PutAsync<object>($"configuracoes/tributos/{editandoId}", body);
+                result = await Api.PutAsync<object>($"v1/configuracoes/tributos/{editandoId}", body);
             }
 
             if (result.IsSuccess)

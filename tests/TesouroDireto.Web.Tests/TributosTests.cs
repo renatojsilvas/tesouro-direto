@@ -11,21 +11,29 @@ public class TributosTests : TestContext
 {
     private const string TributosVazioJson = "[]";
 
+    private const string TributoId = "22222222-2222-2222-2222-222222222222";
+
     private const string TributosComItemJson =
-        """
-        [{"id":"22222222-2222-2222-2222-222222222222","nome":"IOF","baseCalculo":"Rendimento","tipoCalculo":"TabelaDiaria","faixas":[],"ativo":true,"ordem":1,"cumulativo":false}]
+        $$"""
+        [{"id":"{{TributoId}}","nome":"IOF","baseCalculo":"Rendimento","tipoCalculo":"TabelaDiaria","faixas":[],"ativo":true,"ordem":1,"cumulativo":false}]
         """;
 
     private FakeHttpMessageHandler ConfigureApi(
         string getResponseJson,
-        Func<HttpRequestMessage, HttpResponseMessage>? postResponder = null)
+        Func<HttpRequestMessage, HttpResponseMessage>? postResponder = null,
+        Func<HttpRequestMessage, HttpResponseMessage>? putResponder = null)
     {
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Get, "configuracoes/tributos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, getResponseJson));
+            .When(HttpMethod.Get, "v1/configuracoes/tributos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, getResponseJson));
 
         if (postResponder is not null)
         {
-            handler.When(HttpMethod.Post, "configuracoes/tributos", postResponder);
+            handler.When(HttpMethod.Post, "v1/configuracoes/tributos", postResponder);
+        }
+
+        if (putResponder is not null)
+        {
+            handler.When(HttpMethod.Put, $"v1/configuracoes/tributos/{TributoId}", putResponder);
         }
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
@@ -79,5 +87,32 @@ public class TributosTests : TestContext
 
         cut.WaitForAssertion(() =>
             cut.Find(".alert-danger").TextContent.Should().Contain("Nome ja existe"));
+    }
+
+    [Fact]
+    public void SalvarEdicao_QuandoApiDevolveSucesso_EnviaPutParaConfiguracoesTributosDoId()
+    {
+        HttpRequestMessage? requisicaoCapturada = null;
+        ConfigureApi(
+            TributosComItemJson,
+            putResponder: request =>
+            {
+                requisicaoCapturada = request;
+                return FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, "{}");
+            });
+
+        var cut = RenderComponent<Tributos>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=btn-editar]").Should().NotBeNull());
+
+        cut.Find("[data-testid=btn-editar]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=btn-salvar]").Should().NotBeNull());
+        cut.Find("[data-testid=btn-salvar]").Click();
+
+        cut.WaitForAssertion(() =>
+            cut.Find("[data-testid=sucesso]").TextContent.Should().Contain("Tributo atualizado."));
+
+        requisicaoCapturada.Should().NotBeNull();
+        requisicaoCapturada!.Method.Should().Be(HttpMethod.Put);
+        requisicaoCapturada.RequestUri!.AbsolutePath.Trim('/').Should().Be($"v1/configuracoes/tributos/{TributoId}");
     }
 }

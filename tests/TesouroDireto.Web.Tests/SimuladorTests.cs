@@ -23,10 +23,17 @@ public class SimuladorTests : TestContext
         [{"codigo":"tesouro-prefixado-2029-01-01","tipoTitulo":"Tesouro Prefixado","dataVencimento":"2029-01-01","indexador":"Prefixado","pagaJurosSemestrais":false,"vencido":false,"_links":{"simular":{"href":"sim-via-link","method":"POST"}}}]
         """;
 
+    private const string CodigoSemLinkSimular = "tesouro-ipca-2035-05-15";
+
+    private const string TitulosJsonSemLinkSimular =
+        """
+        [{"codigo":"tesouro-ipca-2035-05-15","tipoTitulo":"Tesouro IPCA+","dataVencimento":"2035-05-15","indexador":"IPCA","pagaJurosSemestrais":false,"vencido":false,"_links":{}}]
+        """;
+
     private FakeHttpMessageHandler ConfigureApi(Func<HttpRequestMessage, HttpResponseMessage> postSimuladorResponder)
     {
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Get, "titulos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, TitulosJson))
+            .When(HttpMethod.Get, "v1/titulos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, TitulosJson))
             .When(HttpMethod.Post, "simulador", postSimuladorResponder);
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
@@ -183,7 +190,7 @@ public class SimuladorTests : TestContext
             """;
 
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Get, "titulos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, TitulosJsonComLinkDistinto))
+            .When(HttpMethod.Get, "v1/titulos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, TitulosJsonComLinkDistinto))
             .When(HttpMethod.Post, "sim-via-link", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, corpoSucesso));
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
@@ -193,6 +200,41 @@ public class SimuladorTests : TestContext
 
         cut.WaitForAssertion(() => cut.Find("#titulo").Should().NotBeNull());
         cut.Find("#titulo").Change(CodigoComLinkDistinto);
+        cut.Find("#valorInvestido").Change("1000");
+        cut.Find("#simular").Click();
+
+        cut.WaitForAssertion(() =>
+            cut.Find("[data-testid=resultado]").Should().NotBeNull());
+    }
+
+    [Fact]
+    public void Simular_QuandoTituloNaoTemLinkSimular_UsaFallbackV1Simulador()
+    {
+        const string corpoSucesso =
+            """
+            {
+                "valorInvestido": 1000,
+                "valorBruto": 1200,
+                "rendimentoBruto": 200,
+                "tributosAplicados": [],
+                "totalTributos": 0,
+                "valorLiquido": 1200,
+                "rendimentoLiquido": 200,
+                "cupons": []
+            }
+            """;
+
+        var handler = new FakeHttpMessageHandler()
+            .When(HttpMethod.Get, "v1/titulos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, TitulosJsonSemLinkSimular))
+            .When(HttpMethod.Post, "v1/simulador", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, corpoSucesso));
+
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
+        Services.AddSingleton(new TesouroApiClient(httpClient, new BoundedConditionalGetStore()));
+
+        var cut = RenderComponent<Simulador>();
+
+        cut.WaitForAssertion(() => cut.Find("#titulo").Should().NotBeNull());
+        cut.Find("#titulo").Change(CodigoSemLinkSimular);
         cut.Find("#valorInvestido").Change("1000");
         cut.Find("#simular").Click();
 

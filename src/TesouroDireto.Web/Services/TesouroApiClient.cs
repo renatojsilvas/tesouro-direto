@@ -61,7 +61,7 @@ public sealed class TesouroApiClient(HttpClient httpClient, IConditionalGetStore
     }
 
     public Task<ApiResult<UsuarioSyncResult>> SyncUsuarioAsync(SyncUsuarioRequest request)
-        => PostAsync<UsuarioSyncResult>("/admin/usuarios/sync", request);
+        => PostAsync<UsuarioSyncResult>("v1/admin/usuarios/sync", request);
 
     private async Task<HttpResponseMessage> SendWithBodyAsync(HttpMethod method, string relativeUri, object body, string actingUserSub)
     {

@@ -137,7 +137,7 @@ else
 
         try
         {
-            keys = await Api.GetAsync<List<ApiKeyItem>>("/me/keys", sub);
+            keys = await Api.GetAsync<List<ApiKeyItem>>("v1/me/keys", sub);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
@@ -161,7 +161,7 @@ else
 
         try
         {
-            var result = await Api.PostAsync<GeneratedApiKeyResult>("/me/keys", new { Nome = formNome }, sub);
+            var result = await Api.PostAsync<GeneratedApiKeyResult>("v1/me/keys", new { Nome = formNome }, sub);
 
             if (result.IsSuccess && result.Data is not null)
             {
@@ -185,7 +185,7 @@ else
         erro = null;
         sucesso = null;
 
-        var result = await Api.PostAsync<object>($"/me/keys/{id}/revogar", new { }, sub);
+        var result = await Api.PostAsync<object>($"v1/me/keys/{id}/revogar", new { }, sub);
 
         if (result.IsSuccess)
         {

@@ -83,7 +83,7 @@ else
 
         try
         {
-            pendentes = await Api.GetAsync<List<UsuarioPendenteItem>>("/admin/usuarios?pendentes=true", sub);
+            pendentes = await Api.GetAsync<List<UsuarioPendenteItem>>("v1/admin/usuarios?pendentes=true", sub);
         }
         catch (Exception ex)
         {
@@ -100,7 +100,7 @@ else
         erro = null;
         sucesso = null;
 
-        var result = await Api.PostAsync<object>($"/admin/usuarios/{Uri.EscapeDataString(googleSub)}/aprovar", new { }, sub);
+        var result = await Api.PostAsync<object>($"v1/admin/usuarios/{Uri.EscapeDataString(googleSub)}/aprovar", new { }, sub);
 
         if (result.IsSuccess)
         {
@@ -118,7 +118,7 @@ else
         erro = null;
         sucesso = null;
 
-        var result = await Api.PostAsync<object>($"/admin/usuarios/{Uri.EscapeDataString(googleSub)}/desativar", new { }, sub);
+        var result = await Api.PostAsync<object>($"v1/admin/usuarios/{Uri.EscapeDataString(googleSub)}/desativar", new { }, sub);
 
         if (result.IsSuccess)
         {

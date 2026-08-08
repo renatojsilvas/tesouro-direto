@@ -123,7 +123,7 @@ else if (!loading && selectedTituloCodigo != "")
     {
         try
         {
-            titulos = await Api.GetAsync<List<TituloItem>>("titulos");
+            titulos = await Api.GetAsync<List<TituloItem>>("v1/titulos");
         }
         catch (Exception ex)
         {
