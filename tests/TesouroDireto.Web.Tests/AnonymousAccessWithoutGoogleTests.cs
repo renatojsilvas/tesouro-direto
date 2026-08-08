@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace TesouroDireto.Web.Tests;
 
+[Collection(GoogleConfigCollection.Name)]
 public class AnonymousAccessWithoutGoogleTests
 {
     private sealed class WebSemGoogleFactory : WebApplicationFactory<Program>
