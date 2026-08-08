@@ -1,7 +1,14 @@
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Program).Assembly">
         <Found Context="routeData">
-            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    <p data-testid="nao-autorizado">
+                        Você precisa entrar para acessar esta página.
+                        <a href="/auth/login">Entrar</a>
+                    </p>
+                </NotAuthorized>
+            </AuthorizeRouteView>
             <FocusOnNavigate RouteData="routeData" Selector="h1" />
         </Found>
     </Router>

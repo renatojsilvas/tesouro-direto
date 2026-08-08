@@ -1,0 +1,208 @@
+@page "/minhas-api-keys"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Net
+@using TesouroDireto.Web.Services
+@inject TesouroApiClient Api
+@inject IActingUserContext ActingUser
+@inject IJSRuntime JS
+
+<PageTitle>Minhas API Keys</PageTitle>
+
+<div class="page-header fade-in">
+    <h1>Minhas API Keys</h1>
+    <p class="subtitle">Gere e gerencie suas chaves de acesso à API</p>
+</div>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger" data-testid="erro">@erro</div>
+}
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success alert-dismissible" data-testid="sucesso">
+        @sucesso
+        <button type="button" class="btn-close" @onclick="() => sucesso = null"></button>
+    </div>
+}
+
+@if (chaveGerada is not null)
+{
+    <div class="alert alert-warning" data-testid="chave-gerada">
+        <p><strong>Copie agora — esta chave não será mostrada novamente.</strong></p>
+        <div class="d-flex align-items-center gap-2">
+            <code data-testid="chave-valor">@chaveGerada.Chave</code>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="CopiarChaveAsync">Copiar</button>
+            <button type="button" class="btn-close ms-auto" @onclick="() => chaveGerada = null"></button>
+        </div>
+    </div>
+}
+
+@if (loading)
+{
+    <p><em>Carregando API keys...</em></p>
+}
+else if (pendente)
+{
+    <div class="alert alert-warning" data-testid="aguardando">
+        Sua conta está aguardando aprovação de um administrador.
+    </div>
+}
+else
+{
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label for="nome-key" class="form-label">Nome</label>
+            <input id="nome-key" type="text" class="form-control" @bind="formNome" />
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <button class="btn btn-primary" data-testid="btn-gerar" @onclick="GerarAsync" disabled="@(gerando || string.IsNullOrWhiteSpace(formNome))">
+                @if (gerando) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                Gerar key
+            </button>
+        </div>
+    </div>
+
+    @if (keys is { Count: > 0 })
+    {
+        <table class="table table-striped table-hover" data-testid="tabela-keys">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Prefixo</th>
+                    <th class="text-center">Status</th>
+                    <th>Criada Em</th>
+                    <th>Último Uso</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var key in keys)
+                {
+                    <tr>
+                        <td>@key.Nome</td>
+                        <td>@key.Prefixo</td>
+                        <td class="text-center">
+                            @if (key.Ativa)
+                            {
+                                <span class="badge bg-success">Ativa</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Revogada</span>
+                            }
+                        </td>
+                        <td>@key.CriadaEm.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@(key.UltimoUsoEm?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Nunca")</td>
+                        <td>
+                            @if (key.Ativa)
+                            {
+                                <button class="btn btn-sm btn-outline-danger" data-testid="btn-revogar" @onclick="() => RevogarAsync(key.Id)">Revogar</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else
+    {
+        <p class="text-muted">Nenhuma API key cadastrada.</p>
+    }
+}
+
+@code {
+    private List<ApiKeyItem>? keys;
+    private bool loading = true;
+    private bool pendente;
+    private bool gerando;
+    private string? erro;
+    private string? sucesso;
+    private string formNome = "";
+    private GeneratedApiKeyResult? chaveGerada;
+    private string? sub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        sub = await ActingUser.GetGoogleSubAsync();
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        loading = true;
+        erro = null;
+        pendente = false;
+
+        try
+        {
+            keys = await Api.GetAsync<List<ApiKeyItem>>("/me/keys", sub);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            pendente = true;
+        }
+        catch (Exception ex)
+        {
+            erro = $"Falha ao carregar API keys: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task GerarAsync()
+    {
+        erro = null;
+        sucesso = null;
+        gerando = true;
+
+        try
+        {
+            var result = await Api.PostAsync<GeneratedApiKeyResult>("/me/keys", new { Nome = formNome }, sub);
+
+            if (result.IsSuccess && result.Data is not null)
+            {
+                chaveGerada = result.Data;
+                formNome = "";
+                await CarregarAsync();
+            }
+            else
+            {
+                erro = result.Error?.Detail ?? $"Erro: HTTP {result.StatusCode}";
+            }
+        }
+        finally
+        {
+            gerando = false;
+        }
+    }
+
+    private async Task RevogarAsync(Guid id)
+    {
+        erro = null;
+        sucesso = null;
+
+        var result = await Api.PostAsync<object>($"/me/keys/{id}/revogar", new { }, sub);
+
+        if (result.IsSuccess)
+        {
+            sucesso = "API key revogada.";
+            await CarregarAsync();
+        }
+        else
+        {
+            erro = result.Error?.Detail ?? $"Erro: HTTP {result.StatusCode}";
+        }
+    }
+
+    private async Task CopiarChaveAsync()
+    {
+        if (chaveGerada is not null)
+        {
+            await JS.InvokeVoidAsync("clipboardInterop.copy", chaveGerada.Chave);
+        }
+    }
+}
