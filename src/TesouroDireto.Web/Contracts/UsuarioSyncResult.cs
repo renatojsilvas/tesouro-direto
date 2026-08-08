@@ -1,3 +1,3 @@
 namespace TesouroDireto.Web.Contracts;
 
-public sealed record UsuarioSyncResult(Guid Id, bool Aprovado);
+public sealed record UsuarioSyncResult(Guid Id, bool Aprovado, string Papel);

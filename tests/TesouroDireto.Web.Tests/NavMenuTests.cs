@@ -30,4 +30,40 @@ public class NavMenuTests : TestContext
 
         cut.Markup.Should().NotContain("Entrar com Google");
     }
+
+    [Fact]
+    public void NavMenu_QuandoAnonimo_NaoMostraLinksDeContaNemAdmin()
+    {
+        this.AddTestAuthorization().SetNotAuthorized();
+        Services.AddSingleton(new GoogleAuthAvailability(true));
+
+        var cut = RenderComponent<NavMenu>();
+
+        cut.FindAll("[data-testid=nav-minhas-api-keys]").Should().BeEmpty();
+        cut.FindAll("[data-testid=nav-admin]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NavMenu_QuandoLogadoNaoAdmin_MostraApiKeysMasNaoAdmin()
+    {
+        this.AddTestAuthorization().SetAuthorized("user@x");
+        Services.AddSingleton(new GoogleAuthAvailability(true));
+
+        var cut = RenderComponent<NavMenu>();
+
+        cut.FindAll("[data-testid=nav-minhas-api-keys]").Should().HaveCount(1);
+        cut.FindAll("[data-testid=nav-admin]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NavMenu_QuandoLogadoAdmin_MostraApiKeysEAdmin()
+    {
+        this.AddTestAuthorization().SetAuthorized("admin@x").SetRoles("Admin");
+        Services.AddSingleton(new GoogleAuthAvailability(true));
+
+        var cut = RenderComponent<NavMenu>();
+
+        cut.FindAll("[data-testid=nav-minhas-api-keys]").Should().HaveCount(1);
+        cut.FindAll("[data-testid=nav-admin]").Should().HaveCount(1);
+    }
 }

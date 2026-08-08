@@ -4,28 +4,32 @@ namespace TesouroDireto.Web.Services;
 
 public sealed record GoogleLoginClaims(string Sub, string Email, string Nome, bool EmailVerified);
 
+public sealed record GoogleLoginOutcome(bool Ok, string? Papel);
+
 public sealed class GoogleLoginService(TesouroApiClient apiClient)
 {
-    public async Task<bool> ProcessLoginAsync(GoogleLoginClaims claims)
+    public async Task<GoogleLoginOutcome> ProcessLoginAsync(GoogleLoginClaims claims)
     {
         if (!claims.EmailVerified)
         {
-            return false;
+            return new GoogleLoginOutcome(false, null);
         }
 
         try
         {
             var request = new SyncUsuarioRequest(claims.Sub, claims.Email, claims.Nome, claims.EmailVerified);
             var result = await apiClient.SyncUsuarioAsync(request);
-            return result.IsSuccess;
+            return result.IsSuccess
+                ? new GoogleLoginOutcome(true, result.Data?.Papel)
+                : new GoogleLoginOutcome(false, null);
         }
         catch (HttpRequestException)
         {
-            return false;
+            return new GoogleLoginOutcome(false, null);
         }
         catch (TaskCanceledException)
         {
-            return false;
+            return new GoogleLoginOutcome(false, null);
         }
     }
 }

@@ -22,7 +22,7 @@ public class GoogleLoginServiceTests
 
         var resultado = await service.ProcessLoginAsync(claims);
 
-        resultado.Should().BeFalse();
+        resultado.Ok.Should().BeFalse();
     }
 
     [Fact]
@@ -34,14 +34,15 @@ public class GoogleLoginServiceTests
             {
                 requisicaoCapturada = request;
                 return FakeHttpMessageHandler.JsonResponse(
-                    HttpStatusCode.OK, """{"id":"11111111-1111-1111-1111-111111111111","aprovado":false}""");
+                    HttpStatusCode.OK, """{"id":"11111111-1111-1111-1111-111111111111","aprovado":false,"papel":"User"}""");
             });
         var service = new GoogleLoginService(CreateClient(handler));
         var claims = new GoogleLoginClaims("google-sub-2", "novo@teste.com", "Novo Usuario", true);
 
         var resultado = await service.ProcessLoginAsync(claims);
 
-        resultado.Should().BeTrue();
+        resultado.Ok.Should().BeTrue();
+        resultado.Papel.Should().Be("User");
         requisicaoCapturada.Should().NotBeNull();
         requisicaoCapturada!.Method.Should().Be(HttpMethod.Post);
 
@@ -64,7 +65,7 @@ public class GoogleLoginServiceTests
 
         var resultado = await service.ProcessLoginAsync(claims);
 
-        resultado.Should().BeFalse();
+        resultado.Ok.Should().BeFalse();
     }
 
     [Fact]
@@ -76,7 +77,7 @@ public class GoogleLoginServiceTests
 
         var resultado = await service.ProcessLoginAsync(claims);
 
-        resultado.Should().BeFalse();
+        resultado.Ok.Should().BeFalse();
     }
 
     private sealed class ThrowingHttpMessageHandler : HttpMessageHandler

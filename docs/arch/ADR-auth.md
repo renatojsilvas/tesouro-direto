@@ -249,7 +249,7 @@ F5 OAuth+cookie (Web, wiring puro) ──> [sync depende de F4a] ─────
 - **Risco:** médio — 1ª auth do site. Não quebrar navegação anônima; redirect Google atrás do nginx/TLS (tarefa 44) — conferir `RedirectUri` público. **Testabilidade em CI:** login Google real não roda em CI — prever `TestAuthenticationHandler` sob `UseEnvironment("Testing")` (padrão `webappfactory_needs_db_config`).
 - **Verificação:** login seta cookie; logout limpa; páginas de consulta seguem anônimas (bUnit/E2E com o handler de teste); usuário não-aprovado vê "aguardando" (fim-a-fim só com F4a).
 
-### F6. Telas Web: "Minhas API Keys" + "Admin" 🟡
+### F6. Telas Web: "Minhas API Keys" + "Admin" ✅ (tarefa 65, concluída 2026-08-08)
 - **Escopo:** `/api-keys` (self-service, texto puro mostrado 1×) e `/admin` (`[Authorize(Roles=Admin)]`, aprovar pendentes); nav gated em `NavMenu.razor` (seção "Conta"/"Admin"); consumo via `TesouroApiClient`/BFF; logout na nav do usuário logado.
 - **Arquivos:** `Web/Components/Pages/ApiKeys.razor`, `Admin.razor`, `NavMenu.razor`, serviços do Web.
 - **Risco:** médio-baixo — depende de **F4a+F4b+F5**. Não vazar texto puro em log/render após o 1º show.

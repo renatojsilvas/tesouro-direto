@@ -75,5 +75,5 @@ public sealed class SyncUsuarioCommandHandler(
         return ToDto(adicionado.Value);
     }
 
-    private static UsuarioSyncDto ToDto(Usuario usuario) => new(usuario.Id, usuario.Aprovado);
+    private static UsuarioSyncDto ToDto(Usuario usuario) => new(usuario.Id, usuario.Aprovado, usuario.Papel);
 }

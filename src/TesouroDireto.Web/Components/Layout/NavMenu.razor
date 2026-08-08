@@ -108,6 +108,14 @@
                     <span class="nav-link">@(context.User.Identity?.Name ?? context.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value)</span>
                 </div>
                 <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="minhas-api-keys" data-testid="nav-minhas-api-keys">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                        </svg>
+                        Minhas API Keys
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
                     <form method="post" action="/auth/logout">
                         <AntiforgeryToken />
                         <button type="submit" class="nav-link btn btn-link p-0 text-start">Sair</button>
@@ -122,6 +130,21 @@
                     </div>
                 }
             </NotAuthorized>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <div class="nav-section-label">Admin</div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="admin" data-testid="nav-admin">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        Admin
+                    </NavLink>
+                </div>
+            </Authorized>
         </AuthorizeView>
     </nav>
 </div>

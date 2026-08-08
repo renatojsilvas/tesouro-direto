@@ -67,11 +67,15 @@ if (googleConfigurado)
 
             var loginService = context.HttpContext.RequestServices.GetRequiredService<GoogleLoginService>();
             var claims = new GoogleLoginClaims(sub, email, nome, emailVerified);
-            var loginOk = await loginService.ProcessLoginAsync(claims);
+            var outcome = await loginService.ProcessLoginAsync(claims);
 
-            if (!loginOk)
+            if (!outcome.Ok)
             {
                 context.Fail("Login Google recusado: e-mail não verificado ou falha ao sincronizar usuário.");
+            }
+            else if (!string.IsNullOrWhiteSpace(outcome.Papel))
+            {
+                context.Identity?.AddClaim(new Claim(ClaimTypes.Role, outcome.Papel));
             }
         };
         options.Events.OnRemoteFailure = context =>
