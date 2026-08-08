@@ -19,7 +19,7 @@ public sealed class ImportacaoEndpointsTests(ApiTestFactory factory) : IAsyncLif
     [Fact]
     public async Task PostImportacao_WithoutApiKey_ShouldReturn401()
     {
-        var response = await _client.PostAsync("/importacao", null, CancellationToken.None);
+        var response = await _client.PostAsync("/v1/importacao", null, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -27,7 +27,7 @@ public sealed class ImportacaoEndpointsTests(ApiTestFactory factory) : IAsyncLif
     [Fact]
     public async Task PostImportacaoFeriados_WithoutApiKey_ShouldReturn401()
     {
-        var response = await _client.PostAsync("/importacao/feriados", null, CancellationToken.None);
+        var response = await _client.PostAsync("/v1/importacao/feriados", null, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -35,7 +35,7 @@ public sealed class ImportacaoEndpointsTests(ApiTestFactory factory) : IAsyncLif
     [Fact]
     public async Task PostImportacao_WithUrlNotConfigured_ShouldReturn200WithErrorCount()
     {
-        var response = await _authenticatedClient.PostAsync("/importacao", null, CancellationToken.None);
+        var response = await _authenticatedClient.PostAsync("/v1/importacao", null, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<ImportResult>(cancellationToken: CancellationToken.None);
@@ -48,7 +48,7 @@ public sealed class ImportacaoEndpointsTests(ApiTestFactory factory) : IAsyncLif
     [Fact]
     public async Task PostImportacaoFeriados_WithUrlNotConfigured_ShouldReturn200WithZeroResult()
     {
-        var response = await _authenticatedClient.PostAsync("/importacao/feriados", null, CancellationToken.None);
+        var response = await _authenticatedClient.PostAsync("/v1/importacao/feriados", null, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<ImportFeriadosResult>(cancellationToken: CancellationToken.None);

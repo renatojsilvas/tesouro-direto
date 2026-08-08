@@ -32,7 +32,7 @@ public class HistoricoTests : TestContext
     private void ConfigureApi()
     {
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Get, "titulos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, TitulosJson))
+            .When(HttpMethod.Get, "v1/titulos", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, TitulosJson))
             .When(HttpMethod.Get, $"titulos/{Codigo}/precos", request =>
             {
                 var ePaginaDois = request.RequestUri!.Query.Contains("page=2");

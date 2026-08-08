@@ -45,7 +45,7 @@ public sealed class SwaggerEndpointTests
             var paths = root.GetProperty("paths");
             foreach (var expectedPath in new[]
                      {
-                         "/titulos", "/simulador", "/configuracoes/tributos", "/importacao",
+                         "/v1/titulos", "/v1/simulador", "/v1/configuracoes/tributos", "/v1/importacao",
                      })
             {
                 paths.TryGetProperty(expectedPath, out _).Should().BeTrue(
@@ -68,7 +68,7 @@ public sealed class SwaggerEndpointTests
             referencesApiKeyScheme.Should().BeTrue(
                 $"o security requirement global deveria referenciar o scheme ApiKey.\n{documentSecurity}");
 
-            var titulosOperation = paths.GetProperty("/titulos").GetProperty("get");
+            var titulosOperation = paths.GetProperty("/v1/titulos").GetProperty("get");
             titulosOperation.GetProperty("responses").TryGetProperty("401", out var response401)
                 .Should().BeTrue("a operation de /titulos deveria documentar 401.");
             response401.GetProperty("content").TryGetProperty("application/problem+json", out _)
@@ -116,7 +116,7 @@ public sealed class SwaggerEndpointTests
             var root = doc.RootElement;
             var paths = root.GetProperty("paths");
 
-            foreach (var idBasedPath in new[] { "/titulos/{id}/precos", "/titulos/{id}/preco-atual" })
+            foreach (var idBasedPath in new[] { "/v1/titulos/{id}/precos", "/v1/titulos/{id}/preco-atual" })
             {
                 paths.TryGetProperty(idBasedPath, out _).Should().BeFalse(
                     $"a rota {idBasedPath} foi removida na tarefa 38 e não deveria aparecer no swagger.json.\n{body}");
@@ -137,7 +137,7 @@ public sealed class SwaggerEndpointTests
             var root = doc.RootElement;
             var paths = root.GetProperty("paths");
 
-            var precosPorCodigoGet = paths.GetProperty("/titulos/{codigo}/precos").GetProperty("get");
+            var precosPorCodigoGet = paths.GetProperty("/v1/titulos/{codigo}/precos").GetProperty("get");
             var parameterNames = precosPorCodigoGet.GetProperty("parameters").EnumerateArray()
                 .Select(p => p.GetProperty("name").GetString())
                 .ToList();
@@ -150,13 +150,13 @@ public sealed class SwaggerEndpointTests
                 $"X-Total-Count deveria estar documentado.\n{body}");
             okResponseHeaders.TryGetProperty("Link", out _).Should().BeTrue($"Link deveria estar documentado.\n{body}");
 
-            var createTributoPost = paths.GetProperty("/configuracoes/tributos").GetProperty("post");
+            var createTributoPost = paths.GetProperty("/v1/configuracoes/tributos").GetProperty("post");
             var createdResponseHeaders = createTributoPost.GetProperty("responses")
                 .GetProperty("201").GetProperty("headers");
             createdResponseHeaders.TryGetProperty("Location", out _).Should().BeTrue(
                 $"Location deveria estar documentado.\n{body}");
 
-            var titulosGet = paths.GetProperty("/titulos").GetProperty("get");
+            var titulosGet = paths.GetProperty("/v1/titulos").GetProperty("get");
             var titulosSchema = titulosGet.GetProperty("responses").GetProperty("200")
                 .GetProperty("content").GetProperty("application/json").GetProperty("schema");
             titulosSchema.GetProperty("items").GetProperty("$ref").GetString()

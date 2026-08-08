@@ -53,7 +53,7 @@ public sealed class ExceptionHandlerEndpointsTests(ApiTestFactory factory) : IAs
     {
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/titulos", CancellationToken.None);
+        var response = await client.GetAsync("/v1/titulos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypeNames.Application.ProblemJson);

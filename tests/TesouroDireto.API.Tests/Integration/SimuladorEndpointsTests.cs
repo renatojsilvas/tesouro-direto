@@ -44,7 +44,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     {
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
 
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,
@@ -65,7 +65,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     {
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
 
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,
@@ -84,7 +84,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     {
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
 
-        var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador/cenarios", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,
@@ -103,7 +103,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     {
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2035, 5, 15));
 
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,
@@ -121,7 +121,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimulador_WithUnknownWellFormedCodigo_ShouldReturn404()
     {
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = "tesouro-selic-2099-01-01",
             ValorInvestido = 1000m,
@@ -136,7 +136,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimulador_WithMalformedCodigo_ShouldReturn400()
     {
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = "nao-e-um-codigo-valido",
             ValorInvestido = 1000m,
@@ -158,7 +158,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     {
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroPrefixado, new DateOnly(2029, 1, 1));
 
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = codigo,
             ValorInvestido = 0m,
@@ -175,7 +175,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     {
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2035, 5, 15));
 
-        var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador/cenarios", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,
@@ -198,7 +198,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimuladorCenarios_WithUnknownWellFormedCodigo_ShouldReturn404()
     {
-        var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador/cenarios", new
         {
             Codigo = "tesouro-selic-2099-01-01",
             ValorInvestido = 1000m,
@@ -216,7 +216,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
     [Fact]
     public async Task PostSimuladorCenarios_WithMalformedCodigo_ShouldReturn400()
     {
-        var response = await _client.PostAsJsonAsync("/simulador/cenarios", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador/cenarios", new
         {
             Codigo = "nao-e-um-codigo-valido",
             ValorInvestido = 1000m,
@@ -259,7 +259,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2030, 1, 1));
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, EmptyValueJson);
 
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,
@@ -278,7 +278,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         var codigo = await SeedTituloAsync(TipoTitulo.TesouroIPCA, new DateOnly(2032, 1, 1));
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty);
 
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,
@@ -307,7 +307,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
 
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, SelicSuccessJson);
 
-        var firstResponse = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+        var firstResponse = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(), CancellationToken.None);
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var firstDto = await firstResponse.Content
             .ReadFromJsonAsync<SimulacaoResultadoDto>(JsonOptions, CancellationToken.None);
@@ -318,7 +318,7 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
 
         factory.AdvanceTime(TimeSpan.FromSeconds(3));
 
-        var secondResponse = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+        var secondResponse = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(), CancellationToken.None);
 
         secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var secondDto = await secondResponse.Content
@@ -342,13 +342,13 @@ public sealed class SimuladorEndpointsTests(ApiTestFactory factory) : IAsyncLife
         };
 
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, SelicSuccessJson);
-        var warm = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+        var warm = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(), CancellationToken.None);
         warm.StatusCode.Should().Be(HttpStatusCode.OK);
 
         factory.AdvanceTime(TimeSpan.FromSeconds(3));
 
         factory.BcbResponder = _ => JsonResponse(HttpStatusCode.OK, EmptyValueJson);
-        var response = await _client.PostAsJsonAsync("/simulador", RequestBody(), CancellationToken.None);
+        var response = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(), CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");

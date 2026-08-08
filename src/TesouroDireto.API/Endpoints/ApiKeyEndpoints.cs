@@ -40,7 +40,7 @@ public static class ApiKeyEndpoints
             var usuario = (Usuario)httpContext.Items[UsuarioAprovadoFilter.UsuarioAprovadoItemsKey]!;
             var result = await sender.Send(new GenerateApiKeyCommand(usuario.Id, request.Nome), cancellationToken);
 
-            return result.ToHttpResult(dto => Results.Created($"/me/keys/{dto.Id}", dto));
+            return result.ToHttpResult(dto => Results.Created($"/v1/me/keys/{dto.Id}", dto));
         })
         .AddEndpointFilter<UsuarioAprovadoFilter>()
         .WithName("GenerateApiKey")

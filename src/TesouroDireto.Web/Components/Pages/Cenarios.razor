@@ -180,7 +180,7 @@
     {
         try
         {
-            titulos = await Api.GetAsync<List<TituloItem>>("titulos?vencido=false");
+            titulos = await Api.GetAsync<List<TituloItem>>("v1/titulos?vencido=false");
         }
         catch
         {
@@ -233,7 +233,7 @@
                 cenarios = cenarios.Select(c => new { nome = c.Nome, projecaoAnual = c.Projecao }).ToList()
             };
 
-            var result = await Api.PostAsync<List<CenarioResult>>("simulador/cenarios", request);
+            var result = await Api.PostAsync<List<CenarioResult>>("v1/simulador/cenarios", request);
 
             if (result.IsSuccess)
             {

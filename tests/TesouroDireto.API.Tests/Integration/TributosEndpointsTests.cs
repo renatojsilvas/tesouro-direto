@@ -43,7 +43,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         await SeedTributoAsync("IOF", 1);
         await SeedTributoAsync("Taxa Custodia", 2);
 
-        var response = await _client.GetAsync("/configuracoes/tributos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/configuracoes/tributos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var dtos = await response.Content.ReadFromJsonAsync<List<TributoDto>>(cancellationToken: CancellationToken.None);
@@ -62,11 +62,11 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
             1,
             false);
 
-        var response = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+        var response = await _client.PostAsJsonAsync("/v1/configuracoes/tributos", command, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
-        response.Headers.Location!.ToString().Should().Contain("/configuracoes/tributos/");
+        response.Headers.Location!.ToString().Should().Contain("/v1/configuracoes/tributos/");
 
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
         using var doc = JsonDocument.Parse(body);
@@ -84,7 +84,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
             1,
             false);
 
-        var postResponse = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+        var postResponse = await _client.PostAsJsonAsync("/v1/configuracoes/tributos", command, CancellationToken.None);
 
         postResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var location = postResponse.Headers.Location;
@@ -101,7 +101,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
     [Fact]
     public async Task GetConfiguracoesTributosById_WithUnknownId_ShouldReturn404()
     {
-        var response = await _client.GetAsync($"/configuracoes/tributos/{Guid.NewGuid()}", CancellationToken.None);
+        var response = await _client.GetAsync($"/v1/configuracoes/tributos/{Guid.NewGuid()}", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -114,7 +114,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         """;
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        var response = await _client.PostAsync("/configuracoes/tributos", content, CancellationToken.None);
+        var response = await _client.PostAsync("/v1/configuracoes/tributos", content, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
@@ -127,7 +127,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
         """;
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        var response = await _client.PostAsync("/configuracoes/tributos", content, CancellationToken.None);
+        var response = await _client.PostAsync("/v1/configuracoes/tributos", content, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
@@ -143,7 +143,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
             1,
             false);
 
-        var response = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+        var response = await _client.PostAsJsonAsync("/v1/configuracoes/tributos", command, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -159,7 +159,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
             Faixas = new[] { new FaixaDto(0, 360, null, 15m) }
         };
 
-        var response = await _client.PutAsJsonAsync($"/configuracoes/tributos/{id}", payload, CancellationToken.None);
+        var response = await _client.PutAsJsonAsync($"/v1/configuracoes/tributos/{id}", payload, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
@@ -173,7 +173,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
             Faixas = new[] { new FaixaDto(0, 360, null, 15m) }
         };
 
-        var response = await _client.PutAsJsonAsync($"/configuracoes/tributos/{Guid.NewGuid()}", payload, CancellationToken.None);
+        var response = await _client.PutAsJsonAsync($"/v1/configuracoes/tributos/{Guid.NewGuid()}", payload, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -189,7 +189,7 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
             Faixas = Array.Empty<FaixaDto>()
         };
 
-        var response = await _client.PutAsJsonAsync($"/configuracoes/tributos/{id}", payload, CancellationToken.None);
+        var response = await _client.PutAsJsonAsync($"/v1/configuracoes/tributos/{id}", payload, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -206,10 +206,10 @@ public sealed class TributosEndpointsTests(ApiTestFactory factory) : IAsyncLifet
             1,
             false);
 
-        var firstResponse = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+        var firstResponse = await _client.PostAsJsonAsync("/v1/configuracoes/tributos", command, CancellationToken.None);
         firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var secondResponse = await _client.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+        var secondResponse = await _client.PostAsJsonAsync("/v1/configuracoes/tributos", command, CancellationToken.None);
 
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
         secondResponse.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypeNames.Application.ProblemJson);

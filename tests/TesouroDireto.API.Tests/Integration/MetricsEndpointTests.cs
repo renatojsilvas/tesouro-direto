@@ -21,11 +21,11 @@ public sealed class MetricsEndpointTests(ApiTestFactory factory) : IAsyncLifetim
     [Fact]
     public async Task Metrics_AfterSuccessAndBusinessFailureRequests_ShouldExposeMediatrOutcomes()
     {
-        var successResponse = await factory.CreateAuthenticatedClient().GetAsync("/titulos", CancellationToken.None);
+        var successResponse = await factory.CreateAuthenticatedClient().GetAsync("/v1/titulos", CancellationToken.None);
         successResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var failureResponse = await factory.CreateAuthenticatedClient()
-            .GetAsync("/titulos/preco-atual?nome=Tesouro Inexistente 2099", CancellationToken.None);
+            .GetAsync("/v1/titulos/preco-atual?nome=Tesouro Inexistente 2099", CancellationToken.None);
         failureResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var metricsResponse = await _client.GetAsync("/metrics", CancellationToken.None);
@@ -45,7 +45,7 @@ public sealed class MetricsEndpointTests(ApiTestFactory factory) : IAsyncLifetim
         var simulationsBefore = ExtractCounterValue(before, "simulations_total", "indexador=\"unknown\"", "outcome=\"failure\"");
         var failuresBefore = ExtractCounterValue(before, "simulation_failures_total", "reason=\"Titulo.NotFound\"");
 
-        var response = await _authenticatedClient.PostAsJsonAsync("/simulador", new
+        var response = await _authenticatedClient.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = "tesouro-selic-2099-01-01",
             ValorInvestido = 1000m,
@@ -70,7 +70,7 @@ public sealed class MetricsEndpointTests(ApiTestFactory factory) : IAsyncLifetim
         var before = await ScrapeMetricsAsync();
         var errorsBefore = ExtractCounterValue(before, "import_prices_processed_total", "kind=\"error\"");
 
-        var response = await _authenticatedClient.PostAsync("/importacao", null, CancellationToken.None);
+        var response = await _authenticatedClient.PostAsync("/v1/importacao", null, CancellationToken.None);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var afterUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -98,7 +98,7 @@ public sealed class MetricsEndpointTests(ApiTestFactory factory) : IAsyncLifetim
             1,
             false);
 
-        var response = await _authenticatedClient.PostAsJsonAsync("/configuracoes/tributos", command, CancellationToken.None);
+        var response = await _authenticatedClient.PostAsJsonAsync("/v1/configuracoes/tributos", command, CancellationToken.None);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var after = await ScrapeMetricsAsync();

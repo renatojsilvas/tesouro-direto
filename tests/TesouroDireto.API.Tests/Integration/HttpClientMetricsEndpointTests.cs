@@ -53,7 +53,7 @@ public sealed class HttpClientMetricsEndpointTests(ApiTestFactory factory) : IAs
             Content = new StringContent(SelicSuccessJson, Encoding.UTF8, "application/json")
         };
 
-        var response = await _client.PostAsJsonAsync("/simulador", new
+        var response = await _client.PostAsJsonAsync("/v1/simulador", new
         {
             Codigo = codigo,
             ValorInvestido = 1000m,

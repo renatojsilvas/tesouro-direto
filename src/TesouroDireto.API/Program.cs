@@ -42,12 +42,13 @@ app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/ready");
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapGet("/", () => "Hello World!").ExcludeFromDescription();
-app.MapImportacaoEndpoints();
-app.MapTituloEndpoints();
-app.MapConfiguracaoEndpoints();
-app.MapUsuarioEndpoints();
-app.MapApiKeyEndpoints();
-app.MapSimuladorEndpoints();
+var v1 = app.MapGroup("/v1");
+v1.MapImportacaoEndpoints();
+v1.MapTituloEndpoints();
+v1.MapConfiguracaoEndpoints();
+v1.MapUsuarioEndpoints();
+v1.MapApiKeyEndpoints();
+v1.MapSimuladorEndpoints();
 app.MapMetrics();
 
 if (app.Environment.IsEnvironment("Testing"))

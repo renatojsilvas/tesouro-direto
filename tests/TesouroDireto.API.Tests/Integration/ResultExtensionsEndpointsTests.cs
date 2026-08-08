@@ -19,7 +19,7 @@ public sealed class ResultExtensionsEndpointsTests(ApiTestFactory factory) : IAs
     public async Task PutConfiguracoesTributos_WithUnknownId_ShouldReturnCompleteProblemJsonWith404()
     {
         var response = await _client.PutAsJsonAsync(
-            $"/configuracoes/tributos/{Guid.NewGuid()}",
+            $"/v1/configuracoes/tributos/{Guid.NewGuid()}",
             new { Ativo = true, Faixas = Array.Empty<object>() },
             CancellationToken.None);
 
@@ -42,7 +42,7 @@ public sealed class ResultExtensionsEndpointsTests(ApiTestFactory factory) : IAs
     public async Task PutConfiguracoesTributos_WithUnknownId_AndKnownCorrelationId_ShouldEchoItInBody()
     {
         const string knownCorrelationId = "known-correlation-id-result-ext-404";
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"/configuracoes/tributos/{Guid.NewGuid()}")
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/v1/configuracoes/tributos/{Guid.NewGuid()}")
         {
             Content = JsonContent.Create(new { Ativo = true, Faixas = Array.Empty<object>() }),
         };
@@ -60,7 +60,7 @@ public sealed class ResultExtensionsEndpointsTests(ApiTestFactory factory) : IAs
     [Fact]
     public async Task GetTitulos_WithUnknownIndexador_ShouldReturnCompleteProblemJsonWith400()
     {
-        var response = await _client.GetAsync("/titulos?indexador=XPTO", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos?indexador=XPTO", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypeNames.Application.ProblemJson);

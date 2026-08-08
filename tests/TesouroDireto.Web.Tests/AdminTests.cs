@@ -29,7 +29,7 @@ public class AdminTests : TestContext
     private FakeHttpMessageHandler ConfigureApi(string getResponseJson)
     {
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Get, "admin/usuarios", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, getResponseJson));
+            .When(HttpMethod.Get, "v1/admin/usuarios", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, getResponseJson));
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
         Services.AddSingleton(new TesouroApiClient(httpClient, new BoundedConditionalGetStore()));
@@ -55,7 +55,7 @@ public class AdminTests : TestContext
         var handler = ConfigureApi(PendentesComItemJson);
         handler.When(
             HttpMethod.Post,
-            "admin/usuarios/sub-pendente-1/aprovar",
+            "v1/admin/usuarios/sub-pendente-1/aprovar",
             FakeHttpMessageHandler.NoContentResponse());
 
         var cut = RenderComponent<Admin>();
@@ -74,7 +74,7 @@ public class AdminTests : TestContext
         var handler = ConfigureApi(PendentesComItemJson);
         handler.When(
             HttpMethod.Post,
-            "admin/usuarios/sub-pendente-1/desativar",
+            "v1/admin/usuarios/sub-pendente-1/desativar",
             FakeHttpMessageHandler.NoContentResponse());
 
         var cut = RenderComponent<Admin>();

@@ -77,7 +77,7 @@ public sealed class FocusBcbResilienceEndpointTests(ApiTestFactory factory) : IA
                 };
         };
 
-        var response = await _client.PostAsJsonAsync("/simulador", RequestBody(codigo), CancellationToken.None);
+        var response = await _client.PostAsJsonAsync("/v1/simulador", RequestBody(codigo), CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var dto = await response.Content.ReadFromJsonAsync<SimulacaoResultadoDto>(JsonOptions, CancellationToken.None);

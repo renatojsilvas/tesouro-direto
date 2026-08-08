@@ -9,10 +9,10 @@ namespace TesouroDireto.API.Tests.Integration;
 public sealed class TituloCodigoMetricsTests(ApiTestFactory factory) : IAsyncLifetime
 {
     private const string PrecosEndpointTemplate =
-        "/titulos/{codigo:regex(^[a-z][a-z0-9-]*-\\\\d{{4}}-\\\\d{{2}}-\\\\d{{2}}$)}/precos";
+        "/v1/titulos/{codigo:regex(^[a-z][a-z0-9-]*-\\\\d{{4}}-\\\\d{{2}}-\\\\d{{2}}$)}/precos";
 
     private const string PrecoAtualEndpointTemplate =
-        "/titulos/{codigo:regex(^[a-z][a-z0-9-]*-\\\\d{{4}}-\\\\d{{2}}-\\\\d{{2}}$)}/preco-atual";
+        "/v1/titulos/{codigo:regex(^[a-z][a-z0-9-]*-\\\\d{{4}}-\\\\d{{2}}-\\\\d{{2}}$)}/preco-atual";
 
     private const string CodigoSelic = "tesouro-selic-2029-03-01";
     private const string CodigoIpca = "tesouro-ipca-mais-2035-05-15";
@@ -38,10 +38,10 @@ public sealed class TituloCodigoMetricsTests(ApiTestFactory factory) : IAsyncLif
         var precosBefore = await ScrapeHttpMetricSumAsync($"endpoint=\"{PrecosEndpointTemplate}\"");
         var precoAtualBefore = await ScrapeHttpMetricSumAsync($"endpoint=\"{PrecoAtualEndpointTemplate}\"");
 
-        await _client.GetAsync($"/titulos/{CodigoSelic}/precos", CancellationToken.None);
-        await _client.GetAsync($"/titulos/{CodigoIpca}/precos", CancellationToken.None);
-        await _client.GetAsync($"/titulos/{CodigoSelic}/preco-atual", CancellationToken.None);
-        await _client.GetAsync($"/titulos/{CodigoIpca}/preco-atual", CancellationToken.None);
+        await _client.GetAsync($"/v1/titulos/{CodigoSelic}/precos", CancellationToken.None);
+        await _client.GetAsync($"/v1/titulos/{CodigoIpca}/precos", CancellationToken.None);
+        await _client.GetAsync($"/v1/titulos/{CodigoSelic}/preco-atual", CancellationToken.None);
+        await _client.GetAsync($"/v1/titulos/{CodigoIpca}/preco-atual", CancellationToken.None);
 
         var precosAfter = await ScrapeHttpMetricSumAsync($"endpoint=\"{PrecosEndpointTemplate}\"");
         var precoAtualAfter = await ScrapeHttpMetricSumAsync($"endpoint=\"{PrecoAtualEndpointTemplate}\"");

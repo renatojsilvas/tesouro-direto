@@ -17,7 +17,7 @@ public class AdminRoutingTests : TestContext
     private void ConfigureApi(string getResponseJson)
     {
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Get, "admin/usuarios", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, getResponseJson));
+            .When(HttpMethod.Get, "v1/admin/usuarios", FakeHttpMessageHandler.JsonResponse(HttpStatusCode.OK, getResponseJson));
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
         Services.AddSingleton(new TesouroApiClient(httpClient, new BoundedConditionalGetStore()));

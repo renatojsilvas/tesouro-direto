@@ -77,7 +77,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     {
         await SeedTituloAsync(new DateOnly(2029, 3, 1));
 
-        var response = await _client.GetAsync("/titulos", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.ETag.Should().NotBeNull();
@@ -91,10 +91,10 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     {
         await SeedTituloAsync(new DateOnly(2029, 3, 1));
 
-        var first = await _client.GetAsync("/titulos", CancellationToken.None);
+        var first = await _client.GetAsync("/v1/titulos", CancellationToken.None);
         var etag = first.Headers.ETag!.Tag;
 
-        using var conditionalRequest = ConditionalGet("/titulos", etag);
+        using var conditionalRequest = ConditionalGet("/v1/titulos", etag);
         var second = await _client.SendAsync(conditionalRequest, CancellationToken.None);
 
         second.StatusCode.Should().Be(HttpStatusCode.NotModified);
@@ -107,16 +107,16 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     {
         await SeedTituloAsync(new DateOnly(2029, 3, 1));
 
-        var first = await _client.GetAsync("/titulos", CancellationToken.None);
+        var first = await _client.GetAsync("/v1/titulos", CancellationToken.None);
         var etag = first.Headers.ETag!.Tag;
 
-        using var stillMatching = ConditionalGet("/titulos", etag);
+        using var stillMatching = ConditionalGet("/v1/titulos", etag);
         var stillMatchingResponse = await _client.SendAsync(stillMatching, CancellationToken.None);
         stillMatchingResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
 
         await SeedTituloAsync(new DateOnly(2035, 5, 15));
 
-        using var staleRequest = ConditionalGet("/titulos", etag);
+        using var staleRequest = ConditionalGet("/v1/titulos", etag);
         var afterMutation = await _client.SendAsync(staleRequest, CancellationToken.None);
 
         afterMutation.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -128,7 +128,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     {
         await SeedTituloAsync(new DateOnly(2029, 3, 1));
 
-        using var request = ConditionalGet("/titulos", "\"nao-e-o-etag-atual\"");
+        using var request = ConditionalGet("/v1/titulos", "\"nao-e-o-etag-atual\"");
         var response = await _client.SendAsync(request, CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -137,7 +137,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     [Fact]
     public async Task GetTituloByCodigo_WithUnknownCodigo_ShouldReturn404WithoutCacheControlHeader()
     {
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2099-01-01", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2099-01-01", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Headers.CacheControl.Should().BeNull();
@@ -146,7 +146,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     [Fact]
     public async Task GetTituloByCodigo_WithMalformedCodigo_ShouldReturn400WithoutCacheControlHeader()
     {
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2029-13-40", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2029-13-40", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Headers.CacheControl.Should().BeNull();
@@ -155,7 +155,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     [Fact]
     public async Task GetTituloByCodigo_UnknownCodigo_ShouldNeverExposeAnEtagHeader()
     {
-        var response = await _client.GetAsync("/titulos/tesouro-selic-2099-01-01", CancellationToken.None);
+        var response = await _client.GetAsync("/v1/titulos/tesouro-selic-2099-01-01", CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Headers.ETag.Should().BeNull();
@@ -164,7 +164,7 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     [Fact]
     public async Task GetTituloByCodigo_UnknownCodigoRepeatedWithIfNoneMatchFromFirstResponse_ShouldStillReturn404Not304()
     {
-        const string uri = "/titulos/tesouro-selic-2099-01-01";
+        const string uri = "/v1/titulos/tesouro-selic-2099-01-01";
 
         var firstResponse = await _client.GetAsync(uri, CancellationToken.None);
         firstResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -182,12 +182,12 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     {
         var tituloId = await SeedTituloComPrecoAsync(new DateOnly(2029, 3, 1), new DateOnly(2024, 1, 2));
 
-        var first = await _client.GetAsync("/titulos", CancellationToken.None);
+        var first = await _client.GetAsync("/v1/titulos", CancellationToken.None);
         var etag = first.Headers.ETag!.Tag;
 
         await SeedPrecoAsync(tituloId, new DateOnly(2024, 1, 3));
 
-        using var staleRequest = ConditionalGet("/titulos", etag);
+        using var staleRequest = ConditionalGet("/v1/titulos", etag);
         var afterNewPreco = await _client.SendAsync(staleRequest, CancellationToken.None);
 
         afterNewPreco.StatusCode.Should().Be(HttpStatusCode.OK);

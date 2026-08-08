@@ -30,7 +30,7 @@ public class GoogleLoginServiceTests
     {
         HttpRequestMessage? requisicaoCapturada = null;
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Post, "admin/usuarios/sync", request =>
+            .When(HttpMethod.Post, "v1/admin/usuarios/sync", request =>
             {
                 requisicaoCapturada = request;
                 return FakeHttpMessageHandler.JsonResponse(
@@ -58,7 +58,7 @@ public class GoogleLoginServiceTests
     public async Task ProcessLoginAsync_QuandoSyncRetorna400_DevolveFalso()
     {
         var handler = new FakeHttpMessageHandler()
-            .When(HttpMethod.Post, "admin/usuarios/sync", FakeHttpMessageHandler.JsonResponse(
+            .When(HttpMethod.Post, "v1/admin/usuarios/sync", FakeHttpMessageHandler.JsonResponse(
                 HttpStatusCode.BadRequest, """{"code":"Usuario.EmailNaoVerificado","detail":"E-mail nao verificado"}"""));
         var service = new GoogleLoginService(CreateClient(handler));
         var claims = new GoogleLoginClaims("google-sub-3", "falha@teste.com", "Falha Usuario", true);
