@@ -20,6 +20,8 @@ ApiKeyGuard.Validate(app.Configuration, app.Environment);
 
 await app.InitializeDatabaseAsync();
 
+app.UseForwardedHeaders();
+
 app.UseExceptionHandler();
 
 app.UseSerilogDefaults();

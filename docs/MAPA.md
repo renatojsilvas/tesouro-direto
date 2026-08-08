@@ -73,7 +73,7 @@ Projetos: `API`, `Web`, `Application`, `Domain`, `Infrastructure` + 6 projetos d
 - **Enums só numéricos no JSON** ✔️ RESOLVIDO (tarefa 4): `JsonStringEnumConverter` registrado (aceita string E número); `ParseEnum` hardcoded removido do `Tributos.razor`.
 - **Erro por string-matching** ✔️ RESOLVIDO (tarefa 7, refinado na tarefa 48): o `Error.Code.Contains("NotFound")` do PUT foi eliminado pelo helper `ToHttpResult`; a **tarefa 48 (2026-08-04)** removeu também o `EndsWith(".NotFound")` residual — o mapeamento agora é por **categoria explícita** (`enum ErrorType` no `Error`), sem qualquer parsing de código.
 - **Sem validação declarativa na borda** — exception handler global ✔️ RESOLVIDO (tarefa 6/O4): `UseExceptionHandler` + `AddProblemDetails` → exceção crua vira `application/problem+json` com `correlationId`/`traceId`; 401 do `ApiKeyMiddleware` também padronizado.
-- **Sem versionamento, sem rate limiting** nos endpoints (inclui `POST /importacao`, que dispara download/parse externo). **OpenAPI/Swagger presente desde a tarefa 33** (Swashbuckle): UI só em Development; em prod `/swagger/v1/swagger.json` fica atrás da ApiKey (`X-Api-Key`) e a UI não é montada. `GET /` retorna `"Hello World!"`; `AllowedHosts: "*"`. **Planejado (PLANO, 2026-08-06):** versionamento `/v1` como ADR de design (**tarefa 57**, decide path vs header, `_links` versionados, migração do Web) e rate limiting **por cliente** em memória (429 problem+json + `Retry-After`) dentro da auth multi-cliente (**tarefa 56**, ADR **aprovado** — [`docs/arch/ADR-auth.md`](./arch/ADR-auth.md); execução = **tarefas 59–67**, inclui o rate limit por cliente na **66** + limiter por IP nas falhas na **67**); execução só após aprovação dos ADRs.
+- **Rate limiting** ✔️ RESOLVIDO (tarefas 66/67, 2026-08-08): eram endpoints **sem qualquer limite** de app (inclui `POST /importacao`, que dispara download/parse externo). **Corrigido:** rate limit **por cliente** (66, 60/min) + limiter **por IP nas falhas de auth** (67), ambos 429 problem+json + `Retry-After` — ver **§6 (Rate limiting)**. **Versionamento segue aberto:** **Planejado (tarefa 57)** — `/v1` como ADR de design (path vs header, `_links` versionados, migração do Web). **OpenAPI/Swagger presente desde a tarefa 33** (Swashbuckle): UI só em Development; em prod `/swagger/v1/swagger.json` fica atrás da ApiKey (`X-Api-Key`) e a UI não é montada. `GET /` retorna `"Hello World!"`; `AllowedHosts: "*"`.
 - **Mapeamento `Result`→HTTP** ✔️ RESOLVIDO (tarefa 7, evoluído na tarefa 48): helper `ToHttpResult` em `Extensions/ResultExtensions.cs`, aplicado nos 4 `Endpoints/*.cs` — fim do `Contains("NotFound")` e do boilerplate por endpoint. **Tarefa 48 (2026-08-04):** o mapa deixou de ser por sufixo de string e passou a ser por **categoria explícita** no `Error` (`enum ErrorType`: `Validation`→400, `NotFound`→404, `Conflict`→409) — `EndsWith(".NotFound")` eliminado; `AlreadyExists`→409, com duplicata de tributo alcançável (`AnyAsync` no `TributoWriteRepository`, backstop no índice único `ix_tributos_nome`).
 
 ---
@@ -204,6 +204,52 @@ Quartz → `ImportCsvCommand` → handler → HTTP Tesouro + write repos (EF). C
 
 ---
 
+## 6. Autenticação, Identidade e Rate Limiting
+
+> Consolida o subsistema de auth **fechado nas tarefas 59–67** (ADR [`docs/arch/ADR-auth.md`](./arch/ADR-auth.md), aprovado 2026-08-06). Substitui a chave única compartilhada por **API pública multi-cliente**: keys por cliente (hasheadas, self-service) + login Google no site (Web como BFF), com rate limiting em duas camadas de app além do nginx.
+
+### Identidade (modelo de dados)
+
+Dois agregados de identidade em `src/TesouroDireto.Domain` (detalhe físico das tabelas em §2):
+- **`Usuario`** (`Usuarios/Usuario.cs`, `Entity<Guid>`): `GoogleSub` nullable até o 1º login (`Usuario.cs:29`), VO `Email` (normaliza `Trim().ToLowerInvariant()`, `Email.cs:11-33`), enum **`PapelUsuario` { User=0, Admin=1 }** (`PapelUsuario.cs:3-7`), e os campos de aprovação/auditoria `Aprovado`/`Ativo`/`AprovadoEm`/`AprovadoPor` (`Usuario.cs:33-37`). Nasce `Aprovado=false`, `Ativo=true` (`Usuario.cs:24-25`); transições por `Aprovar`/`Desativar`/`GarantirAdminAprovado`/`DefinirGoogleSub` (56-104). **`ativo` ≠ `aprovado`**: desativar é revogação de acesso; aprovar é o gate de 1º uso.
+- **`ApiKey`** (`ApiKeys/ApiKey.cs`, `Entity<Guid>`): FK `DonoUsuarioId`, `Ativa` (revogável via `Revogar`, 59-63), `Prefixo` não-secreto para exibição, e o VO **`ApiKeyHash`** = SHA-256 hex lowercase (`ApiKeyHash.FromRawKey`, `ApiKeyHash.cs:13-20`). **Só o `hash` e o `prefixo` são persistidos — nunca a key em claro** (o texto puro é mostrado 1× na geração, tarefa 63).
+- **Configs EF** (`Infrastructure/Persistence/Configurations/`): `UsuarioConfiguration.cs` (tabela `usuarios`, uniques `ix_usuarios_google_sub`/`ix_usuarios_email`, self-FK `aprovado_por` `Restrict`, `papel` via `HasConversion<string>`), `ApiKeyConfiguration.cs` (tabela `api_keys`, unique `ix_api_keys_hash`, FK `dono_usuario_id` `Restrict`).
+- **Guard de boot** (`API/Extensions/ApiKeyGuard.cs`): fora de Development/Testing, aborta o boot se `ApiKey:Key` (a **service key**) for vazia ou um placeholder bloqueado (`CHANGE-ME-IN-PRODUCTION` ou `dev-local-key`, `ApiKeyGuard.cs:8-14`); chamado em `Program.cs:19`.
+
+### Matriz de autenticação e autorização
+
+O `ApiKeyMiddleware` (`API/Middleware/ApiKeyMiddleware.cs`, fluxo `InvokeAsync` 48-97) resolve a identidade **antes** das rotas e grava o tipo em `HttpContext.Items[IdentityKindItemsKey]` (`ApiKeyMiddleware.cs:17-19,104`). Os filtros de gestão (`API/Http/`) leem esses items.
+
+| Credencial | Como valida | Identidade (`Items`) | O que libera |
+|---|---|---|---|
+| **Service key** (`X-Api-Key` == `ApiKey:Key`) | fast-path SHA-256 `FixedTimeEquals` **in-memory, sem banco** (`ApiKeyMiddleware.cs:73,194-205`) | `IdentityKind="service"` | **tudo** — negócio + gestão (`/me/*`, `/admin/*`); **isenta** do rate-limit por cliente (66) |
+| **Client key** (`X-Api-Key` = `td_…`) | SHA-256 → `IApiKeyReadRepository.GetActiveByHashAsync` (`WHERE hash AND ativa`, cache 5min) (`ApiKeyMiddleware.cs:79,126-134`) | `IdentityKind="client"` + `RateLimit.ClienteId=apiKeyId` (`:104-109`) | **só rotas de negócio**; sujeita ao rate-limit por cliente (66); **reprovada** nos filtros de gestão |
+| **Google OAuth** (Web/BFF) | cookie httpOnly 8h sliding (`Web/Program.cs:38-47`); 1º login `OnCreatingTicket`→`GoogleLoginService` (exige `email_verified`)→`POST /admin/usuarios/sync` (`Web/Program.cs:60-80`) | claim `Role`=papel; o Web assere o usuário à API via header **`X-Acting-User-Sub`** (google_sub) **sobre a service key** (`TesouroApiClient.cs:18,72`) | telas do site; a API materializa a autorização nos filtros de gestão |
+| **Isentas** (`/health*`, `/metrics`, `/swagger`) | `IsExcludedPath` short-circuit — 1º check (`ApiKeyMiddleware.cs:50-54,168-172`; `ApiKey:ExcludedPaths`) | — | passam sem auth, **sem rate-limit e sem contar falha** |
+| **Falha** (sem key / key inválida) | 401 `application/problem+json` | — (nada em `Items`; `unknown` é só label da métrica `RecordUnauthorized`) | conta no **limiter por IP** (67) → 429 ao estourar |
+
+**Filtros de gestão** (`API/Http/`, `IEndpointFilter`; rejeição sempre **403 problem+json**) — todos exigem **service key** (`IsServiceIdentity`, `ApiKeyIdentityExtensions.cs:8-10`) porque `X-Acting-User-Sub` sozinho é forjável por qualquer client key (endurecimento da tarefa 63, fecha personificação):
+- **`ServiceKeyOnlyFilter`** (só service key) → `POST /admin/usuarios/sync` (`UsuarioEndpoints.cs:25`; o sync é o 1º login, sem usuário aprovado ainda).
+- **`AdminOnlyFilter`** (service key + `X-Acting-User-Sub` → `Usuario` com **Papel=Admin ∧ Aprovado ∧ Ativo**, `AdminOnlyFilter.cs:16-38`) → `GET /admin/usuarios?pendentes`, `POST /admin/usuarios/{sub}/aprovar|desativar` (`UsuarioEndpoints.cs:52,74,94`); guarda o admin em `Items` (fonte de `aprovado_por`).
+- **`UsuarioAprovadoFilter`** (service key + acting-user **Aprovado ∧ Ativo**, sem exigir Admin, `UsuarioAprovadoFilter.cs:14-36`) → `GET/POST /me/keys`, `POST /me/keys/{id}/revogar` (`ApiKeyEndpoints.cs:24,45,67`).
+
+### Rate limiting (3 camadas, chaves distintas)
+
+Complementares, sem duplicar — cada uma particiona por uma chave diferente:
+1. **nginx (borda) — por IP bruto:** flood-guard grosso, zone `api` 30 r/s (`infra/nginx/tesouro-direto.conf`), `limit_req_status 429`+`Retry-After`.
+2. **Por IP, só falhas de auth (tarefa 67) — semântico:** `IAuthFailureRateLimiter`/`InMemoryAuthFailureRateLimiter` (`Infrastructure/RateLimiting/`, `PartitionedRateLimiter<string>` fixed-window por IP; **10/60s** de `RateLimiting:AuthFailure:*`, `appsettings.json:24-27`; registro `Infrastructure/DependencyInjection.cs:184-193`). **Consume-on-failure**: só key ausente/inválida chama `RegisterFailure(ip)` (`ApiKeyMiddleware.cs:63,86`) → 401 dentro do orçamento, **429 + `Retry-After`** ao estourar; **key válida nunca toca o limiter** (cliente legítimo jamais punido, mesmo de IP compartilhado). IP real via `app.UseForwardedHeaders()` (`Program.cs:23`; `XForwardedFor`, `KnownNetworks`/`KnownProxies` limpos, `API/DependencyInjection.cs:23-28`); `ForwardLimit=1` + `$proxy_add_x_forwarded_for` ⇒ IP não-forjável através do nginx.
+3. **Por cliente (tarefa 66) — fino:** `AddRateLimiter` `GlobalLimiter` particionado por `Items[RateLimit.ClienteId]` (`API/DependencyInjection.cs:75-112`); **60/min** fixed-window (`RateLimiting:PermitLimit`/`WindowSeconds`); service key/isentas/sem-cliente → `NoLimiter`; **429 problem+json + `Retry-After`** via `OnRejected` (corpo herda `correlationId`/`traceId`). Store `IRateLimitStore` (`InMemoryRateLimitStore`; **gancho Redis declarado e não implementado** — `RedisRateLimitStore` lança `NotImplementedException`, troca por `RateLimiting:Store=Redis` sem reescrever o particionamento). Registro `Infrastructure/DependencyInjection.cs:166-182`.
+
+**Ordem no pipeline** (`Program.cs`): `UseForwardedHeaders` (23) → … → `ApiKeyMiddleware` (38) → `UseRateLimiter` (39) → rotas. Falhas de auth fazem **short-circuit no middleware antes do `UseRateLimiter`** — por isso o limite por cliente (66) nunca as vê, e o limiter por IP (67) foi criado para cobri-las.
+
+### Fragilidades
+- **Rate limit em processo, não distribuído** — ambos os limiters (66 e 67) são in-memory por instância; em deploy multi-instância cada réplica conta a sua cota. O `RedisRateLimitStore` é só stub (`NotImplementedException`); o limiter por IP nem tem gancho Redis. Aceitável na topologia atual (instância única atrás do nginx).
+- **Confiança na borda (BFF)** — `X-Forwarded-For` (IP do limiter 67) e `X-Acting-User-Sub` (usuário asserido) são confiáveis **só** porque a API é alcançável apenas via nginx na rede interna; exposição direta da API quebraria as duas premissas.
+- **Janela de revogação da client key** — o lookup é cacheado 5min (`Caching:ApiKeys`); uma key revogada dentro da janela segue válida até o TTL expirar (esperado, ADR §3.5; `revogar` invalida o cache via `InvalidateApiKeys()`, mas o cache é por instância).
+- **Eviction de partições por IP não medida sob carga** — o `PartitionedRateLimiter` do 67 cria uma partição por IP que falha; a limpeza de partições ociosas é do framework (mesma postura do 66), não medida sob flood de IPs distintos.
+
+---
+
 ## Verificação das fragilidades
 
 Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impacto lendo o código-fonte real (não docs/comentários). **Nenhuma das 10 foi refutada** — todas confirmadas literalmente, com uma nuance agravante no item 8. **Status de correção** (coluna final, atualizado 2026-07-23): itens **1, 2, 3, 4, 5, 7, 8, 9 e 10 resolvidos** (tarefas 4, 2, 11, 9, 10, 3, 1, 7 e 8 do PLANO); segue **aberto** apenas o item **6** (upsert não-atômico).
@@ -234,7 +280,7 @@ Passo adversarial: o revisor tentou **refutar** cada fragilidade de maior impact
 4. ✔️ RESOLVIDO (tarefa 2) **`Indexador` whitelist rígida** → materialização EF quebra com valor inesperado na coluna (§2).
 
 **Segurança / operação:**
-5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1). **Parcial** ✔️ (tarefas 5 + 19): boot aborta em prod com chave default/vazia **ou `dev-local-key`**, e o compose falha sem `API_KEY` (sem fallback inseguro); segue aberto o compartilhamento único e a paridade leitura/escrita. **Planejado (tarefa 56, ADR **aprovado** 2026-08-06 — [`docs/arch/ADR-auth.md`](./arch/ADR-auth.md)):** API pública multi-cliente — keys **por cliente** (hasheadas, self-service, validadas contra tabela), login Google no site (Web como BFF), seed de admin por `ADMIN_EMAIL`, rate limit por cliente; fecha o compartilhamento da chave única. Execução = **tarefas 59–67**.
+5. Chave de API única compartilhada, default `CHANGE-ME-IN-PRODUCTION`; endpoints mutantes com mesma proteção que leitura (§1). ✔️ RESOLVIDO (tarefas 5 + 19 + **onda de auth 59–67**, 2026-08-08): boot aborta em prod com chave default/vazia **ou `dev-local-key`** (5+19); e a **onda 59–67** (ADR [`docs/arch/ADR-auth.md`](./arch/ADR-auth.md), aprovado 2026-08-06) entregou a **API pública multi-cliente** — keys **por cliente** (hasheadas, self-service, validadas contra tabela), login Google no site (Web como BFF), seed de admin por `ADMIN_EMAIL`, gestão admin/self-service, e rate limiting por cliente (66) + por IP nas falhas (67). A service key vira credencial **BFF** (Web→API); clientes externos usam keys próprias. **Ver §6.** Resíduo aceito: identidade/rate-limit em processo (não distribuído).
 6. ✔️ RESOLVIDO (tarefa 1) Grafana público com senha default `admin` (§4).
 7. ✔️ RESOLVIDO (tarefa 13) Sem retry/circuit breaker em nenhuma integração externa → `AddResilienceHandler` nos 3 typed clients (retry+timeout nos 3, circuit breaker só no BCB) (§3).
 8. ✔️ RESOLVIDO (tarefa 3) Healthcheck raso não detecta banco fora (§4).

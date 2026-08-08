@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -20,19 +21,26 @@ public sealed class ApiKeyMiddleware
     private const string ApiKeyHeader = "X-Api-Key";
     private const string ServiceIdentity = "service";
     private const string UnknownIdentity = "unknown";
+    private const string UnknownIp = "unknown";
     private const string AuthorizedOutcome = "authorized";
     private const string UnauthorizedOutcome = "unauthorized";
     private const string ClienteIdProperty = "ClienteId";
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ApiKeyMiddleware> _logger;
+    private readonly IAuthFailureRateLimiter _authFailureLimiter;
     private readonly string _configuredKey;
     private readonly string[] _excludedPaths;
 
-    public ApiKeyMiddleware(RequestDelegate next, IConfiguration configuration, ILogger<ApiKeyMiddleware> logger)
+    public ApiKeyMiddleware(
+        RequestDelegate next,
+        IConfiguration configuration,
+        ILogger<ApiKeyMiddleware> logger,
+        IAuthFailureRateLimiter authFailureLimiter)
     {
         _next = next;
         _logger = logger;
+        _authFailureLimiter = authFailureLimiter;
         _configuredKey = configuration["ApiKey:Key"] ?? string.Empty;
         _excludedPaths = configuration.GetSection("ApiKey:ExcludedPaths").Get<string[]>() ?? [];
     }
@@ -45,10 +53,19 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
+        var clientIp = GetClientIp(context);
+
         if (!TryGetValidApiKey(context, out var providedKey))
         {
             _logger.LogWarning("Request without API key to {Path}", context.Request.Path);
             RecordUnauthorized(context);
+
+            if (!_authFailureLimiter.RegisterFailure(clientIp))
+            {
+                await WriteTooManyRequestsAsync(context);
+                return;
+            }
+
             await WriteUnauthorizedAsync(context);
             return;
         }
@@ -65,6 +82,13 @@ public sealed class ApiKeyMiddleware
         {
             _logger.LogWarning("Invalid API key attempt to {Path}", context.Request.Path);
             RecordUnauthorized(context);
+
+            if (!_authFailureLimiter.RegisterFailure(clientIp))
+            {
+                await WriteTooManyRequestsAsync(context);
+                return;
+            }
+
             await WriteUnauthorizedAsync(context);
             return;
         }
@@ -119,6 +143,26 @@ public sealed class ApiKeyMiddleware
             HttpContext = context,
             ProblemDetails = new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" }
         });
+    }
+
+    private async Task WriteTooManyRequestsAsync(HttpContext context)
+    {
+        var problemDetailsService = context.RequestServices.GetRequiredService<IProblemDetailsService>();
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.Response.Headers.RetryAfter =
+            ((int)Math.Ceiling(_authFailureLimiter.Window.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+
+        await problemDetailsService.WriteAsync(new ProblemDetailsContext
+        {
+            HttpContext = context,
+            ProblemDetails = new ProblemDetails { Status = StatusCodes.Status429TooManyRequests, Title = "Too Many Requests" }
+        });
+    }
+
+    private static string GetClientIp(HttpContext context)
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString();
+        return string.IsNullOrEmpty(ip) ? UnknownIp : ip;
     }
 
     private bool IsExcludedPath(PathString path)
