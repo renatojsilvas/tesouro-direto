@@ -1,10 +1,17 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
 using Prometheus;
 using TesouroDireto.API.Extensions;
 using TesouroDireto.API.OpenApi;
 using TesouroDireto.Infrastructure.Persistence;
+using TesouroDireto.Infrastructure.RateLimiting;
 
 namespace TesouroDireto.API;
 
@@ -54,6 +61,45 @@ public static class DependencyInjection
 
                 context.ProblemDetails.Extensions["traceId"] =
                     Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
+            };
+        });
+
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            {
+                var store = context.RequestServices.GetRequiredService<IRateLimitStore>();
+                var clienteId = context.Items.TryGetValue(RateLimitIdentity.ClienteIdItemsKey, out var value)
+                    ? value as string
+                    : null;
+                return store.GetPartition(clienteId);
+            });
+            options.OnRejected = async (rejected, token) =>
+            {
+                var httpContext = rejected.HttpContext;
+                if (rejected.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                {
+                    httpContext.Response.Headers.RetryAfter =
+                        ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+                }
+                httpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                var clienteId = httpContext.Items.TryGetValue(RateLimitIdentity.ClienteIdItemsKey, out var value)
+                    ? value as string ?? "unknown"
+                    : "unknown";
+                var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("TesouroDireto.API.RateLimiting");
+                logger.LogWarning("Rate limit exceeded for cliente {ClienteId} on {Path}", clienteId, httpContext.Request.Path);
+                var problemDetailsService = httpContext.RequestServices.GetRequiredService<IProblemDetailsService>();
+                await problemDetailsService.WriteAsync(new ProblemDetailsContext
+                {
+                    HttpContext = httpContext,
+                    ProblemDetails = new ProblemDetails
+                    {
+                        Status = StatusCodes.Status429TooManyRequests,
+                        Title = "Too Many Requests"
+                    }
+                });
             };
         });
 
