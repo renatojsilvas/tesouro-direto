@@ -29,6 +29,7 @@ using TesouroDireto.Infrastructure.Observability;
 using TesouroDireto.Infrastructure.Persistence;
 using TesouroDireto.Infrastructure.Persistence.Repositories;
 using TesouroDireto.Infrastructure.Projecoes;
+using TesouroDireto.Infrastructure.RateLimiting;
 
 namespace TesouroDireto.Infrastructure;
 
@@ -161,6 +162,24 @@ public static class DependencyInjection
                 .WithCronSchedule(feriadosCronSchedule));
         });
         services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
+
+        services.AddSingleton(sp =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var permitLimit = config.GetValue<int?>("RateLimiting:PermitLimit") ?? 60;
+            var windowSeconds = config.GetValue<int?>("RateLimiting:WindowSeconds") ?? 60;
+            return new RateLimitingOptions(permitLimit, TimeSpan.FromSeconds(windowSeconds));
+        });
+
+        services.AddSingleton<IRateLimitStore>(sp =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var store = config["RateLimiting:Store"] ?? "InMemory";
+
+            return string.Equals(store, "Redis", StringComparison.OrdinalIgnoreCase)
+                ? new RedisRateLimitStore()
+                : new InMemoryRateLimitStore(sp.GetRequiredService<RateLimitingOptions>());
+        });
 
         return services;
     }

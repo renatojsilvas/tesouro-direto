@@ -7,6 +7,7 @@ using Serilog.Context;
 using TesouroDireto.Application.ApiKeys;
 using TesouroDireto.Domain.ApiKeys;
 using TesouroDireto.Infrastructure.Observability;
+using TesouroDireto.Infrastructure.RateLimiting;
 
 namespace TesouroDireto.API.Middleware;
 
@@ -77,6 +78,12 @@ public sealed class ApiKeyMiddleware
         var metrics = context.RequestServices.GetRequiredService<IApiKeyMetrics>();
 
         context.Items[IdentityKindItemsKey] = identityKind;
+
+        if (identityKind == ClientIdentityKind)
+        {
+            context.Items[RateLimitIdentity.ClienteIdItemsKey] = clienteId;
+        }
+
         diagnosticContext.Set(ClienteIdProperty, clienteId);
         metrics.RecordRequest(clienteId, AuthorizedOutcome);
 

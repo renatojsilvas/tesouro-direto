@@ -34,6 +34,7 @@ app.UseWhen(
     branch => branch.UseHttpMetrics());
 
 app.UseMiddleware<ApiKeyMiddleware>();
+app.UseRateLimiter();
 
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/ready");

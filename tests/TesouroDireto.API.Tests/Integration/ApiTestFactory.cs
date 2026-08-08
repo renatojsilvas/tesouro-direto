@@ -17,7 +17,7 @@ using TesouroDireto.Infrastructure.Projecoes;
 
 namespace TesouroDireto.API.Tests.Integration;
 
-public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string ApiKeyHeader = "X-Api-Key";
     public const string ValidApiKey = "integration-test-api-key-0123456789";
