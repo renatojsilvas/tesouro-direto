@@ -324,12 +324,39 @@ partir de 1 IP):
 | > 95 req/s | não forçado (latência já alta; exige mais CPU) |
 
 - **Gargalo = CPU (1 vCPU).** Memória não foi o limite. O app não caiu.
-- O rate limit de **30 r/s é por IP** (anti-abuso), não um teto global — usuários de IPs
-  distintos não o compartilham. O teto **global** do app é ~90–95 req/s (limitado por CPU).
-- **Usuários simultâneos** ≈ req/s ÷ ritmo por usuário: 1 req/5 s → ~300–450; 1 req/10 s →
-  ~600–900; 1 req/s → ~60–90.
 - **Consequência:** subir o `limit_req` do nginx só ajuda até ~90 req/s; além disso o app satura
   a CPU — para mais capacidade, escalar vCPU (vertical) ou horizontal.
+
+**Quantos usuários diferentes cabem juntos.** O rate limit de **30 r/s é por IP** (anti-abuso):
+cada usuário vem de um IP diferente e tem seu próprio balde, então usuários distintos **não**
+disputam esses 30 r/s entre si — um usuário só encostaria nesse limite se sozinho fizesse >30
+req/s. Logo, o número de usuários **não** é limitado pelos 30 r/s, e sim pelo **teto global do
+app (~90 req/s, CPU)**. O número de usuários é `req/s suportado ÷ requisições por segundo de cada
+usuário`:
+
+| Ritmo de cada usuário | No teto do app (**90 req/s**) | (se 30 r/s fosse global¹) |
+|---|---|---|
+| 1 req/s (intenso) | ~90 usuários | ~30 |
+| 1 req a cada 3 s | ~270 | ~90 |
+| 1 req a cada 5 s (navegação) | ~450 | ~150 |
+| 1 req a cada 10 s (leitura) | ~900 | ~300 |
+| 1 req a cada 30 s | ~2.700 | ~900 |
+
+¹ coluna só de referência — os 30 r/s **não** são teto global, são por IP.
+
+**Degradação conforme a carga sobe até ~90 req/s** (ritmo de navegação, ~0,2 req/s por usuário):
+
+| Carga total | Usuários simultâneos (~) | p95 | Estado da VPS (1 vCPU) |
+|---|---|---|---|
+| ~30 req/s | ~150 | ~0,3 s | folgado |
+| ~50 req/s | ~250 | ~0,5 s | CPU ~100%, ainda ok |
+| ~70 req/s | ~350 | ~1 s | **joelho** (fila de CPU começa) |
+| ~90–95 req/s | ~450 | ~1,3 s | saturado (load ~2,9), **0 erro** |
+| > 95 req/s | > ~475 | > 2 s / risco | não recomendado sem mais vCPU |
+
+> A tabela de usuários é aritmética. Na tabela de degradação, o teto (~90 r/s) e os extremos
+> (~30 e ~90 r/s) são **medidos**; os pontos intermediários (50/70 r/s) são **interpolados** do
+> p95 agregado do ramp + do loadavg da VPS (o teste exportou o p95 do ramp inteiro, não por faixa).
 
 **Site — circuitos SignalR concorrentes** (`site/circuits.js`, ramp monitorado, abort por memória):
 
