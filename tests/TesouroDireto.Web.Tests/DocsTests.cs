@@ -44,6 +44,15 @@ public class DocsTests : TestContext
     }
 
     [Fact]
+    public void Render_QuandoPublicBaseUrlEhInvalida_NaoDerrubaAPagina()
+    {
+        var cut = RenderDocs("nao-e-uma-url");
+
+        cut.Find("[data-testid=docs-nav]").Should().NotBeNull();
+        cut.Find("[data-testid=aviso-links-relativos]").TextContent.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public void RotaDocs_QuandoNaoAutorizado_RenderizaSemPedirLoginENaoMostraNaoAutorizado()
     {
         this.AddTestAuthorization().SetNotAuthorized();
