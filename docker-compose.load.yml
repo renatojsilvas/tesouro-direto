@@ -1,0 +1,15 @@
+services:
+  prometheus:
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.external-url=/prometheus/'
+      - '--web.enable-remote-write-receiver'
+
+  k6:
+    image: grafana/k6:latest
+    profiles:
+      - load
+    volumes:
+      - ./tests/load:/scripts:ro
+    environment:
+      K6_PROMETHEUS_RW_SERVER_URL: ${K6_PROMETHEUS_RW_SERVER_URL:?defina K6_PROMETHEUS_RW_SERVER_URL, ex. http://tesouro-direto-prometheus:9090/prometheus/api/v1/write}
