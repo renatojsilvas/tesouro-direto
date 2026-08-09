@@ -21,19 +21,18 @@
 }
 
 .brand:hover .brand-icon {
-    box-shadow: 0 4px 20px rgba(79, 172, 254, 0.35);
     transform: scale(1.05);
 }
 
 .brand-icon {
     width: 38px;
     height: 38px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #4facfe, #00c896);
+    
+    background: transparent; border: 1px solid var(--ouro-selo); border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 12px rgba(79, 172, 254, 0.25);
+    box-shadow: none;
     transition: all 0.3s ease;
     flex-shrink: 0;
 }
@@ -114,7 +113,7 @@
         color: var(--text-secondary);
         background: none;
         border: none;
-        border-radius: 8px;
+        border-radius: 2px;
         height: 2.5rem;
         display: flex;
         align-items: center;
@@ -126,8 +125,10 @@
     }
 
 .nav-item ::deep a.active {
-    background: rgba(79, 172, 254, 0.1);
-    color: var(--accent-blue);
+    background: rgba(237, 239, 228, 0.07);
+    color: #EDEFE4;
+    border-left: 2px solid var(--ouro-selo);
+    border-radius: 0 2px 2px 0;
 }
 
 .nav-item ::deep a.active .nav-icon {
@@ -163,3 +164,24 @@
         overflow-y: auto;
     }
 }
+
+
+/* --- Tema Apólice: sidebar de tinta --- */
+.sidebar-header { border-bottom: 1px solid rgba(237, 239, 228, 0.12); }
+.brand, .brand:hover, .brand-name { color: #EDEFE4; }
+.brand-name { font-family: var(--f-display); font-weight: 600; letter-spacing: 0.01em; }
+.brand-tagline { color: var(--ouro-claro); font-family: var(--f-mono); letter-spacing: 0.22em; }
+.brand-icon svg { stroke: var(--ouro-claro); }
+
+.nav-item ::deep .nav-link { color: rgba(237, 239, 228, 0.62); }
+.nav-item ::deep .nav-link:hover { background: rgba(237, 239, 228, 0.05); color: #EDEFE4; }
+.nav-section-label {
+    font-family: var(--f-mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ouro-claro);
+    opacity: 0.85;
+    padding: 1.1rem 1.25rem 0.35rem;
+}
+.nav-divider { background: rgba(237, 239, 228, 0.1); }

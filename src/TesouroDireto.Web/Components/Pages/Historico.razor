@@ -249,8 +249,8 @@ else if (!loading && selectedTituloCodigo != "")
             var labels = pageItems.Select(p => FormatDate(p.DataBase)).ToArray();
             var datasets = new object[]
             {
-                new { label = "PU Compra", data = pageItems.Select(p => p.PuCompra ?? 0).ToArray(), color = "#0d6efd" },
-                new { label = "PU Venda", data = pageItems.Select(p => p.PuVenda ?? 0).ToArray(), color = "#dc3545" }
+                new { label = "PU Compra", data = pageItems.Select(p => p.PuCompra ?? 0).ToArray(), color = "#2E5F45" },
+                new { label = "PU Venda", data = pageItems.Select(p => p.PuVenda ?? 0).ToArray(), color = "#A8823C" }
             };
 
             await JS.InvokeVoidAsync("chartInterop.createLineChart", "priceChart", labels, datasets);
