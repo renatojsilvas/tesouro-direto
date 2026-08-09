@@ -230,10 +230,12 @@ o protocolo interno.
 
 ## 7. Baseline (limites de capacidade observados)
 
-Capturado em **2026-08-08** contra **produção** (VPS, atrás do nginx+TLS), ramp de 0→200 VUs
-a partir de **1 IP** (o número de origem importa — ver a nota sobre a borda abaixo). Números do
-resumo do `k6` (`--summary-export`); o `site/circuits.js` não foi executado contra prod (segurar
-circuitos Blazor exige a validação do handshake contra o servidor real — ver seção 6).
+Duas medições contra **produção** (VPS, atrás do nginx+TLS), ramp de 0→200 VUs a partir de
+**1 IP** (o número de origem importa — ver a nota sobre a borda). Números do resumo do `k6`
+(`--summary-export`); o `site/circuits.js` não foi executado contra prod (segurar circuitos
+Blazor exige a validação do handshake contra o servidor real — ver seção 6).
+
+### 7.1 Antes das otimizações (2026-08-08)
 
 | Fluxo | Throughput obs. | p95 | Taxa de erro | Taxa de 304 | Teto atingido |
 |---|---|---|---|---|---|
@@ -246,7 +248,7 @@ circuitos Blazor exige a validação do handshake contra o servidor real — ver
 ¹ Throughput inflado pelas respostas `429` (que são rápidas): o número alto é a taxa de tentativas,
 não de sucesso. O sucesso real (`status 200`) foi ~17% no `preco-atual` e ~5% no `simulador`.
 
-**Os dois tetos distintos da configuração (a conclusão principal):**
+**Os dois tetos distintos da configuração (estado pré-otimização; ver 7.2 para o depois):**
 
 1. **Borda (nginx): ~30 req/s por IP** (`limit_req zone=api rate=30r/s burst=50 nodelay`),
    responde **`429` + `Retry-After: 5`**. Confirmado com uma rajada controlada (70 req → 56×200 /
@@ -260,9 +262,35 @@ não de sucesso. O sucesso real (`status 200`) foi ~17% no `preco-atual` e ~5% n
 Referência local (não-representativa do hardware da VPS, só para sanidade do script): `titulos.js`
 no ambiente local deu p95 262 ms, 0,01% de erro e 304 de 99,97% a 200 VUs (~874 req/s).
 
-**Regressão futura:** comparar contra estes tetos. Sinal de alarme = throughput de sucesso cair
-abaixo de ~20 req/s nos fluxos pesados, ou p95 dos fluxos pesados subir acima de ~7 s em carga
-equivalente.
+### 7.2 Depois das otimizações (2026-08-09) — gargalo de app eliminado
+
+Após deploy das otimizações **#48** (cache da version do ETag) e **#49** (`NoResetOnClose` no
+Npgsql), o mesmo teste (ramp 200 VUs, 1 IP). A coluna que importa é a **latência das respostas
+`200`** (`expected_response:true`) — o throughput de tentativa e a taxa de erro apenas refletem
+que o ramp gera muito acima do teto da borda e a maioria vira `429`:
+
+| Fluxo | p95 dos `200` — antes → depois | Teto atingido agora |
+|---|---|---|
+| `api/titulos.js` (GET + ETag) | **6,9 s → 0,93 s** | **Borda nginx** (~30 req/s por IP) |
+| `api/historico.js` (GET paginado) | **7,2 s → 0,31 s** (~23×) | **Borda nginx** |
+| `api/preco-atual.js` (GET) | ~0,3 s → 0,31 s | **Borda nginx** (já era) |
+| `api/simulador.js` (POST) | ~0,25 s → 0,24 s | **Borda nginx** (já era) |
+
+**Mudança estrutural:** antes havia **dois tetos** (capacidade da VPS para os pesados, borda para
+os leves). Depois sobrou **um só — a borda nginx (~30 req/s por IP)**, para todos os 4 fluxos. Os
+fluxos pesados **deixaram de saturar o app**: respondem em sub-segundo sob carga (0,3–0,9 s vs
+~7 s) e só esbarram no rate limit da borda. Erros = `429` da borda (confirmado por rajada: 70 req
+→ 53×200 / 17×429), não 5xx — o app não caiu. Redução de queries de version ao DB medida no
+profiling: **−99,9%** (129.494 → 132 em 90 s).
+
+**Consequência operacional:** o `limit_req` do nginx (30 req/s/IP) agora é a trava de **todos** os
+fluxos. Antes, aumentá-lo não adiantaria (o app saturava a ~21 req/s, abaixo dos 30); **agora sim**
+— o app aguenta bem além de 30 req/s por requisição individual, então subir o limite da borda (ou
+escalar horizontalmente) destravaria mais capacidade real.
+
+**Regressão futura:** comparar contra o pós-otimização (7.2). Sinal de alarme = p95 das respostas
+`200` dos fluxos pesados (`titulos`/`historico`) subir acima de ~1–1,5 s em carga equivalente, ou
+o app voltar a saturar (p95 na casa dos segundos) **antes** de bater no teto da borda.
 
 **Limitação de método:** o "joelho" exato (em qual nº de VUs a latência estoura) exigiria a série
 temporal no Grafana, que **não** ficou disponível ao vivo em prod — o Prometheus de prod está sem
