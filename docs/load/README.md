@@ -308,6 +308,39 @@ O que **foi** validado estruturalmente:
   `docker compose config` (incluindo o guard `${K6_PROMETHEUS_RW_SERVER_URL:?...}` do serviço
   `k6`, que falha explicitamente sem a variável).
 
+### 7.3 Teto real de capacidade (2026-08-09) — API e site
+
+Medições contra produção para achar o limite real de cada frente.
+
+**API — teto de throughput** (para achar o limite do app, o rate limit do nginx foi elevado
+temporariamente de 30 para 100 req/s por IP e revertido ao final; ramp de `GET /v1/titulos` a
+partir de 1 IP):
+
+| Carga | Comportamento (VPS 1 vCPU / 2 GB) |
+|---|---|
+| ~30 req/s (limite atual por IP) | tranquilo — p95 sub-segundo, CPU com folga |
+| ~50–70 req/s | **joelho** — CPU a 100%, p95 começa a subir (~0,5–1 s) |
+| ~90–95 req/s | **teto sem erro** — p95 ~1,3 s, **CPU saturada (load ~2,9 num 1 vCPU)**, ainda 0 erro (0 5xx/429) |
+| > 95 req/s | não forçado (latência já alta; exige mais CPU) |
+
+- **Gargalo = CPU (1 vCPU).** Memória não foi o limite. O app não caiu.
+- O rate limit de **30 r/s é por IP** (anti-abuso), não um teto global — usuários de IPs
+  distintos não o compartilham. O teto **global** do app é ~90–95 req/s (limitado por CPU).
+- **Usuários simultâneos** ≈ req/s ÷ ritmo por usuário: 1 req/5 s → ~300–450; 1 req/10 s →
+  ~600–900; 1 req/s → ~60–90.
+- **Consequência:** subir o `limit_req` do nginx só ajuda até ~90 req/s; além disso o app satura
+  a CPU — para mais capacidade, escalar vCPU (vertical) ou horizontal.
+
+**Site — circuitos SignalR concorrentes** (`site/circuits.js`, ramp monitorado, abort por memória):
+
+- **≥ 343 circuitos simultâneos** sustentados com folga; **~0,2–0,3 MiB de RAM por circuito** na
+  VPS → memória **não** é o gargalo (o teto de RAM seria da ordem de milhares).
+- O limite prático do site é a **taxa de novas conexões pela borda nginx (`web: 10 r/s`)**: sob
+  rajada de acessos/reconexões, a home retorna `429`. Circuitos já conectados e ociosos custam
+  quase nada.
+- Ou seja: o site sustenta **centenas de usuários navegando ao mesmo tempo**; o cuidado é uma
+  rajada de muitos acessos novos no mesmo segundo (> 10/s).
+
 ## 8. Não entra na pipeline
 
 Este teste de carga **não roda em CI/CD** — é uma ferramenta sob demanda, executada
