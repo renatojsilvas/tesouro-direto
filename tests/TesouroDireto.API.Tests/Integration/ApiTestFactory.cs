@@ -137,7 +137,8 @@ public class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 ["Resilience:FocusBcb:Retry:BaseDelay"] = "00:00:00.050",
                 ["Resilience:FocusBcb:CircuitBreaker:MinimumThroughput"] = "1000",
                 ["RateLimiting:AuthFailure:PermitLimit"] = "1000",
-                ["RateLimiting:AuthFailure:WindowSeconds"] = "60"
+                ["RateLimiting:AuthFailure:WindowSeconds"] = "60",
+                ["Caching:ContentVersion"] = "00:00:00"
             };
 
             foreach (var (key, value) in ConfigOverrides)
