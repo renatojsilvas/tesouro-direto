@@ -32,7 +32,7 @@ curl -H "X-Api-Key: SUA_CHAVE" \
   https://dadosdotesourodireto.com.br/api/v1/titulos/{codigo}/preco-atual
 
 curl -H "X-Api-Key: SUA_CHAVE" \
-  "https://dadosdotesourodireto.com.br/api/v1/titulos/{codigo}/precos?pagina=1&amp;tamanho=50"</code></pre>
+  "https://dadosdotesourodireto.com.br/api/v1/titulos/{codigo}/precos?page=1&amp;pageSize=50"</code></pre>
 
     <h3 class="h6">C# — HttpClient</h3>
     <pre><code>var client = new HttpClient { BaseAddress = new Uri("https://dadosdotesourodireto.com.br/api/v1/") };
@@ -44,7 +44,7 @@ var codigo = titulos![0].Codigo;
 var precoAtual = await client.GetFromJsonAsync&lt;PrecoTaxaDto&gt;($"titulos/{codigo}/preco-atual");
 
 var precos = await client.GetFromJsonAsync&lt;List&lt;PrecoTaxaDto&gt;&gt;(
-    $"titulos/{codigo}/precos?pagina=1&amp;tamanho=50");</code></pre>
+    $"titulos/{codigo}/precos?page=1&amp;pageSize=50");</code></pre>
 
     <h3 class="h6">fetch (JavaScript)</h3>
     <pre><code>const base = "https://dadosdotesourodireto.com.br/api/v1";
@@ -55,7 +55,7 @@ const codigo = titulos[0].codigo;
 
 const precoAtual = await (await fetch(`${base}/titulos/${codigo}/preco-atual`, { headers })).json();
 
-const precos = await (await fetch(`${base}/titulos/${codigo}/precos?pagina=1&tamanho=50`, { headers })).json();</code></pre>
+const precos = await (await fetch(`${base}/titulos/${codigo}/precos?page=1&pageSize=50`, { headers })).json();</code></pre>
 
     <h2 class="h5">Regras operacionais</h2>
     <ul>

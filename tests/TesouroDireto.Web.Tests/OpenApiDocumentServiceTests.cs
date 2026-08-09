@@ -20,10 +20,47 @@ public class OpenApiDocumentServiceTests
           "openapi": "3.0.1",
           "servers": [ { "url": "/" } ],
           "paths": {
-            "/v1/titulos": { "get": {} },
+            "/v1/titulos": {
+              "get": {
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": { "$ref": "#/components/schemas/TituloResource" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "/v1/titulos/{codigo}/preco-atual": { "get": {} },
-            "/v1/me/keys": { "get": {} },
+            "/v1/mercado": { "get": {} },
+            "/v1/me/keys": {
+              "get": {
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": { "$ref": "#/components/schemas/ApiKeyDto" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "/v1/admin/usuarios": { "get": {} }
+          },
+          "components": {
+            "schemas": {
+              "ApiKeyDto": { "type": "object" },
+              "TituloResource": {
+                "type": "object",
+                "properties": {
+                  "_links": { "$ref": "#/components/schemas/HateoasLink" }
+                }
+              },
+              "HateoasLink": { "type": "object" }
+            }
           }
         }
         """;
@@ -56,8 +93,49 @@ public class OpenApiDocumentServiceTests
 
         var paths = JsonNode.Parse(resultado)!.AsObject()["paths"]!.AsObject();
 
-        paths.ContainsKey("/v1/titulos").Should().BeTrue();
-        paths.ContainsKey("/v1/titulos/{codigo}/preco-atual").Should().BeTrue();
+        paths.ContainsKey("/titulos").Should().BeTrue();
+        paths.ContainsKey("/titulos/{codigo}/preco-atual").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Transform_ComposicaoDeServerUrlComPaths_NaoDuplicaPrefixoV1()
+    {
+        var resultado = OpenApiDocumentService.Transform(FixtureJson, PublicBaseUrl);
+
+        var documento = JsonNode.Parse(resultado)!.AsObject();
+        var serverUrl = documento["servers"]!.AsArray()[0]!["url"]!.GetValue<string>();
+        var paths = documento["paths"]!.AsObject();
+
+        var chaveTitulos = paths.Select(par => par.Key)
+            .Single(chave => chave.EndsWith("/titulos", StringComparison.Ordinal));
+        var chavePrecoAtual = paths.Select(par => par.Key)
+            .Single(chave => chave.EndsWith("/preco-atual", StringComparison.Ordinal));
+
+        (serverUrl + chaveTitulos).Should().Be("https://dadosdotesourodireto.com.br/api/v1/titulos");
+        (serverUrl + chavePrecoAtual).Should().Be("https://dadosdotesourodireto.com.br/api/v1/titulos/{codigo}/preco-atual");
+    }
+
+    [Fact]
+    public void Transform_PathComPrefixoParcialSemelhanteAMeOuAdmin_NaoEhRemovidoPorFalsoPositivo()
+    {
+        var resultado = OpenApiDocumentService.Transform(FixtureJson, PublicBaseUrl);
+
+        var paths = JsonNode.Parse(resultado)!.AsObject()["paths"]!.AsObject();
+
+        paths.Any(par => par.Key.Contains("mercado", StringComparison.OrdinalIgnoreCase)).Should().BeTrue();
+        paths.Any(par => par.Key.Contains("me/keys", StringComparison.OrdinalIgnoreCase)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Transform_PodaSchemasNaoAlcancaveis_MantemApenasOsAlcancaveisTransitivamente()
+    {
+        var resultado = OpenApiDocumentService.Transform(FixtureJson, PublicBaseUrl);
+
+        var schemas = JsonNode.Parse(resultado)!.AsObject()["components"]!["schemas"]!.AsObject();
+
+        schemas.ContainsKey("TituloResource").Should().BeTrue();
+        schemas.ContainsKey("HateoasLink").Should().BeTrue();
+        schemas.ContainsKey("ApiKeyDto").Should().BeFalse();
     }
 
     [Fact]
@@ -93,7 +171,7 @@ public class OpenApiDocumentServiceTests
         var documento = await service.GetDocumentAsync();
 
         documento.Should().NotBeNull();
-        documento.Should().Contain("/v1/titulos");
+        documento.Should().Contain("\"/titulos\"");
         documento.Should().NotContain("/v1/me/keys");
     }
 
