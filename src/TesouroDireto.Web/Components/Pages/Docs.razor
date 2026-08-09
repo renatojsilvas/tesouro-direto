@@ -83,18 +83,13 @@
                 Recursos individuais trazem <code>_links</code> (HAL) no corpo, com atalhos para
                 navegar entre recursos relacionados — por exemplo, de um título para seu preço atual.
             </p>
-            <div class="alert alert-warning" data-testid="aviso-links-relativos">
-                <p>
-                    <strong>Como resolver um <code>href</code>:</strong> os valores de <code>_links</code>
-                    e do cabeçalho <code>Link</code> são caminhos relativos à raiz da API — já vêm com
-                    <code>/v1</code>, mas <strong>sem</strong> o segmento <code>/api</code> que a borda
-                    acrescenta. Não os resolva contra a base URL desta documentação, senão você perde
-                    o <code>/api</code> e cai fora da API.
-                </p>
+            <div class="alert alert-info" data-testid="aviso-links-relativos">
                 <p class="mb-0">
-                    Concatene o href com <code>@origemPublica</code>:
-                    <code>@origemPublica</code> + <code>/v1/titulos/tesouro-selic-2029-03-01</code> =
-                    <code>@origemPublica/v1/titulos/tesouro-selic-2029-03-01</code>.
+                    <strong>Como resolver um <code>href</code>:</strong> os valores de <code>_links</code>
+                    e do cabeçalho <code>Link</code> já vêm prontos, com o caminho completo da API
+                    pública (incluindo o segmento <code>/api</code>). Basta resolvê-los contra o host:
+                    <code>@host</code> + <code>/api/v1/titulos/tesouro-selic-2029-03-01</code> =
+                    <code>@host/api/v1/titulos/tesouro-selic-2029-03-01</code>.
                 </p>
             </div>
         </section>
@@ -155,10 +150,10 @@
     "vencido": false,
     "codigo": "tesouro-selic-2029-03-01",
     "_links": {
-      "self": { "href": "/v1/titulos/tesouro-selic-2029-03-01" },
-      "precos": { "href": "/v1/titulos/tesouro-selic-2029-03-01/precos" },
-      "preco-atual": { "href": "/v1/titulos/tesouro-selic-2029-03-01/preco-atual" },
-      "simular": { "href": "/v1/simulador", "method": "POST", "templated": true }
+      "self": { "href": "/api/v1/titulos/tesouro-selic-2029-03-01" },
+      "precos": { "href": "/api/v1/titulos/tesouro-selic-2029-03-01/precos" },
+      "preco-atual": { "href": "/api/v1/titulos/tesouro-selic-2029-03-01/preco-atual" },
+      "simular": { "href": "/api/v1/simulador", "method": "POST", "templated": true }
     }
   }
 ]</code></pre>
@@ -183,10 +178,10 @@
   "vencido": false,
   "codigo": "tesouro-selic-2029-03-01",
   "_links": {
-    "self": { "href": "/v1/titulos/tesouro-selic-2029-03-01" },
-    "precos": { "href": "/v1/titulos/tesouro-selic-2029-03-01/precos" },
-    "preco-atual": { "href": "/v1/titulos/tesouro-selic-2029-03-01/preco-atual" },
-    "simular": { "href": "/v1/simulador", "method": "POST", "templated": true }
+    "self": { "href": "/api/v1/titulos/tesouro-selic-2029-03-01" },
+    "precos": { "href": "/api/v1/titulos/tesouro-selic-2029-03-01/precos" },
+    "preco-atual": { "href": "/api/v1/titulos/tesouro-selic-2029-03-01/preco-atual" },
+    "simular": { "href": "/api/v1/simulador", "method": "POST", "templated": true }
   }
 }</code></pre>
             </div>
@@ -287,7 +282,7 @@
                 <ExemploCodigo CurlCodigo="@precosPorCodigoCurl" CSharpCodigo="@precosPorCodigoCSharp" JsCodigo="@precosPorCodigoJs" />
                 <p class="text-muted">
                     Cabeçalhos de resposta: <code>X-Total-Count: 214</code> e
-                    <code>Link: &lt;/v1/titulos/tesouro-selic-2029-03-01/precos?page=1&amp;pageSize=50&gt;; rel="first", &lt;/v1/titulos/tesouro-selic-2029-03-01/precos?page=2&amp;pageSize=50&gt;; rel="next", &lt;/v1/titulos/tesouro-selic-2029-03-01/precos?page=5&amp;pageSize=50&gt;; rel="last"</code>
+                    <code>Link: &lt;/api/v1/titulos/tesouro-selic-2029-03-01/precos?page=1&amp;pageSize=50&gt;; rel="first", &lt;/api/v1/titulos/tesouro-selic-2029-03-01/precos?page=2&amp;pageSize=50&gt;; rel="next", &lt;/api/v1/titulos/tesouro-selic-2029-03-01/precos?page=5&amp;pageSize=50&gt;; rel="last"</code>
                 </p>
                 <pre class="docs-json"><code>[
   {
@@ -442,8 +437,8 @@
         }
     }
 
-    private string origemPublica => baseUrl.EndsWith("/v1", StringComparison.Ordinal)
-        ? baseUrl[..^"/v1".Length]
+    private string host => Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+        ? uri.GetLeftPart(UriPartial.Authority)
         : baseUrl;
 
     private static string Linhas(params string[] linhas) => string.Join("\n", linhas);
