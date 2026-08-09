@@ -108,7 +108,12 @@ public static class DependencyInjection
 
         services.AddScoped<SimuladorApplicationService>();
 
-        services.AddScoped<IContentVersionProvider, ContentVersionProvider>();
+        services.AddScoped<ContentVersionProvider>();
+        services.AddScoped<IContentVersionProvider>(sp =>
+            new CachedContentVersionProvider(
+                sp.GetRequiredService<ContentVersionProvider>(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<IConfiguration>()));
 
         services.AddHttpClient<ICsvImportService, CsvImportService>(client =>
         {
