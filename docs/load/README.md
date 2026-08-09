@@ -7,6 +7,10 @@ Scripts em [`tests/load/`](../../tests/load/), orquestrador [`run-load.sh`](../.
 na raiz, overlay [`docker-compose.load.yml`](../../docker-compose.load.yml) e dashboard
 [`infra/grafana/dashboards/load-test.json`](../../infra/grafana/dashboards/load-test.json).
 
+Para isolar a **causa** do joelho de capacidade observado no baseline (seção 7 abaixo) —
+CPU vs thread-pool starvation vs GC vs Postgres — ver [`profiling.md`](profiling.md)
+(`tests/load/profiling/`, overlay `docker-compose.profiling.yml`).
+
 ## 1. Objetivo e escopo
 
 Cada cenário mede uma coisa diferente:
