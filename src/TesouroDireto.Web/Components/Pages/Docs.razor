@@ -43,7 +43,7 @@
             </p>
             <p>
                 Para obter sua chave, entre em <a href="/desenvolvedores" data-testid="link-credenciais">/desenvolvedores</a>
-                e gere uma credencial na aba Credenciais.
+                e gere uma credencial.
             </p>
             <div class="alert alert-warning">
                 <strong>Atenção:</strong> a chave é mostrada <strong>uma única vez</strong>, no momento
@@ -83,6 +83,20 @@
                 Recursos individuais trazem <code>_links</code> (HAL) no corpo, com atalhos para
                 navegar entre recursos relacionados — por exemplo, de um título para seu preço atual.
             </p>
+            <div class="alert alert-warning" data-testid="aviso-links-relativos">
+                <p>
+                    <strong>Como resolver um <code>href</code>:</strong> os valores de <code>_links</code>
+                    e do cabeçalho <code>Link</code> são caminhos relativos à raiz da API — já vêm com
+                    <code>/v1</code>, mas <strong>sem</strong> o segmento <code>/api</code> que a borda
+                    acrescenta. Não os resolva contra a base URL desta documentação, senão você perde
+                    o <code>/api</code> e cai fora da API.
+                </p>
+                <p class="mb-0">
+                    Concatene o href com <code>@origemPublica</code>:
+                    <code>@origemPublica</code> + <code>/v1/titulos/tesouro-selic-2029-03-01</code> =
+                    <code>@origemPublica/v1/titulos/tesouro-selic-2029-03-01</code>.
+                </p>
+            </div>
         </section>
 
         <section id="erros" class="docs-section">
@@ -429,6 +443,10 @@
             baseUrl = configurado;
         }
     }
+
+    private string origemPublica => baseUrl.EndsWith("/v1", StringComparison.Ordinal)
+        ? baseUrl[..^"/v1".Length]
+        : baseUrl;
 
     private static string Linhas(params string[] linhas) => string.Join("\n", linhas);
 

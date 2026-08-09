@@ -30,6 +30,18 @@ public class DocsTests : TestContext
     }
 
     [Fact]
+    public void Render_AvisoDeLinksRelativos_ExplicaQueOHrefNaoTrazOSegmentoApi()
+    {
+        var cut = RenderDocs();
+
+        var aviso = cut.Find("[data-testid=aviso-links-relativos]").TextContent;
+
+        aviso.Should().Contain("/api");
+        aviso.Should().Contain("https://dadosdotesourodireto.com.br/api/v1/titulos/tesouro-selic-2029-03-01");
+        aviso.Should().NotContain("https://dadosdotesourodireto.com.br/api/v1/v1/");
+    }
+
+    [Fact]
     public void RotaDocs_QuandoNaoAutorizado_RenderizaSemPedirLoginENaoMostraNaoAutorizado()
     {
         this.AddTestAuthorization().SetNotAuthorized();
