@@ -4,7 +4,7 @@ using Bunit;
 using Bunit.TestDoubles;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using TesouroDireto.Web.Components.Pages;
+using TesouroDireto.Web.Components.Shared;
 using TesouroDireto.Web.Services;
 
 namespace TesouroDireto.Web.Tests;
@@ -57,7 +57,7 @@ public class ApiKeysTests : TestContext
         AutorizarUsuarioAprovado();
         ConfigureApi(HttpStatusCode.OK, KeysComItemJson);
 
-        var cut = RenderComponent<ApiKeys>();
+        var cut = RenderComponent<ApiKeysPanel>();
 
         cut.WaitForAssertion(() =>
             cut.Find("[data-testid=tabela-keys]").TextContent.Should().Contain("Minha Key"));
@@ -72,7 +72,7 @@ public class ApiKeysTests : TestContext
             KeysComItemJson,
             _ => FakeHttpMessageHandler.JsonResponse(HttpStatusCode.Created, ChaveGeradaJson));
 
-        var cut = RenderComponent<ApiKeys>();
+        var cut = RenderComponent<ApiKeysPanel>();
         cut.WaitForAssertion(() => cut.Find("#nome-key").Should().NotBeNull());
 
         cut.Find("#nome-key").Change("Nova Key");
@@ -95,7 +95,7 @@ public class ApiKeysTests : TestContext
             "v1/me/keys/33333333-3333-3333-3333-333333333333/revogar",
             FakeHttpMessageHandler.NoContentResponse());
 
-        var cut = RenderComponent<ApiKeys>();
+        var cut = RenderComponent<ApiKeysPanel>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=btn-revogar]").Should().NotBeNull());
 
         cut.Find("[data-testid=btn-revogar]").Click();
@@ -110,7 +110,7 @@ public class ApiKeysTests : TestContext
         AutorizarUsuarioAprovado();
         ConfigureApi(HttpStatusCode.Forbidden, """{"code":"Usuario.NaoAprovado","detail":"Usuario nao aprovado"}""");
 
-        var cut = RenderComponent<ApiKeys>();
+        var cut = RenderComponent<ApiKeysPanel>();
 
         cut.WaitForAssertion(() =>
             cut.Find("[data-testid=aguardando]").TextContent.Should().Contain("aguardando aprovação"));
