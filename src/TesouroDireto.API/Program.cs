@@ -3,6 +3,7 @@ using Prometheus;
 using TesouroDireto.API;
 using TesouroDireto.API.Endpoints;
 using TesouroDireto.API.Extensions;
+using TesouroDireto.API.Http;
 using TesouroDireto.API.Middleware;
 using TesouroDireto.Application;
 using TesouroDireto.Infrastructure;
@@ -21,6 +22,7 @@ ApiKeyGuard.Validate(app.Configuration, app.Environment);
 await app.InitializeDatabaseAsync();
 
 app.UseForwardedHeaders();
+app.UseMiddleware<ForwardedPrefixMiddleware>();
 
 app.UseExceptionHandler();
 
