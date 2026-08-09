@@ -15,10 +15,10 @@ export function wsUrlFromWebUrl(webBase) {
   throw new Error(`[blazor] WEB_URL precisa iniciar com http:// ou https://: ${webBase}`);
 }
 
-export function fetchHome(webBase) {
-  const res = http.get(`${webBase}/`);
+export function fetchPage(webBase, path) {
+  const res = http.get(`${webBase}${path}`);
   if (res.status !== 200) {
-    throw new Error(`[blazor] GET / falhou com status ${res.status}`);
+    throw new Error(`[blazor] GET ${path} falhou com status ${res.status}`);
   }
   return res.body;
 }
@@ -38,7 +38,7 @@ export function extractCircuitStartArgs(html) {
   }
   if (componentMarkers.length === 0) {
     throw new Error(
-      "[blazor] nenhum marcador <!--Blazor:{...}--> encontrado em / — a home não parece renderizar um root component com render mode Server"
+      "[blazor] nenhum marcador <!--Blazor:{...}--> encontrado — a página alvo precisa ter um componente com @rendermode InteractiveServer (defina WEB_PATH para uma rota interativa, ex.: /titulos, /simulador)"
     );
   }
 

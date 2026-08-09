@@ -2,7 +2,7 @@ import { WebSocket } from "k6/websockets";
 import { setInterval, clearInterval, setTimeout, clearTimeout } from "k6/timers";
 import { Gauge, Counter, Rate } from "k6/metrics";
 import { webBase } from "../lib/config.js";
-import { fetchHome, extractCircuitStartArgs, negotiate, wsUrlFromWebUrl } from "../lib/blazor.js";
+import { fetchPage, extractCircuitStartArgs, negotiate, wsUrlFromWebUrl } from "../lib/blazor.js";
 import { encodeInvocation, encodePing } from "../lib/msgpack.js";
 
 const circuitsLive = new Gauge("blazor_circuits_live");
@@ -15,6 +15,7 @@ const PING_INTERVAL_MS = 15000;
 const HANDSHAKE_TEXT = `${JSON.stringify({ protocol: "blazorpack", version: 1 })}\x1e`;
 
 const base = webBase();
+const interactivePath = __ENV.WEB_PATH || "/titulos";
 
 export const options = {
   scenarios: {
@@ -43,15 +44,26 @@ function stripRecordSeparator(text) {
   return text.charAt(text.length - 1) === "\x1e" ? text.slice(0, -1) : text;
 }
 
+function handshakeText(data) {
+  if (typeof data === "string") return stripRecordSeparator(data);
+  const bytes = new Uint8Array(data);
+  let end = bytes.indexOf(0x1e);
+  if (end < 0) end = bytes.length;
+  let text = "";
+  for (let i = 0; i < end; i++) text += String.fromCharCode(bytes[i]);
+  return text;
+}
+
 export function holdCircuit() {
   const wsBase = wsUrlFromWebUrl(base);
-  const html = fetchHome(base);
+  const html = fetchPage(base, interactivePath);
   const { descriptorsJson, applicationState } = extractCircuitStartArgs(html);
   const connectionToken = negotiate(base);
   const wsUrl = `${wsBase}/_blazor?id=${connectionToken}`;
 
   return new Promise((resolve) => {
     const ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
     let pingTimer = null;
     let holdTimer = null;
     let settled = false;
@@ -81,11 +93,13 @@ export function holdCircuit() {
 
     ws.onmessage = (event) => {
       if (circuitEstablished) return;
-      if (typeof event.data !== "string") return;
+
+      const text = handshakeText(event.data);
+      if (text.charAt(0) !== "{") return;
 
       let handshakeAck;
       try {
-        handshakeAck = JSON.parse(stripRecordSeparator(event.data));
+        handshakeAck = JSON.parse(text);
       } catch (e) {
         finish(true);
         return;
