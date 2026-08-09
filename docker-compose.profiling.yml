@@ -1,0 +1,7 @@
+services:
+  app:
+    cpus: "${PROFILE_CPUS:-1}"
+    mem_limit: "${PROFILE_MEM:-1g}"
+
+  db:
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
