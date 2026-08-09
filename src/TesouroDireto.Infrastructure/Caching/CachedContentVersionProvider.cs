@@ -14,9 +14,16 @@ public sealed class CachedContentVersionProvider(
 
     public async Task<string> GetVersionAsync(CancellationToken cancellationToken)
     {
+        var ttl = GetTtl();
+
+        if (ttl <= TimeSpan.Zero)
+        {
+            return await inner.GetVersionAsync(cancellationToken);
+        }
+
         var version = await cache.GetOrCreateAsync(CacheKey, async entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetTtl();
+            entry.AbsoluteExpirationRelativeToNow = ttl;
             return await inner.GetVersionAsync(cancellationToken);
         });
 

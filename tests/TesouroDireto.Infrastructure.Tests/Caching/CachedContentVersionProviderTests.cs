@@ -40,5 +40,20 @@ public sealed class CachedContentVersionProviderTests : IDisposable
         version.Should().Be("2026-08-08-10-5");
     }
 
+    [Fact]
+    public async Task GetVersionAsync_WithZeroTtl_ShouldBypassCacheAndCallInnerEachTime()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Caching:ContentVersion"] = "00:00:00" })
+            .Build();
+        var sut = new CachedContentVersionProvider(_inner, _cache, config);
+        _inner.GetVersionAsync(Arg.Any<CancellationToken>()).Returns("2026-08-08-10-5");
+
+        await sut.GetVersionAsync(CancellationToken.None);
+        await sut.GetVersionAsync(CancellationToken.None);
+
+        await _inner.Received(2).GetVersionAsync(Arg.Any<CancellationToken>());
+    }
+
     public void Dispose() => _cache.Dispose();
 }
