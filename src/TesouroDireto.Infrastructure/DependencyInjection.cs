@@ -39,7 +39,11 @@ public static class DependencyInjection
     {
         DapperTypeHandlers.Register();
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection")!;
+        var connectionString = new NpgsqlConnectionStringBuilder(
+            configuration.GetConnectionString("DefaultConnection")!)
+        {
+            NoResetOnClose = true
+        }.ConnectionString;
 
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(connectionString));
