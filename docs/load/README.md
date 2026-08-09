@@ -308,6 +308,66 @@ O que **foi** validado estruturalmente:
   `docker compose config` (incluindo o guard `${K6_PROMETHEUS_RW_SERVER_URL:?...}` do serviço
   `k6`, que falha explicitamente sem a variável).
 
+### 7.3 Teto real de capacidade (2026-08-09) — API e site
+
+Medições contra produção para achar o limite real de cada frente.
+
+**API — teto de throughput** (para achar o limite do app, o rate limit do nginx foi elevado
+temporariamente de 30 para 100 req/s por IP e revertido ao final; ramp de `GET /v1/titulos` a
+partir de 1 IP):
+
+| Carga | Comportamento (VPS 1 vCPU / 2 GB) |
+|---|---|
+| ~30 req/s (limite atual por IP) | tranquilo — p95 sub-segundo, CPU com folga |
+| ~50–70 req/s | **joelho** — CPU a 100%, p95 começa a subir (~0,5–1 s) |
+| ~90–95 req/s | **teto sem erro** — p95 ~1,3 s, **CPU saturada (load ~2,9 num 1 vCPU)**, ainda 0 erro (0 5xx/429) |
+| > 95 req/s | não forçado (latência já alta; exige mais CPU) |
+
+- **Gargalo = CPU (1 vCPU).** Memória não foi o limite. O app não caiu.
+- **Consequência:** subir o `limit_req` do nginx só ajuda até ~90 req/s; além disso o app satura
+  a CPU — para mais capacidade, escalar vCPU (vertical) ou horizontal.
+
+**Quantos usuários diferentes cabem juntos.** O rate limit de **30 r/s é por IP** (anti-abuso):
+cada usuário vem de um IP diferente e tem seu próprio balde, então usuários distintos **não**
+disputam esses 30 r/s entre si — um usuário só encostaria nesse limite se sozinho fizesse >30
+req/s. Logo, o número de usuários **não** é limitado pelos 30 r/s, e sim pelo **teto global do
+app (~90 req/s, CPU)**. O número de usuários é `req/s suportado ÷ requisições por segundo de cada
+usuário`:
+
+| Ritmo de cada usuário | No teto do app (**90 req/s**) | (se 30 r/s fosse global¹) |
+|---|---|---|
+| 1 req/s (intenso) | ~90 usuários | ~30 |
+| 1 req a cada 3 s | ~270 | ~90 |
+| 1 req a cada 5 s (navegação) | ~450 | ~150 |
+| 1 req a cada 10 s (leitura) | ~900 | ~300 |
+| 1 req a cada 30 s | ~2.700 | ~900 |
+
+¹ coluna só de referência — os 30 r/s **não** são teto global, são por IP.
+
+**Degradação conforme a carga sobe até ~90 req/s** (ritmo de navegação, ~0,2 req/s por usuário):
+
+| Carga total | Usuários simultâneos (~) | p95 | Estado da VPS (1 vCPU) |
+|---|---|---|---|
+| ~30 req/s | ~150 | ~0,3 s | folgado |
+| ~50 req/s | ~250 | ~0,5 s | CPU ~100%, ainda ok |
+| ~70 req/s | ~350 | ~1 s | **joelho** (fila de CPU começa) |
+| ~90–95 req/s | ~450 | ~1,3 s | saturado (load ~2,9), **0 erro** |
+| > 95 req/s | > ~475 | > 2 s / risco | não recomendado sem mais vCPU |
+
+> A tabela de usuários é aritmética. Na tabela de degradação, o teto (~90 r/s) e os extremos
+> (~30 e ~90 r/s) são **medidos**; os pontos intermediários (50/70 r/s) são **interpolados** do
+> p95 agregado do ramp + do loadavg da VPS (o teste exportou o p95 do ramp inteiro, não por faixa).
+
+**Site — circuitos SignalR concorrentes** (`site/circuits.js`, ramp monitorado, abort por memória):
+
+- **≥ 343 circuitos simultâneos** sustentados com folga; **~0,2–0,3 MiB de RAM por circuito** na
+  VPS → memória **não** é o gargalo (o teto de RAM seria da ordem de milhares).
+- O limite prático do site é a **taxa de novas conexões pela borda nginx (`web: 10 r/s`)**: sob
+  rajada de acessos/reconexões, a home retorna `429`. Circuitos já conectados e ociosos custam
+  quase nada.
+- Ou seja: o site sustenta **centenas de usuários navegando ao mesmo tempo**; o cuidado é uma
+  rajada de muitos acessos novos no mesmo segundo (> 10/s).
+
 ## 8. Não entra na pipeline
 
 Este teste de carga **não roda em CI/CD** — é uma ferramenta sob demanda, executada
