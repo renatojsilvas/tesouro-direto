@@ -39,7 +39,7 @@ public class NavMenuTests : TestContext
 
         var cut = RenderComponent<NavMenu>();
 
-        cut.FindAll("[data-testid=nav-minhas-api-keys]").Should().BeEmpty();
+        cut.FindAll("[data-testid=nav-desenvolvedores]").Should().BeEmpty();
         cut.FindAll("[data-testid=nav-admin]").Should().BeEmpty();
     }
 
@@ -51,7 +51,7 @@ public class NavMenuTests : TestContext
 
         var cut = RenderComponent<NavMenu>();
 
-        cut.FindAll("[data-testid=nav-minhas-api-keys]").Should().HaveCount(1);
+        cut.FindAll("[data-testid=nav-desenvolvedores]").Should().HaveCount(1);
         cut.FindAll("[data-testid=nav-admin]").Should().BeEmpty();
     }
 
@@ -63,7 +63,7 @@ public class NavMenuTests : TestContext
 
         var cut = RenderComponent<NavMenu>();
 
-        cut.FindAll("[data-testid=nav-minhas-api-keys]").Should().HaveCount(1);
+        cut.FindAll("[data-testid=nav-desenvolvedores]").Should().HaveCount(1);
         cut.FindAll("[data-testid=nav-admin]").Should().HaveCount(1);
     }
 }

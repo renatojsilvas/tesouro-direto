@@ -1,0 +1,57 @@
+@page "/desenvolvedores"
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Desenvolvedores</PageTitle>
+
+<div class="page-header fade-in">
+    <h1>Desenvolvedores</h1>
+    <p class="subtitle">Credenciais, guia de integração e referência da API</p>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button type="button" class="nav-link @(abaAtiva == Aba.Credenciais ? "active" : "")" data-testid="aba-credenciais" @onclick="() => abaAtiva = Aba.Credenciais">Credenciais</button>
+    </li>
+    <li class="nav-item">
+        <button type="button" class="nav-link @(abaAtiva == Aba.InicioRapido ? "active" : "")" data-testid="aba-inicio-rapido" @onclick="() => abaAtiva = Aba.InicioRapido">Início Rápido</button>
+    </li>
+    <li class="nav-item">
+        <button type="button" class="nav-link @(abaAtiva == Aba.Referencia ? "active" : "")" data-testid="aba-referencia" @onclick="() => abaAtiva = Aba.Referencia">Referência</button>
+    </li>
+</ul>
+
+@if (abaAtiva == Aba.Credenciais)
+{
+    <div data-testid="painel-credenciais">
+        <ApiKeysPanel />
+    </div>
+}
+else if (abaAtiva == Aba.InicioRapido)
+{
+    <div data-testid="painel-inicio-rapido">
+        <GuiaIntegracao />
+    </div>
+}
+else
+{
+    <div data-testid="painel-referencia">
+        <p class="text-muted">
+            A referência abaixo é gerada automaticamente a partir do contrato da API. Se o quadro
+            não carregar, a API pode estar indisponível no momento — o visual do quadro é o do
+            Swagger e não segue o tema Apólice desta página.
+        </p>
+        <iframe data-testid="iframe-referencia" src="/desenvolvedores/referencia/index.html" title="Referência OpenAPI" style="height: 75vh; width: 100%; border: 1px solid var(--ouro-selo);"></iframe>
+    </div>
+}
+
+@code {
+    private enum Aba
+    {
+        Credenciais,
+        InicioRapido,
+        Referencia
+    }
+
+    private Aba abaAtiva = Aba.Credenciais;
+}

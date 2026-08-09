@@ -1,0 +1,69 @@
+<div data-testid="guia-integracao">
+    <p>
+        Este guia é o roteiro rápido para integrar a sua aplicação à API do Tesouro Direto —
+        pense nele como o verso da apólice, onde ficam as instruções de uso do selo.
+    </p>
+
+    <h2 class="h5">Base URL</h2>
+    <p>Todas as chamadas partem da mesma base:</p>
+    <pre><code>https://dadosdotesourodireto.com.br/api/v1</code></pre>
+
+    <h2 class="h5">Autenticação</h2>
+    <p>
+        Envie sua chave no cabeçalho <code>X-Api-Key</code> em toda requisição.
+    </p>
+    <div class="alert alert-warning">
+        <strong>Atenção:</strong> a chave é mostrada <strong>uma única vez</strong>, no momento em
+        que é gerada. Guarde-a com cuidado — se perdê-la, gere uma nova na aba
+        <strong>Credenciais</strong>.
+    </div>
+
+    <h2 class="h5">Caminho quente</h2>
+    <p>
+        O fluxo típico é: listar os títulos disponíveis, escolher um pelo <code>codigo</code>,
+        consultar o preço atual e, se precisar de histórico, paginar a série de preços.
+    </p>
+
+    <h3 class="h6">curl</h3>
+    <pre><code>curl -H "X-Api-Key: SUA_CHAVE" \
+  https://dadosdotesourodireto.com.br/api/v1/titulos
+
+curl -H "X-Api-Key: SUA_CHAVE" \
+  https://dadosdotesourodireto.com.br/api/v1/titulos/{codigo}/preco-atual
+
+curl -H "X-Api-Key: SUA_CHAVE" \
+  "https://dadosdotesourodireto.com.br/api/v1/titulos/{codigo}/precos?pagina=1&amp;tamanho=50"</code></pre>
+
+    <h3 class="h6">C# — HttpClient</h3>
+    <pre><code>var client = new HttpClient { BaseAddress = new Uri("https://dadosdotesourodireto.com.br/api/v1/") };
+client.DefaultRequestHeaders.Add("X-Api-Key", "SUA_CHAVE");
+
+var titulos = await client.GetFromJsonAsync&lt;List&lt;TituloResource&gt;&gt;("titulos");
+var codigo = titulos![0].Codigo;
+
+var precoAtual = await client.GetFromJsonAsync&lt;PrecoTaxaDto&gt;($"titulos/{codigo}/preco-atual");
+
+var precos = await client.GetFromJsonAsync&lt;List&lt;PrecoTaxaDto&gt;&gt;(
+    $"titulos/{codigo}/precos?pagina=1&amp;tamanho=50");</code></pre>
+
+    <h3 class="h6">fetch (JavaScript)</h3>
+    <pre><code>const base = "https://dadosdotesourodireto.com.br/api/v1";
+const headers = { "X-Api-Key": "SUA_CHAVE" };
+
+const titulos = await (await fetch(`${base}/titulos`, { headers })).json();
+const codigo = titulos[0].codigo;
+
+const precoAtual = await (await fetch(`${base}/titulos/${codigo}/preco-atual`, { headers })).json();
+
+const precos = await (await fetch(`${base}/titulos/${codigo}/precos?pagina=1&tamanho=50`, { headers })).json();</code></pre>
+
+    <h2 class="h5">Regras operacionais</h2>
+    <ul>
+        <li>Rate limit de <strong>60 requisições por minuto, por chave</strong> — ao exceder, a API responde <code>429</code> com o cabeçalho <code>Retry-After</code>.</li>
+        <li>Flood-guard de <strong>30 requisições por segundo, por IP</strong>, aplicado na borda (nginx).</li>
+        <li>Suporte a cache condicional via <code>ETag</code> e <code>If-None-Match</code> — quando nada mudou, a resposta é <code>304 Not Modified</code>.</li>
+        <li>Paginação de listas longas pelo cabeçalho <code>Link</code> (RFC 8288), acompanhado de <code>X-Total-Count</code>.</li>
+        <li>Navegação entre recursos relacionados pelo campo <code>_links</code> (HAL) no corpo da resposta.</li>
+        <li>Erros seguem o formato <code>application/problem+json</code>, sempre com um <code>correlationId</code> para rastreio.</li>
+    </ul>
+</div>
