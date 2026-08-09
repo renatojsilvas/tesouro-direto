@@ -1,14 +1,14 @@
-<div class="exemplo-codigo">
+<div class="exemplo-codigo" data-instancia="@instanciaId">
     @if (!string.IsNullOrWhiteSpace(Titulo))
     {
         <p class="exemplo-codigo-titulo">@Titulo</p>
     }
     <div class="exemplo-codigo-tabs" role="tablist">
-        <button type="button" class="exemplo-codigo-tab @(abaAtiva == Aba.Curl ? "active" : "")" data-testid="exemplo-curl" role="tab" aria-selected="@(abaAtiva == Aba.Curl ? "true" : "false")" @onclick="() => abaAtiva = Aba.Curl">cURL</button>
-        <button type="button" class="exemplo-codigo-tab @(abaAtiva == Aba.CSharp ? "active" : "")" data-testid="exemplo-csharp" role="tab" aria-selected="@(abaAtiva == Aba.CSharp ? "true" : "false")" @onclick="() => abaAtiva = Aba.CSharp">C#</button>
-        <button type="button" class="exemplo-codigo-tab @(abaAtiva == Aba.JavaScript ? "active" : "")" data-testid="exemplo-js" role="tab" aria-selected="@(abaAtiva == Aba.JavaScript ? "true" : "false")" @onclick="() => abaAtiva = Aba.JavaScript">JavaScript</button>
+        <button type="button" id="@BotaoId(Aba.Curl)" class="exemplo-codigo-tab @(abaAtiva == Aba.Curl ? "active" : "")" data-testid="exemplo-curl" role="tab" aria-selected="@(abaAtiva == Aba.Curl ? "true" : "false")" aria-controls="@painelId" @onclick="() => abaAtiva = Aba.Curl">cURL</button>
+        <button type="button" id="@BotaoId(Aba.CSharp)" class="exemplo-codigo-tab @(abaAtiva == Aba.CSharp ? "active" : "")" data-testid="exemplo-csharp" role="tab" aria-selected="@(abaAtiva == Aba.CSharp ? "true" : "false")" aria-controls="@painelId" @onclick="() => abaAtiva = Aba.CSharp">C#</button>
+        <button type="button" id="@BotaoId(Aba.JavaScript)" class="exemplo-codigo-tab @(abaAtiva == Aba.JavaScript ? "active" : "")" data-testid="exemplo-js" role="tab" aria-selected="@(abaAtiva == Aba.JavaScript ? "true" : "false")" aria-controls="@painelId" @onclick="() => abaAtiva = Aba.JavaScript">JavaScript</button>
     </div>
-    <pre class="exemplo-codigo-bloco" data-testid="exemplo-codigo"><code>@TrechoAtivo</code></pre>
+    <pre id="@painelId" class="exemplo-codigo-bloco" data-testid="exemplo-codigo" role="tabpanel" aria-labelledby="@BotaoId(abaAtiva)"><code>@TrechoAtivo</code></pre>
 </div>
 
 @code {
@@ -20,6 +20,12 @@
     }
 
     private Aba abaAtiva = Aba.Curl;
+
+    private readonly string instanciaId = Guid.NewGuid().ToString("N");
+
+    private string painelId => $"exemplo-codigo-painel-{instanciaId}";
+
+    private string BotaoId(Aba aba) => $"exemplo-codigo-tab-{aba}-{instanciaId}";
 
     [Parameter]
     public string? Titulo { get; set; }

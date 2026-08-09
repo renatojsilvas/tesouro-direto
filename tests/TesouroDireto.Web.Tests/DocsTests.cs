@@ -91,36 +91,6 @@ public class DocsTests : TestContext
     }
 
     [Fact]
-    public void Click_AbaCSharpDeUmaInstancia_NaoAlteraAbaAtivaDeOutraInstancia()
-    {
-        var cut = Render(builder =>
-        {
-            builder.OpenComponent<ExemploCodigo>(0);
-            builder.AddAttribute(1, nameof(ExemploCodigo.CurlCodigo), "curl-A");
-            builder.AddAttribute(2, nameof(ExemploCodigo.CSharpCodigo), "csharp-A");
-            builder.AddAttribute(3, nameof(ExemploCodigo.JsCodigo), "js-A");
-            builder.CloseComponent();
-
-            builder.OpenComponent<ExemploCodigo>(4);
-            builder.AddAttribute(5, nameof(ExemploCodigo.CurlCodigo), "curl-B");
-            builder.AddAttribute(6, nameof(ExemploCodigo.CSharpCodigo), "csharp-B");
-            builder.AddAttribute(7, nameof(ExemploCodigo.JsCodigo), "js-B");
-            builder.CloseComponent();
-        });
-
-        cut.FindAll("[data-testid=exemplo-curl]")[0].TextContent.Should().NotBeNull();
-        var botoesCSharp = cut.FindAll("[data-testid=exemplo-csharp]");
-        botoesCSharp[0].Click();
-
-        cut.WaitForAssertion(() =>
-        {
-            var blocos = cut.FindAll("[data-testid=exemplo-codigo]");
-            blocos[0].TextContent.Should().Contain("csharp-A");
-            blocos[1].TextContent.Should().Contain("curl-B");
-        });
-    }
-
-    [Fact]
     public void Render_BaseUrlVemDaConfiguracao_MarkupContemValorConfigurado()
     {
         const string baseUrlEsperada = "https://api.teste.exemplo/v1";
@@ -137,5 +107,109 @@ public class DocsTests : TestContext
 
         cut.Markup.Should().NotContain("/importacao");
         cut.Markup.Should().NotContain("PUT");
+    }
+
+    [Fact]
+    public void Render_ExemplosDeSimulador_TaxaContratadaEhPercentualNaoFracao()
+    {
+        var cut = RenderDocs();
+
+        cut.Markup.Should().NotMatchRegex("\"?taxaContratada\"?\\s*[:=]\\s*0\\.\\d");
+        cut.Markup.Should().Contain("taxaContratada\":10");
+
+        foreach (var blocoId in new[] { "ep-post-simulador", "ep-post-simulador-cenarios" })
+        {
+            cut.Find($"#{blocoId} [data-testid=exemplo-csharp]").Click();
+            cut.WaitForAssertion(() =>
+                cut.Find($"#{blocoId} [data-testid=exemplo-codigo]").TextContent.Should().Contain("taxaContratada"));
+            cut.Find($"#{blocoId} [data-testid=exemplo-codigo]").TextContent.Should().Contain("taxaContratada = 10m");
+            cut.Markup.Should().NotMatchRegex("\"?taxaContratada\"?\\s*[:=]\\s*0\\.\\d");
+
+            cut.Find($"#{blocoId} [data-testid=exemplo-js]").Click();
+            cut.WaitForAssertion(() =>
+                cut.Find($"#{blocoId} [data-testid=exemplo-codigo]").TextContent.Should().Contain("taxaContratada"));
+            cut.Find($"#{blocoId} [data-testid=exemplo-codigo]").TextContent.Should().Contain("taxaContratada: 10");
+            cut.Markup.Should().NotMatchRegex("\"?taxaContratada\"?\\s*[:=]\\s*0\\.\\d");
+        }
+    }
+
+    [Fact]
+    public void Click_AbaCSharpDeUmaInstancia_ForcandoRenderDaArvore_NaoAlteraAbaAtivaDeOutraInstancia()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<ExemploCodigo>(0);
+            builder.AddAttribute(1, nameof(ExemploCodigo.CurlCodigo), "curl-A");
+            builder.AddAttribute(2, nameof(ExemploCodigo.CSharpCodigo), "csharp-A");
+            builder.AddAttribute(3, nameof(ExemploCodigo.JsCodigo), "js-A");
+            builder.CloseComponent();
+
+            builder.OpenComponent<ExemploCodigo>(4);
+            builder.AddAttribute(5, nameof(ExemploCodigo.CurlCodigo), "curl-B");
+            builder.AddAttribute(6, nameof(ExemploCodigo.CSharpCodigo), "csharp-B");
+            builder.AddAttribute(7, nameof(ExemploCodigo.JsCodigo), "js-B");
+            builder.CloseComponent();
+        });
+
+        var botoesCSharp = cut.FindAll("[data-testid=exemplo-csharp]");
+        botoesCSharp[0].Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("[data-testid=exemplo-codigo]")[0].TextContent.Should().Contain("csharp-A");
+        });
+
+        var instancias = cut.FindComponents<ExemploCodigo>();
+        instancias[0].Render();
+        instancias[1].Render();
+
+        var blocos = cut.FindAll("[data-testid=exemplo-codigo]");
+        blocos[0].TextContent.Should().Contain("csharp-A");
+        blocos[1].TextContent.Should().Contain("curl-B");
+    }
+
+    [Fact]
+    public void Render_TabelaDeErros_NaoContem409NemQualquerCodigoQueNenhumEndpointDocumentadoEmite()
+    {
+        var cut = RenderDocs();
+
+        var linhas = cut.FindAll("#erros table.params-table tbody tr");
+
+        linhas.Select(l => l.QuerySelector("td")!.TextContent.Trim())
+            .Should().BeEquivalentTo("400", "401", "404", "429");
+    }
+
+    [Fact]
+    public void Render_DuasInstanciasDeExemploCodigo_TemAriaControlsDiferentesApontandoParaIdsExistentes()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<ExemploCodigo>(0);
+            builder.AddAttribute(1, nameof(ExemploCodigo.CurlCodigo), "curl-A");
+            builder.AddAttribute(2, nameof(ExemploCodigo.CSharpCodigo), "csharp-A");
+            builder.AddAttribute(3, nameof(ExemploCodigo.JsCodigo), "js-A");
+            builder.CloseComponent();
+
+            builder.OpenComponent<ExemploCodigo>(4);
+            builder.AddAttribute(5, nameof(ExemploCodigo.CurlCodigo), "curl-B");
+            builder.AddAttribute(6, nameof(ExemploCodigo.CSharpCodigo), "csharp-B");
+            builder.AddAttribute(7, nameof(ExemploCodigo.JsCodigo), "js-B");
+            builder.CloseComponent();
+        });
+
+        var botoes = cut.FindAll("[data-testid=exemplo-curl]");
+        var ariaControlsA = botoes[0].GetAttribute("aria-controls");
+        var ariaControlsB = botoes[1].GetAttribute("aria-controls");
+
+        ariaControlsA.Should().NotBeNullOrEmpty();
+        ariaControlsB.Should().NotBeNullOrEmpty();
+        ariaControlsA.Should().NotBe(ariaControlsB);
+
+        cut.Find($"#{ariaControlsA}").Should().NotBeNull();
+        cut.Find($"#{ariaControlsB}").Should().NotBeNull();
+
+        var paineis = cut.FindAll("[data-testid=exemplo-codigo]");
+        paineis[0].GetAttribute("role").Should().Be("tabpanel");
+        paineis[1].GetAttribute("role").Should().Be("tabpanel");
     }
 }

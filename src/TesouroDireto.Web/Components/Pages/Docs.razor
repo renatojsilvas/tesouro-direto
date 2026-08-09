@@ -125,9 +125,7 @@
                     <tr><td><code>400</code></td><td>Requisição inválida — parâmetro ausente ou mal formado (ex.: <code>codigo</code> fora do padrão).</td></tr>
                     <tr><td><code>401</code></td><td>Chave ausente, inválida ou revogada.</td></tr>
                     <tr><td><code>404</code></td><td>Recurso não encontrado (título, preço ou tributo inexistente).</td></tr>
-                    <tr><td><code>409</code></td><td>Conflito de estado (ex.: criar um recurso que já existe).</td></tr>
                     <tr><td><code>429</code></td><td>Limite de requisições excedido — respeite o <code>Retry-After</code>.</td></tr>
-                    <tr><td><code>503</code></td><td>Serviço temporariamente indisponível — normalmente uma dependência crítica fora do ar.</td></tr>
                 </tbody>
             </table>
         </section>
@@ -316,21 +314,21 @@
                         <tr><td><code>codigo</code></td><td>body · string</td><td>Sim</td><td>Identificador público do título.</td></tr>
                         <tr><td><code>valorInvestido</code></td><td>body · decimal</td><td>Sim</td><td>Valor investido, em reais.</td></tr>
                         <tr><td><code>dataCompra</code></td><td>body · date (yyyy-MM-dd)</td><td>Sim</td><td>Data da compra simulada.</td></tr>
-                        <tr><td><code>taxaContratada</code></td><td>body · decimal</td><td>Sim</td><td>Taxa contratada na compra.</td></tr>
+                        <tr><td><code>taxaContratada</code></td><td>body · decimal</td><td>Sim</td><td>Taxa contratada na compra, em percentual ao ano (<code>10</code> = 10% a.a., não <code>0.10</code>).</td></tr>
                         <tr><td><code>projecaoAnual</code></td><td>body · decimal</td><td>Não</td><td>Projeção anual do indexador. Sem ela, para títulos indexados, usa a projeção de mercado do BCB Focus.</td></tr>
                     </tbody>
                 </table>
                 <ExemploCodigo CurlCodigo="@simularCurl" CSharpCodigo="@simularCSharp" JsCodigo="@simularJs" />
                 <pre class="docs-json"><code>{
   "valorInvestido": 1000,
-  "valorBruto": 1123.45,
-  "rendimentoBruto": 123.45,
+  "valorBruto": 1734.07,
+  "rendimentoBruto": 734.07,
   "tributosAplicados": [
-    { "nome": "Imposto de Renda", "base": 123.45, "aliquota": 17.5, "valor": 21.60 }
+    { "nome": "Imposto de Renda", "base": 734.07, "aliquota": 15, "valor": 110.11 }
   ],
-  "totalTributos": 21.60,
-  "valorLiquido": 1101.85,
-  "rendimentoLiquido": 101.85,
+  "totalTributos": 110.11,
+  "valorLiquido": 1623.96,
+  "rendimentoLiquido": 623.96,
   "cupons": null,
   "projecaoUtilizada": {
     "valorAnual": 12.5,
@@ -354,7 +352,7 @@
                         <tr><td><code>codigo</code></td><td>body · string</td><td>Sim</td><td>Identificador público do título.</td></tr>
                         <tr><td><code>valorInvestido</code></td><td>body · decimal</td><td>Sim</td><td>Valor investido, em reais.</td></tr>
                         <tr><td><code>dataCompra</code></td><td>body · date (yyyy-MM-dd)</td><td>Sim</td><td>Data da compra simulada.</td></tr>
-                        <tr><td><code>taxaContratada</code></td><td>body · decimal</td><td>Sim</td><td>Taxa contratada na compra.</td></tr>
+                        <tr><td><code>taxaContratada</code></td><td>body · decimal</td><td>Sim</td><td>Taxa contratada na compra, em percentual ao ano (<code>10</code> = 10% a.a., não <code>0.10</code>).</td></tr>
                         <tr><td><code>cenarios</code></td><td>body · array</td><td>Sim</td><td>Lista de cenários, cada um com <code>nome</code> (string) e <code>projecaoAnual</code> (decimal).</td></tr>
                     </tbody>
                 </table>
@@ -364,14 +362,14 @@
     "nome": "otimista",
     "resultado": {
       "valorInvestido": 1000,
-      "valorBruto": 1145.20,
-      "rendimentoBruto": 145.20,
+      "valorBruto": 1754.22,
+      "rendimentoBruto": 754.22,
       "tributosAplicados": [
-        { "nome": "Imposto de Renda", "base": 145.20, "aliquota": 17.5, "valor": 25.41 }
+        { "nome": "Imposto de Renda", "base": 754.22, "aliquota": 15, "valor": 113.13 }
       ],
-      "totalTributos": 25.41,
-      "valorLiquido": 1119.79,
-      "rendimentoLiquido": 119.79,
+      "totalTributos": 113.13,
+      "valorLiquido": 1641.09,
+      "rendimentoLiquido": 641.09,
       "cupons": null,
       "projecaoUtilizada": null
     }
@@ -380,14 +378,14 @@
     "nome": "conservador",
     "resultado": {
       "valorInvestido": 1000,
-      "valorBruto": 1098.60,
-      "rendimentoBruto": 98.60,
+      "valorBruto": 1655.64,
+      "rendimentoBruto": 655.64,
       "tributosAplicados": [
-        { "nome": "Imposto de Renda", "base": 98.60, "aliquota": 20, "valor": 19.72 }
+        { "nome": "Imposto de Renda", "base": 655.64, "aliquota": 15, "valor": 98.35 }
       ],
-      "totalTributos": 19.72,
-      "valorLiquido": 1078.88,
-      "rendimentoLiquido": 78.88,
+      "totalTributos": 98.35,
+      "valorLiquido": 1557.29,
+      "rendimentoLiquido": 557.29,
       "cupons": null,
       "projecaoUtilizada": null
     }
@@ -534,7 +532,7 @@
 
     private string simularCurl => Linhas(
         "curl -X POST -H \"X-Api-Key: SUA_CHAVE\" -H \"Content-Type: application/json\" \\",
-        "  -d '{\"codigo\":\"tesouro-selic-2029-03-01\",\"valorInvestido\":1000,\"dataCompra\":\"2026-08-01\",\"taxaContratada\":0.05,\"projecaoAnual\":12.5}' \\",
+        "  -d '{\"codigo\":\"tesouro-selic-2029-03-01\",\"valorInvestido\":1000,\"dataCompra\":\"2026-08-01\",\"taxaContratada\":10,\"projecaoAnual\":12.5}' \\",
         $"  {baseUrl}/simulador");
 
     private string simularCSharp => ClienteCSharp + Linhas(
@@ -543,7 +541,7 @@
         "    codigo = \"tesouro-selic-2029-03-01\",",
         "    valorInvestido = 1000m,",
         "    dataCompra = new DateOnly(2026, 8, 1),",
-        "    taxaContratada = 0.05m,",
+        "    taxaContratada = 10m,",
         "    projecaoAnual = 12.5m",
         "};",
         "var response = await client.PostAsJsonAsync(\"simulador\", request);",
@@ -557,14 +555,14 @@
         "    codigo: \"tesouro-selic-2029-03-01\",",
         "    valorInvestido: 1000,",
         "    dataCompra: \"2026-08-01\",",
-        "    taxaContratada: 0.05,",
+        "    taxaContratada: 10,",
         "    projecaoAnual: 12.5",
         "  })",
         "})).json();");
 
     private string simularCenariosCurl => Linhas(
         "curl -X POST -H \"X-Api-Key: SUA_CHAVE\" -H \"Content-Type: application/json\" \\",
-        "  -d '{\"codigo\":\"tesouro-selic-2029-03-01\",\"valorInvestido\":1000,\"dataCompra\":\"2026-08-01\",\"taxaContratada\":0.05,\"cenarios\":[{\"nome\":\"otimista\",\"projecaoAnual\":13.0},{\"nome\":\"conservador\",\"projecaoAnual\":10.5}]}' \\",
+        "  -d '{\"codigo\":\"tesouro-selic-2029-03-01\",\"valorInvestido\":1000,\"dataCompra\":\"2026-08-01\",\"taxaContratada\":10,\"cenarios\":[{\"nome\":\"otimista\",\"projecaoAnual\":13.0},{\"nome\":\"conservador\",\"projecaoAnual\":10.5}]}' \\",
         $"  {baseUrl}/simulador/cenarios");
 
     private string simularCenariosCSharp => ClienteCSharp + Linhas(
@@ -573,7 +571,7 @@
         "    codigo = \"tesouro-selic-2029-03-01\",",
         "    valorInvestido = 1000m,",
         "    dataCompra = new DateOnly(2026, 8, 1),",
-        "    taxaContratada = 0.05m,",
+        "    taxaContratada = 10m,",
         "    cenarios = new[]",
         "    {",
         "        new { nome = \"otimista\", projecaoAnual = 13.0m },",
@@ -591,7 +589,7 @@
         "    codigo: \"tesouro-selic-2029-03-01\",",
         "    valorInvestido: 1000,",
         "    dataCompra: \"2026-08-01\",",
-        "    taxaContratada: 0.05,",
+        "    taxaContratada: 10,",
         "    cenarios: [",
         "      { nome: \"otimista\", projecaoAnual: 13.0 },",
         "      { nome: \"conservador\", projecaoAnual: 10.5 }",
