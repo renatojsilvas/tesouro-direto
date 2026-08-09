@@ -29,6 +29,9 @@ builder.Services.AddHttpClient<TesouroApiClient>(client =>
 builder.Services.AddScoped<GoogleLoginService>();
 builder.Services.AddScoped<IActingUserContext, ActingUserContext>();
 
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<OpenApiDocumentService>();
+
 var googleClientId = builder.Configuration["Google:ClientId"];
 var googleClientSecret = builder.Configuration["Google:ClientSecret"];
 var googleConfigurado = !string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret);
@@ -115,6 +118,36 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
+
+app.UseWhen(
+    ctx => ctx.Request.Path.StartsWithSegments("/desenvolvedores/referencia"),
+    branch =>
+    {
+        branch.Use(async (ctx, next) =>
+        {
+            if (ctx.User.Identity?.IsAuthenticated != true)
+            {
+                await ctx.ChallengeAsync();
+                return;
+            }
+
+            await next();
+        });
+        branch.UseSwaggerUI(c =>
+        {
+            c.RoutePrefix = "desenvolvedores/referencia";
+            c.SwaggerEndpoint("/desenvolvedores/openapi.json", "Tesouro Direto API v1");
+            c.DocumentTitle = "Referência — Tesouro Direto API v1";
+        });
+    });
+
+app.MapGet("/desenvolvedores/openapi.json", async (OpenApiDocumentService service) =>
+{
+    var doc = await service.GetDocumentAsync();
+    return doc is null
+        ? Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Referência OpenAPI indisponível", detail: "Não foi possível obter o documento da API.")
+        : Results.Content(doc, "application/json");
+}).RequireAuthorization();
 
 app.MapGet("/auth/login", async (string? returnUrl, IAuthenticationSchemeProvider schemeProvider) =>
 {
