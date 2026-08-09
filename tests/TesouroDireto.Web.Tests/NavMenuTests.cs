@@ -44,6 +44,29 @@ public class NavMenuTests : TestContext
     }
 
     [Fact]
+    public void NavMenu_QuandoAnonimo_MostraLinkDeDocumentacaoPublica()
+    {
+        this.AddTestAuthorization().SetNotAuthorized();
+        Services.AddSingleton(new GoogleAuthAvailability(true));
+
+        var cut = RenderComponent<NavMenu>();
+
+        cut.FindAll("[data-testid=nav-docs]").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void NavMenu_QuandoLogado_MostraLinkDeDocumentacaoEDesenvolvedores()
+    {
+        this.AddTestAuthorization().SetAuthorized("user@x");
+        Services.AddSingleton(new GoogleAuthAvailability(true));
+
+        var cut = RenderComponent<NavMenu>();
+
+        cut.FindAll("[data-testid=nav-docs]").Should().HaveCount(1);
+        cut.FindAll("[data-testid=nav-desenvolvedores]").Should().HaveCount(1);
+    }
+
+    [Fact]
     public void NavMenu_QuandoLogadoNaoAdmin_MostraApiKeysMasNaoAdmin()
     {
         this.AddTestAuthorization().SetAuthorized("user@x");

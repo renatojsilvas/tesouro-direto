@@ -35,8 +35,7 @@ public class DesenvolvedoresRoutingTests : TestContext
         cut.WaitForAssertion(() =>
         {
             cut.Find("[data-testid=nao-autorizado]").TextContent.Should().Contain("Você precisa entrar");
-            cut.Markup.Should().NotContain("guia-integracao");
-            cut.Markup.Should().NotContain("iframe-referencia");
+            cut.Markup.Should().NotContain("tabela-keys");
         });
     }
 
@@ -57,7 +56,7 @@ public class DesenvolvedoresRoutingTests : TestContext
         cut.WaitForAssertion(() =>
         {
             navigation.Uri.Should().EndWith("/desenvolvedores");
-            cut.Find("[data-testid=painel-credenciais]").Should().NotBeNull();
+            cut.Find("[data-testid=link-docs]").Should().NotBeNull();
         });
     }
 }

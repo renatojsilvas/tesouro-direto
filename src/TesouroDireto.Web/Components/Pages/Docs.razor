@@ -1,0 +1,609 @@
+@page "/docs"
+@rendermode InteractiveServer
+@inject IConfiguration Configuration
+
+<PageTitle>Documentação — API do Tesouro Direto</PageTitle>
+
+<div class="page-header fade-in">
+    <h1>Documentação</h1>
+    <p class="subtitle">Referência pública da API do Tesouro Direto — comece por aqui antes de pedir sua chave</p>
+</div>
+
+<div class="docs-layout">
+    <nav class="docs-nav" data-testid="docs-nav">
+        <a href="#inicio-rapido">Início rápido</a>
+        <a href="#autenticacao">Autenticação</a>
+        <a href="#limites">Limites</a>
+        <a href="#cache">Cache</a>
+        <a href="#paginacao">Paginação</a>
+        <a href="#erros">Erros</a>
+        <a href="#endpoints">Endpoints</a>
+        <a href="#ep-get-titulos" class="docs-nav-sub">GET /titulos</a>
+        <a href="#ep-get-titulo-codigo" class="docs-nav-sub">GET /titulos/{codigo}</a>
+        <a href="#ep-get-preco-atual-nome" class="docs-nav-sub">GET /titulos/preco-atual</a>
+        <a href="#ep-get-preco-atual-codigo" class="docs-nav-sub">GET /titulos/{codigo}/preco-atual</a>
+        <a href="#ep-get-precos-nome" class="docs-nav-sub">GET /titulos/precos</a>
+        <a href="#ep-get-precos-codigo" class="docs-nav-sub">GET /titulos/{codigo}/precos</a>
+        <a href="#ep-post-simulador" class="docs-nav-sub">POST /simulador</a>
+        <a href="#ep-post-simulador-cenarios" class="docs-nav-sub">POST /simulador/cenarios</a>
+        <a href="#ep-get-tributos" class="docs-nav-sub">GET /configuracoes/tributos</a>
+    </nav>
+
+    <div class="docs-content">
+        <section id="inicio-rapido" class="docs-section">
+            <h2>Início rápido</h2>
+            <GuiaIntegracao BaseUrl="@baseUrl" />
+        </section>
+
+        <section id="autenticacao" class="docs-section">
+            <h2>Autenticação</h2>
+            <p>
+                Toda requisição autenticada leva a chave no cabeçalho <code>X-Api-Key</code>.
+                Sem ela — ou com uma chave inválida ou revogada — a API responde <code>401</code>.
+            </p>
+            <p>
+                Para obter sua chave, entre em <a href="/desenvolvedores" data-testid="link-credenciais">/desenvolvedores</a>
+                e gere uma credencial.
+            </p>
+            <div class="alert alert-warning">
+                <strong>Atenção:</strong> a chave é mostrada <strong>uma única vez</strong>, no momento
+                em que é gerada. Guarde-a com cuidado — se perdê-la, gere uma nova.
+            </div>
+            <div class="alert alert-danger">
+                <strong>Nunca</strong> exponha a chave em código client-side (JavaScript no navegador,
+                app mobile, repositório público). Trate-a como um segredo de servidor.
+            </div>
+        </section>
+
+        <section id="limites" class="docs-section">
+            <h2>Limites</h2>
+            <ul>
+                <li>Rate limit de <strong>60 requisições por minuto, por chave</strong> — ao exceder, a API responde <code>429</code> com o cabeçalho <code>Retry-After</code> (segundos até liberar).</li>
+                <li>Flood-guard de <strong>30 requisições por segundo, por IP</strong>, aplicado na borda (nginx), independente de autenticação.</li>
+            </ul>
+        </section>
+
+        <section id="cache" class="docs-section">
+            <h2>Cache</h2>
+            <p>
+                Respostas de leitura trazem <code>ETag</code>. Envie o valor de volta no cabeçalho
+                <code>If-None-Match</code> na próxima chamada; se nada mudou, a API responde
+                <code>304 Not Modified</code> sem corpo, economizando banda.
+            </p>
+        </section>
+
+        <section id="paginacao" class="docs-section">
+            <h2>Paginação</h2>
+            <p>
+                Listas paginadas trazem o cabeçalho <code>Link</code> (<a href="https://www.rfc-editor.org/rfc/rfc8288">RFC 8288</a>)
+                com as relações <code>first</code>, <code>prev</code>, <code>next</code> e <code>last</code>,
+                e o cabeçalho <code>X-Total-Count</code> com o total de itens.
+            </p>
+            <p>
+                Recursos individuais trazem <code>_links</code> (HAL) no corpo, com atalhos para
+                navegar entre recursos relacionados — por exemplo, de um título para seu preço atual.
+            </p>
+            <div class="alert alert-warning" data-testid="aviso-links-relativos">
+                <p>
+                    <strong>Como resolver um <code>href</code>:</strong> os valores de <code>_links</code>
+                    e do cabeçalho <code>Link</code> são caminhos relativos à raiz da API — já vêm com
+                    <code>/v1</code>, mas <strong>sem</strong> o segmento <code>/api</code> que a borda
+                    acrescenta. Não os resolva contra a base URL desta documentação, senão você perde
+                    o <code>/api</code> e cai fora da API.
+                </p>
+                <p class="mb-0">
+                    Concatene o href com <code>@origemPublica</code>:
+                    <code>@origemPublica</code> + <code>/v1/titulos/tesouro-selic-2029-03-01</code> =
+                    <code>@origemPublica/v1/titulos/tesouro-selic-2029-03-01</code>.
+                </p>
+            </div>
+        </section>
+
+        <section id="erros" class="docs-section">
+            <h2>Erros</h2>
+            <p>
+                Erros são retornados como <code>application/problem+json</code>, sempre com um
+                <code>correlationId</code> para rastreio junto ao suporte.
+            </p>
+            <pre class="docs-json"><code>{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+  "title": "Recurso não encontrado",
+  "status": 404,
+  "detail": "Nenhum título com o código informado foi encontrado.",
+  "code": "titulo_nao_encontrado",
+  "correlationId": "8f14e45f-ceea-467e-9de0-1e2b2c8f9ac3",
+  "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}</code></pre>
+            <table class="params-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Significado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>400</code></td><td>Requisição inválida — parâmetro ausente ou mal formado (ex.: <code>codigo</code> fora do padrão).</td></tr>
+                    <tr><td><code>401</code></td><td>Chave ausente, inválida ou revogada.</td></tr>
+                    <tr><td><code>404</code></td><td>Recurso não encontrado (título, preço ou tributo inexistente).</td></tr>
+                    <tr><td><code>429</code></td><td>Limite de requisições excedido — respeite o <code>Retry-After</code>.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="endpoints" class="docs-section">
+            <h2>Endpoints</h2>
+            <p>Referência dos endpoints de consumo da API. Todos exigem o cabeçalho <code>X-Api-Key</code>.</p>
+
+            <div id="ep-get-titulos" class="endpoint-block">
+                <h3>GET /titulos</h3>
+                <p>Lista os títulos cadastrados, com filtro opcional por indexador e por vencido.</p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/titulos</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>indexador</code></td><td>query · string</td><td>Não</td><td>Filtra pelo nome do indexador (ex.: Selic, IPCA, Prefixado).</td></tr>
+                        <tr><td><code>vencido</code></td><td>query · bool</td><td>Não</td><td>Filtra títulos vencidos (<code>true</code>) ou não vencidos (<code>false</code>).</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@titulosListarCurl" CSharpCodigo="@titulosListarCSharp" JsCodigo="@titulosListarJs" />
+                <pre class="docs-json"><code>[
+  {
+    "tipoTitulo": "Tesouro Selic",
+    "dataVencimento": "2029-03-01",
+    "indexador": "Selic",
+    "pagaJurosSemestrais": false,
+    "vencido": false,
+    "codigo": "tesouro-selic-2029-03-01",
+    "_links": {
+      "self": { "href": "/v1/titulos/tesouro-selic-2029-03-01" },
+      "precos": { "href": "/v1/titulos/tesouro-selic-2029-03-01/precos" },
+      "preco-atual": { "href": "/v1/titulos/tesouro-selic-2029-03-01/preco-atual" },
+      "simular": { "href": "/v1/simulador", "method": "POST", "templated": true }
+    }
+  }
+]</code></pre>
+            </div>
+
+            <div id="ep-get-titulo-codigo" class="endpoint-block">
+                <h3>GET /titulos/{codigo}</h3>
+                <p>Retorna um único título pelo código.</p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/titulos/{codigo}</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>codigo</code></td><td>path · string</td><td>Sim</td><td>Identificador público do título, derivado do tipo e da data de vencimento (ex.: <code>tesouro-selic-2029-03-01</code>).</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@tituloPorCodigoCurl" CSharpCodigo="@tituloPorCodigoCSharp" JsCodigo="@tituloPorCodigoJs" />
+                <pre class="docs-json"><code>{
+  "tipoTitulo": "Tesouro Selic",
+  "dataVencimento": "2029-03-01",
+  "indexador": "Selic",
+  "pagaJurosSemestrais": false,
+  "vencido": false,
+  "codigo": "tesouro-selic-2029-03-01",
+  "_links": {
+    "self": { "href": "/v1/titulos/tesouro-selic-2029-03-01" },
+    "precos": { "href": "/v1/titulos/tesouro-selic-2029-03-01/precos" },
+    "preco-atual": { "href": "/v1/titulos/tesouro-selic-2029-03-01/preco-atual" },
+    "simular": { "href": "/v1/simulador", "method": "POST", "templated": true }
+  }
+}</code></pre>
+            </div>
+
+            <div id="ep-get-preco-atual-nome" class="endpoint-block">
+                <h3>GET /titulos/preco-atual</h3>
+                <p>Retorna o preço e a taxa mais recentes de um título, buscado pelo nome.</p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/titulos/preco-atual</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>nome</code></td><td>query · string</td><td>Sim</td><td>Nome exato do título (ex.: Tesouro Selic 2029).</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@precoAtualPorNomeCurl" CSharpCodigo="@precoAtualPorNomeCSharp" JsCodigo="@precoAtualPorNomeJs" />
+                <pre class="docs-json"><code>{
+  "dataBase": "2026-08-08",
+  "taxaCompra": 11.85,
+  "taxaVenda": 11.95,
+  "puCompra": 985.32,
+  "puVenda": 980.10,
+  "puBase": 982.71
+}</code></pre>
+            </div>
+
+            <div id="ep-get-preco-atual-codigo" class="endpoint-block">
+                <h3>GET /titulos/{codigo}/preco-atual</h3>
+                <p>Retorna o preço e a taxa mais recentes de um título, buscado pelo código.</p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/titulos/{codigo}/preco-atual</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>codigo</code></td><td>path · string</td><td>Sim</td><td>Identificador público do título (ex.: <code>tesouro-selic-2029-03-01</code>).</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@precoAtualPorCodigoCurl" CSharpCodigo="@precoAtualPorCodigoCSharp" JsCodigo="@precoAtualPorCodigoJs" />
+                <pre class="docs-json"><code>{
+  "dataBase": "2026-08-08",
+  "taxaCompra": 11.85,
+  "taxaVenda": 11.95,
+  "puCompra": 985.32,
+  "puVenda": 980.10,
+  "puBase": 982.71
+}</code></pre>
+            </div>
+
+            <div id="ep-get-precos-nome" class="endpoint-block">
+                <h3>GET /titulos/precos</h3>
+                <p>Lista o histórico de preços e taxas de um título, buscado pelo nome.</p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/titulos/precos</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>nome</code></td><td>query · string</td><td>Sim</td><td>Nome exato do título.</td></tr>
+                        <tr><td><code>dataInicio</code></td><td>query · date (yyyy-MM-dd)</td><td>Não</td><td>Início do intervalo de datas.</td></tr>
+                        <tr><td><code>dataFim</code></td><td>query · date (yyyy-MM-dd)</td><td>Não</td><td>Fim do intervalo de datas.</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@precosPorNomeCurl" CSharpCodigo="@precosPorNomeCSharp" JsCodigo="@precosPorNomeJs" />
+                <pre class="docs-json"><code>[
+  {
+    "dataBase": "2026-06-30",
+    "taxaCompra": 11.90,
+    "taxaVenda": 12.00,
+    "puCompra": 978.14,
+    "puVenda": 973.02,
+    "puBase": 975.55
+  },
+  {
+    "dataBase": "2026-07-01",
+    "taxaCompra": 11.88,
+    "taxaVenda": 11.98,
+    "puCompra": 979.40,
+    "puVenda": 974.25,
+    "puBase": 976.80
+  }
+]</code></pre>
+            </div>
+
+            <div id="ep-get-precos-codigo" class="endpoint-block">
+                <h3>GET /titulos/{codigo}/precos</h3>
+                <p>
+                    Lista o histórico de preços e taxas de um título, buscado pelo código, com
+                    paginação opcional. Sem <code>page</code>, retorna a coleção inteira e não envia
+                    o cabeçalho <code>Link</code>.
+                </p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/titulos/{codigo}/precos</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>codigo</code></td><td>path · string</td><td>Sim</td><td>Identificador público do título.</td></tr>
+                        <tr><td><code>dataInicio</code></td><td>query · date (yyyy-MM-dd)</td><td>Não</td><td>Início do intervalo de datas.</td></tr>
+                        <tr><td><code>dataFim</code></td><td>query · date (yyyy-MM-dd)</td><td>Não</td><td>Fim do intervalo de datas.</td></tr>
+                        <tr><td><code>page</code></td><td>query · int</td><td>Não</td><td>Página desejada (padrão 1). Presente ⇒ resposta paginada, com cabeçalhos <code>Link</code> e <code>X-Total-Count</code>.</td></tr>
+                        <tr><td><code>pageSize</code></td><td>query · int</td><td>Não</td><td>Itens por página (padrão 100, máximo 500).</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@precosPorCodigoCurl" CSharpCodigo="@precosPorCodigoCSharp" JsCodigo="@precosPorCodigoJs" />
+                <p class="text-muted">
+                    Cabeçalhos de resposta: <code>X-Total-Count: 214</code> e
+                    <code>Link: &lt;/v1/titulos/tesouro-selic-2029-03-01/precos?page=1&amp;pageSize=50&gt;; rel="first", &lt;/v1/titulos/tesouro-selic-2029-03-01/precos?page=2&amp;pageSize=50&gt;; rel="next", &lt;/v1/titulos/tesouro-selic-2029-03-01/precos?page=5&amp;pageSize=50&gt;; rel="last"</code>
+                </p>
+                <pre class="docs-json"><code>[
+  {
+    "dataBase": "2026-06-30",
+    "taxaCompra": 11.90,
+    "taxaVenda": 12.00,
+    "puCompra": 978.14,
+    "puVenda": 973.02,
+    "puBase": 975.55
+  }
+]</code></pre>
+            </div>
+
+            <div id="ep-post-simulador" class="endpoint-block">
+                <h3>POST /simulador</h3>
+                <p>
+                    Simula valor bruto/líquido, tributos aplicados e cupons (quando houver) para um
+                    título, valor investido, data de compra e taxa contratada.
+                </p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-post">POST</span> <code>/simulador</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>codigo</code></td><td>body · string</td><td>Sim</td><td>Identificador público do título.</td></tr>
+                        <tr><td><code>valorInvestido</code></td><td>body · decimal</td><td>Sim</td><td>Valor investido, em reais.</td></tr>
+                        <tr><td><code>dataCompra</code></td><td>body · date (yyyy-MM-dd)</td><td>Sim</td><td>Data da compra simulada.</td></tr>
+                        <tr><td><code>taxaContratada</code></td><td>body · decimal</td><td>Sim</td><td>Taxa contratada na compra, em percentual ao ano (<code>10</code> = 10% a.a., não <code>0.10</code>).</td></tr>
+                        <tr><td><code>projecaoAnual</code></td><td>body · decimal</td><td>Não</td><td>Projeção anual do indexador. Sem ela, para títulos indexados, usa a projeção de mercado do BCB Focus.</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@simularCurl" CSharpCodigo="@simularCSharp" JsCodigo="@simularJs" />
+                <pre class="docs-json"><code>{
+  "valorInvestido": 1000,
+  "valorBruto": 1734.07,
+  "rendimentoBruto": 734.07,
+  "tributosAplicados": [
+    { "nome": "Imposto de Renda", "base": 734.07, "aliquota": 15, "valor": 110.11 }
+  ],
+  "totalTributos": 110.11,
+  "valorLiquido": 1623.96,
+  "rendimentoLiquido": 623.96,
+  "cupons": null,
+  "projecaoUtilizada": {
+    "valorAnual": 12.5,
+    "dataReferencia": "2026-08-01",
+    "obtidaEmUtc": "2026-08-01T12:00:00Z",
+    "origem": "Bcb"
+  }
+}</code></pre>
+            </div>
+
+            <div id="ep-post-simulador-cenarios" class="endpoint-block">
+                <h3>POST /simulador/cenarios</h3>
+                <p>
+                    Simula o mesmo investimento sob vários cenários nomeados, cada um com sua
+                    própria projeção anual informada explicitamente.
+                </p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-post">POST</span> <code>/simulador/cenarios</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>codigo</code></td><td>body · string</td><td>Sim</td><td>Identificador público do título.</td></tr>
+                        <tr><td><code>valorInvestido</code></td><td>body · decimal</td><td>Sim</td><td>Valor investido, em reais.</td></tr>
+                        <tr><td><code>dataCompra</code></td><td>body · date (yyyy-MM-dd)</td><td>Sim</td><td>Data da compra simulada.</td></tr>
+                        <tr><td><code>taxaContratada</code></td><td>body · decimal</td><td>Sim</td><td>Taxa contratada na compra, em percentual ao ano (<code>10</code> = 10% a.a., não <code>0.10</code>).</td></tr>
+                        <tr><td><code>cenarios</code></td><td>body · array</td><td>Sim</td><td>Lista de cenários, cada um com <code>nome</code> (string) e <code>projecaoAnual</code> (decimal).</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@simularCenariosCurl" CSharpCodigo="@simularCenariosCSharp" JsCodigo="@simularCenariosJs" />
+                <pre class="docs-json"><code>[
+  {
+    "nome": "otimista",
+    "resultado": {
+      "valorInvestido": 1000,
+      "valorBruto": 1754.22,
+      "rendimentoBruto": 754.22,
+      "tributosAplicados": [
+        { "nome": "Imposto de Renda", "base": 754.22, "aliquota": 15, "valor": 113.13 }
+      ],
+      "totalTributos": 113.13,
+      "valorLiquido": 1641.09,
+      "rendimentoLiquido": 641.09,
+      "cupons": null,
+      "projecaoUtilizada": null
+    }
+  },
+  {
+    "nome": "conservador",
+    "resultado": {
+      "valorInvestido": 1000,
+      "valorBruto": 1655.64,
+      "rendimentoBruto": 655.64,
+      "tributosAplicados": [
+        { "nome": "Imposto de Renda", "base": 655.64, "aliquota": 15, "valor": 98.35 }
+      ],
+      "totalTributos": 98.35,
+      "valorLiquido": 1557.29,
+      "rendimentoLiquido": 557.29,
+      "cupons": null,
+      "projecaoUtilizada": null
+    }
+  }
+]</code></pre>
+            </div>
+
+            <div id="ep-get-tributos" class="endpoint-block">
+                <h3>GET /configuracoes/tributos</h3>
+                <p>Lista todos os tributos configurados (IOF, IR etc.), ativos ou não, com suas faixas.</p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/configuracoes/tributos</code></p>
+                <ExemploCodigo CurlCodigo="@tributosCurl" CSharpCodigo="@tributosCSharp" JsCodigo="@tributosJs" />
+                <p class="text-muted">Exemplo com 2 das faixas reais — IOF tem 29 faixas (uma por dia corrido) e IR tem 4.</p>
+                <pre class="docs-json"><code>[
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "nome": "IOF",
+    "baseCalculo": "Rendimento",
+    "tipoCalculo": "TabelaDiaria",
+    "faixas": [
+      { "diasMin": null, "diasMax": null, "dia": 1, "aliquota": 96 }
+    ],
+    "ativo": true,
+    "ordem": 1,
+    "cumulativo": true
+  },
+  {
+    "id": "5b1e2a3c-8f4d-4b2a-9c1e-7d6f5a4b3c2d",
+    "nome": "Imposto de Renda",
+    "baseCalculo": "Rendimento",
+    "tipoCalculo": "FaixaPorDias",
+    "faixas": [
+      { "diasMin": 0, "diasMax": 180, "dia": null, "aliquota": 22.5 }
+    ],
+    "ativo": true,
+    "ordem": 2,
+    "cumulativo": false
+  }
+]</code></pre>
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private string baseUrl = "https://dadosdotesourodireto.com.br/api/v1";
+
+    protected override void OnInitialized()
+    {
+        var configurado = Configuration["ApiSettings:PublicBaseUrl"];
+        if (!string.IsNullOrWhiteSpace(configurado))
+        {
+            baseUrl = configurado;
+        }
+    }
+
+    private string origemPublica => baseUrl.EndsWith("/v1", StringComparison.Ordinal)
+        ? baseUrl[..^"/v1".Length]
+        : baseUrl;
+
+    private static string Linhas(params string[] linhas) => string.Join("\n", linhas);
+
+    private string ClienteCSharp =>
+        $"var client = new HttpClient {{ BaseAddress = new Uri(\"{baseUrl}/\") }};\n" +
+        "client.DefaultRequestHeaders.Add(\"X-Api-Key\", \"SUA_CHAVE\");\n\n";
+
+    private string ClienteJs =>
+        $"const base = \"{baseUrl}\";\n" +
+        "const headers = { \"X-Api-Key\": \"SUA_CHAVE\" };\n\n";
+
+    private string titulosListarCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  \"{baseUrl}/titulos?indexador=Selic&vencido=false\"");
+
+    private string titulosListarCSharp => ClienteCSharp + Linhas(
+        "var titulos = await client.GetFromJsonAsync<List<TituloResource>>(",
+        "    \"titulos?indexador=Selic&vencido=false\");");
+
+    private string titulosListarJs => ClienteJs + Linhas(
+        "const titulos = await (await fetch(",
+        "  `${base}/titulos?indexador=Selic&vencido=false`, { headers })).json();");
+
+    private string tituloPorCodigoCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  {baseUrl}/titulos/tesouro-selic-2029-03-01");
+
+    private string tituloPorCodigoCSharp => ClienteCSharp + Linhas(
+        "var titulo = await client.GetFromJsonAsync<TituloResource>(",
+        "    \"titulos/tesouro-selic-2029-03-01\");");
+
+    private string tituloPorCodigoJs => ClienteJs + Linhas(
+        "const titulo = await (await fetch(",
+        "  `${base}/titulos/tesouro-selic-2029-03-01`, { headers })).json();");
+
+    private string precoAtualPorNomeCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  \"{baseUrl}/titulos/preco-atual?nome=Tesouro%20Selic%202029\"");
+
+    private string precoAtualPorNomeCSharp => ClienteCSharp + Linhas(
+        "var precoAtual = await client.GetFromJsonAsync<PrecoTaxaDto>(",
+        "    \"titulos/preco-atual?nome=Tesouro%20Selic%202029\");");
+
+    private string precoAtualPorNomeJs => ClienteJs + Linhas(
+        "const precoAtual = await (await fetch(",
+        "  `${base}/titulos/preco-atual?nome=Tesouro%20Selic%202029`, { headers })).json();");
+
+    private string precoAtualPorCodigoCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  {baseUrl}/titulos/tesouro-selic-2029-03-01/preco-atual");
+
+    private string precoAtualPorCodigoCSharp => ClienteCSharp + Linhas(
+        "var precoAtual = await client.GetFromJsonAsync<PrecoTaxaDto>(",
+        "    \"titulos/tesouro-selic-2029-03-01/preco-atual\");");
+
+    private string precoAtualPorCodigoJs => ClienteJs + Linhas(
+        "const precoAtual = await (await fetch(",
+        "  `${base}/titulos/tesouro-selic-2029-03-01/preco-atual`, { headers })).json();");
+
+    private string precosPorNomeCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  \"{baseUrl}/titulos/precos?nome=Tesouro%20Selic%202029&dataInicio=2026-01-01&dataFim=2026-06-30\"");
+
+    private string precosPorNomeCSharp => ClienteCSharp + Linhas(
+        "var precos = await client.GetFromJsonAsync<List<PrecoTaxaDto>>(",
+        "    \"titulos/precos?nome=Tesouro%20Selic%202029&dataInicio=2026-01-01&dataFim=2026-06-30\");");
+
+    private string precosPorNomeJs => ClienteJs + Linhas(
+        "const precos = await (await fetch(",
+        "  `${base}/titulos/precos?nome=Tesouro%20Selic%202029&dataInicio=2026-01-01&dataFim=2026-06-30`,",
+        "  { headers })).json();");
+
+    private string precosPorCodigoCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  \"{baseUrl}/titulos/tesouro-selic-2029-03-01/precos?dataInicio=2026-01-01&dataFim=2026-06-30&page=1&pageSize=50\"");
+
+    private string precosPorCodigoCSharp => ClienteCSharp + Linhas(
+        "var precos = await client.GetFromJsonAsync<List<PrecoTaxaDto>>(",
+        "    \"titulos/tesouro-selic-2029-03-01/precos?dataInicio=2026-01-01&dataFim=2026-06-30&page=1&pageSize=50\");");
+
+    private string precosPorCodigoJs => ClienteJs + Linhas(
+        "const precos = await (await fetch(",
+        "  `${base}/titulos/tesouro-selic-2029-03-01/precos?dataInicio=2026-01-01&dataFim=2026-06-30&page=1&pageSize=50`,",
+        "  { headers })).json();");
+
+    private string simularCurl => Linhas(
+        "curl -X POST -H \"X-Api-Key: SUA_CHAVE\" -H \"Content-Type: application/json\" \\",
+        "  -d '{\"codigo\":\"tesouro-selic-2029-03-01\",\"valorInvestido\":1000,\"dataCompra\":\"2026-08-01\",\"taxaContratada\":10,\"projecaoAnual\":12.5}' \\",
+        $"  {baseUrl}/simulador");
+
+    private string simularCSharp => ClienteCSharp + Linhas(
+        "var request = new",
+        "{",
+        "    codigo = \"tesouro-selic-2029-03-01\",",
+        "    valorInvestido = 1000m,",
+        "    dataCompra = new DateOnly(2026, 8, 1),",
+        "    taxaContratada = 10m,",
+        "    projecaoAnual = 12.5m",
+        "};",
+        "var response = await client.PostAsJsonAsync(\"simulador\", request);",
+        "var resultado = await response.Content.ReadFromJsonAsync<SimulacaoResultadoDto>();");
+
+    private string simularJs => ClienteJs + Linhas(
+        "const resultado = await (await fetch(`${base}/simulador`, {",
+        "  method: \"POST\",",
+        "  headers: { ...headers, \"Content-Type\": \"application/json\" },",
+        "  body: JSON.stringify({",
+        "    codigo: \"tesouro-selic-2029-03-01\",",
+        "    valorInvestido: 1000,",
+        "    dataCompra: \"2026-08-01\",",
+        "    taxaContratada: 10,",
+        "    projecaoAnual: 12.5",
+        "  })",
+        "})).json();");
+
+    private string simularCenariosCurl => Linhas(
+        "curl -X POST -H \"X-Api-Key: SUA_CHAVE\" -H \"Content-Type: application/json\" \\",
+        "  -d '{\"codigo\":\"tesouro-selic-2029-03-01\",\"valorInvestido\":1000,\"dataCompra\":\"2026-08-01\",\"taxaContratada\":10,\"cenarios\":[{\"nome\":\"otimista\",\"projecaoAnual\":13.0},{\"nome\":\"conservador\",\"projecaoAnual\":10.5}]}' \\",
+        $"  {baseUrl}/simulador/cenarios");
+
+    private string simularCenariosCSharp => ClienteCSharp + Linhas(
+        "var request = new",
+        "{",
+        "    codigo = \"tesouro-selic-2029-03-01\",",
+        "    valorInvestido = 1000m,",
+        "    dataCompra = new DateOnly(2026, 8, 1),",
+        "    taxaContratada = 10m,",
+        "    cenarios = new[]",
+        "    {",
+        "        new { nome = \"otimista\", projecaoAnual = 13.0m },",
+        "        new { nome = \"conservador\", projecaoAnual = 10.5m }",
+        "    }",
+        "};",
+        "var response = await client.PostAsJsonAsync(\"simulador/cenarios\", request);",
+        "var resultados = await response.Content.ReadFromJsonAsync<List<CenarioResultadoDto>>();");
+
+    private string simularCenariosJs => ClienteJs + Linhas(
+        "const resultados = await (await fetch(`${base}/simulador/cenarios`, {",
+        "  method: \"POST\",",
+        "  headers: { ...headers, \"Content-Type\": \"application/json\" },",
+        "  body: JSON.stringify({",
+        "    codigo: \"tesouro-selic-2029-03-01\",",
+        "    valorInvestido: 1000,",
+        "    dataCompra: \"2026-08-01\",",
+        "    taxaContratada: 10,",
+        "    cenarios: [",
+        "      { nome: \"otimista\", projecaoAnual: 13.0 },",
+        "      { nome: \"conservador\", projecaoAnual: 10.5 }",
+        "    ]",
+        "  })",
+        "})).json();");
+
+    private string tributosCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  {baseUrl}/configuracoes/tributos");
+
+    private string tributosCSharp => ClienteCSharp + Linhas(
+        "var tributos = await client.GetFromJsonAsync<List<TributoDto>>(\"configuracoes/tributos\");");
+
+    private string tributosJs => ClienteJs + Linhas(
+        "const tributos = await (await fetch(`${base}/configuracoes/tributos`, { headers })).json();");
+}

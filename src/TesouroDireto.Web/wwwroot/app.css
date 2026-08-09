@@ -604,3 +604,218 @@ canvas { max-width: 100%; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(27, 42, 33, 0.18); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(27, 42, 33, 0.32); }
+
+/* --- Docs: referência da API --- */
+.docs-layout {
+    display: grid;
+    grid-template-columns: 224px minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+}
+
+.docs-nav {
+    position: sticky;
+    top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 1rem 0 1rem 1rem;
+    border-left: 2px solid var(--linha-forte);
+}
+
+.docs-nav a {
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--radius);
+    color: var(--tinta-suave);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.docs-nav a.docs-nav-sub {
+    padding-left: 1.2rem;
+    font-weight: 400;
+    font-size: 0.78rem;
+    color: var(--tinta-muted);
+    font-family: var(--f-mono);
+}
+
+.docs-nav a:hover {
+    color: var(--ouro-texto);
+    background: var(--bs-table-hover-bg);
+}
+
+.docs-content {
+    min-width: 0;
+}
+
+.docs-section {
+    margin-bottom: 2.4rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--linha);
+}
+
+.docs-section:last-child {
+    border-bottom: none;
+}
+
+.docs-section h2 {
+    font-size: 1.3rem;
+    margin-bottom: 0.8rem;
+}
+
+.endpoint-block {
+    margin-top: 1.8rem;
+    padding-top: 1.6rem;
+    border-top: 1px dashed var(--linha);
+}
+
+.endpoint-block:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.endpoint-block h3 {
+    font-family: var(--f-mono);
+    font-size: 1rem;
+    color: var(--tinta);
+}
+
+.endpoint-path {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.9rem;
+}
+
+.endpoint-method {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius);
+    font-family: var(--f-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--papel-card);
+}
+
+.endpoint-method-get { background: var(--verde-gravura); }
+.endpoint-method-post { background: var(--ouro-selo); }
+
+.params-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.2rem;
+    font-size: 0.85rem;
+}
+
+.params-table th,
+.params-table td {
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid var(--linha);
+    vertical-align: top;
+}
+
+.params-table th {
+    font-family: var(--f-ui);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--tinta-suave);
+}
+
+.docs-json {
+    background: var(--papel);
+    border: 1px solid var(--linha);
+    border-radius: var(--radius);
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    margin-bottom: 1.2rem;
+}
+
+.docs-json code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+}
+
+.exemplo-codigo {
+    margin-bottom: 1.2rem;
+}
+
+.exemplo-codigo-titulo {
+    font-family: var(--f-ui);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--tinta-suave);
+}
+
+.exemplo-codigo-tabs {
+    display: flex;
+    gap: 0.2rem;
+    border-bottom: 1px solid var(--linha);
+}
+
+.exemplo-codigo-tab {
+    padding: 0.4rem 0.9rem;
+    border: none;
+    background: none;
+    font-family: var(--f-mono);
+    font-size: 0.78rem;
+    color: var(--tinta-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.exemplo-codigo-tab:hover {
+    color: var(--ouro-texto);
+}
+
+.exemplo-codigo-tab.active {
+    color: var(--tinta);
+    border-bottom-color: var(--ouro-selo);
+    font-weight: 700;
+}
+
+.exemplo-codigo-bloco {
+    background: var(--tinta);
+    color: var(--papel);
+    border-radius: 0 0 var(--radius) var(--radius);
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    margin-top: 0;
+}
+
+.exemplo-codigo-bloco code {
+    background: none;
+    border: none;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
+    white-space: pre;
+}
+
+@media (max-width: 860px) {
+    .docs-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .docs-nav {
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+        border-left: none;
+        border-bottom: 2px solid var(--linha-forte);
+        padding: 0 0 1rem;
+    }
+
+    .docs-nav a.docs-nav-sub {
+        padding-left: 0.6rem;
+    }
+}

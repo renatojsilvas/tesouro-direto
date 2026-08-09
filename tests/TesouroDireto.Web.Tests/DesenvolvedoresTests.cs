@@ -38,7 +38,7 @@ public class DesenvolvedoresTests : TestContext
     }
 
     [Fact]
-    public void CarregamentoInicial_QuandoUsuarioAprovado_MostraAbaCredenciaisComTabelaDeKeys()
+    public void CarregamentoInicial_QuandoUsuarioAprovado_MostraTabelaDeKeys()
     {
         AutorizarUsuarioAprovado();
         ConfigureApi(HttpStatusCode.OK, KeysComItemJson);
@@ -47,55 +47,7 @@ public class DesenvolvedoresTests : TestContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("[data-testid=painel-credenciais]").Should().NotBeNull();
             cut.Find("[data-testid=tabela-keys]").TextContent.Should().Contain("Minha Key");
-            cut.FindAll("[data-testid=painel-inicio-rapido]").Should().BeEmpty();
-            cut.FindAll("[data-testid=painel-referencia]").Should().BeEmpty();
-        });
-    }
-
-    [Fact]
-    public void CliqueEmInicioRapido_QuandoAtivado_MostraGuiaEEscondeCredenciais()
-    {
-        AutorizarUsuarioAprovado();
-        ConfigureApi(HttpStatusCode.OK, KeysComItemJson);
-
-        var cut = RenderComponent<Desenvolvedores>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=aba-inicio-rapido]").Should().NotBeNull());
-
-        cut.Find("[data-testid=aba-inicio-rapido]").Click();
-
-        cut.WaitForAssertion(() =>
-        {
-            var guia = cut.Find("[data-testid=guia-integracao]").TextContent;
-            guia.Should().Contain("https://dadosdotesourodireto.com.br/api/v1");
-            guia.Should().Contain("X-Api-Key");
-            guia.Should().Contain("429");
-            guia.Should().Contain("Retry-After");
-            guia.Should().Contain("If-None-Match");
-            guia.Should().Contain("X-Total-Count");
-            guia.Should().Contain("_links");
-            guia.Should().Contain("problem+json");
-            cut.FindAll("[data-testid=painel-credenciais]").Should().BeEmpty();
-        });
-    }
-
-    [Fact]
-    public void CliqueEmReferencia_QuandoAtivado_RenderizaIframeApontandoParaReferencia()
-    {
-        AutorizarUsuarioAprovado();
-        ConfigureApi(HttpStatusCode.OK, KeysComItemJson);
-
-        var cut = RenderComponent<Desenvolvedores>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=aba-referencia]").Should().NotBeNull());
-
-        cut.Find("[data-testid=aba-referencia]").Click();
-
-        cut.WaitForAssertion(() =>
-        {
-            var iframe = cut.Find("[data-testid=iframe-referencia]");
-            iframe.GetAttribute("src").Should().StartWith("/desenvolvedores/referencia");
-            cut.FindAll("[data-testid=painel-credenciais]").Should().BeEmpty();
         });
     }
 
@@ -112,5 +64,17 @@ public class DesenvolvedoresTests : TestContext
             cut.Find("[data-testid=aguardando]").Should().NotBeNull();
             cut.FindAll("[data-testid=btn-gerar]").Should().BeEmpty();
         });
+    }
+
+    [Fact]
+    public void CarregamentoInicial_MostraLinkParaDocumentacaoPublica()
+    {
+        AutorizarUsuarioAprovado();
+        ConfigureApi(HttpStatusCode.OK, KeysVazioJson);
+
+        var cut = RenderComponent<Desenvolvedores>();
+
+        var link = cut.Find("[data-testid=link-docs]");
+        link.GetAttribute("href").Should().Be("/docs");
     }
 }
