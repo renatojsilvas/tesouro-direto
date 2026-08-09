@@ -30,7 +30,7 @@ public class DocsTests : TestContext
     }
 
     [Fact]
-    public void Render_AvisoDeLinksRelativos_ExplicaQueOHrefNaoTrazOSegmentoApi()
+    public void Render_AvisoDeLinksRelativos_ExplicaQueOHrefJaTrazOSegmentoApi()
     {
         var cut = RenderDocs();
 
@@ -39,6 +39,8 @@ public class DocsTests : TestContext
         aviso.Should().Contain("/api");
         aviso.Should().Contain("https://dadosdotesourodireto.com.br/api/v1/titulos/tesouro-selic-2029-03-01");
         aviso.Should().NotContain("https://dadosdotesourodireto.com.br/api/v1/v1/");
+        aviso.Should().NotContain("/api/v1/v1/");
+        aviso.Should().NotContain("/v1/v1/");
     }
 
     [Fact]
