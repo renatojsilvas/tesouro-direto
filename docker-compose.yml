@@ -62,7 +62,7 @@ services:
 
   # Observabilidade
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.4.1
     container_name: tesouro-direto-grafana
     restart: unless-stopped
     ports:
@@ -78,7 +78,7 @@ services:
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.6.7
     container_name: tesouro-direto-loki
     restart: unless-stopped
     ports:
@@ -89,7 +89,7 @@ services:
       - loki-data:/loki
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.10.0
     container_name: tesouro-direto-prometheus
     restart: unless-stopped
     ports:
@@ -101,7 +101,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.12.1
     container_name: tesouro-direto-node-exporter
     restart: unless-stopped
     command:
@@ -117,7 +117,7 @@ services:
       - "127.0.0.1:9100:9100"
 
   promtail:
-    image: grafana/promtail:latest
+    image: grafana/promtail:3.6.8
     container_name: tesouro-direto-promtail
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail-config.yml

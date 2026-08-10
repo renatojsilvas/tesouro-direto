@@ -6,7 +6,9 @@ services:
       - '--web.enable-remote-write-receiver'
 
   k6:
-    image: grafana/k6:latest
+    # Pinado (v2.1.0, commit 83a87a41e2): a fase 74.5 compara a capacidade medida
+    # sob os novos limites com o baseline da tarefa 58 — versão do k6 à deriva invalida a comparação.
+    image: grafana/k6:2.1.0
     profiles:
       - load
     volumes:
