@@ -47,6 +47,29 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      # Gate barato (segundos): a partir da fase 74.3, docker-compose.yml ganha
+      # deploy.resources.limits e o Compose v2 REJEITA o projeto inteiro se as
+      # chaves legadas cpus/mem_limit de um overlay coexistirem com as canonicas
+      # com valores distintos ("can't set distinct values on 'cpus' and
+      # 'deploy.resources.limits.cpus': invalid compose project"). Valida as
+      # tres combinacoes antes que isso vire deploy quebrado pela metade.
+      # Valores dummy abaixo sao so para satisfazer os ${VAR:?...} obrigatorios
+      # dos composes na validacao sintatica; nao usar secrets aqui (quebraria
+      # o gate em PR de fork).
+      - name: Compose config gate (sintaxe + limits legados x deploy.resources)
+        env:
+          API_KEY: dummy
+          ADMIN_EMAIL: dummy@example.com
+          GRAFANA_PASSWORD: dummy
+          TELEGRAM_BOT_TOKEN: dummy
+          K6_PROMETHEUS_RW_SERVER_URL: http://dummy:9090/prometheus/api/v1/write
+        run: |
+          set -e
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.profiling.yml config -q
+          # --profile load: sem isso o Compose OMITE o servico k6 (profiles: [load])
+          # da validacao, e o k6 e justamente o que esse overlay acrescenta.
+          docker compose -f docker-compose.yml -f docker-compose.load.yml --profile load config -q
 
   e2e:
     if: github.event_name == 'push'
@@ -134,7 +157,10 @@ jobs:
             git reset --hard origin/main
             cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
             nginx -t && systemctl reload nginx
-            docker compose build --no-cache
+            # Cache de build habilitado: o reset --hard acima ja muda os inputs do
+            # COPY (codigo-fonte) a cada deploy, e as versoes de pacote sao fixas nos
+            # .csproj, entao a invalidacao de cache do Docker e correta por construcao.
+            docker compose build
             docker compose up -d
             # prometheus.yml e o provisioning do grafana sao bind-mounts: o compose
             # nao recria esses containers so porque o CONTEUDO do arquivo mudou, entao
