@@ -23,6 +23,10 @@ Hoje o Docker no host usa o driver de log padrão `json-file` SEM limite de tama
 
 O teto de log só vale para containers **recriados após o restart** — o deploy seguinte (que recria os containers) já aplica naturalmente.
 
+### Aplicado na VPS de produção
+
+Conferido em 2026-08-09: `/etc/docker/daemon.json` já existe no host e é **idêntico** ao `infra/host/daemon.json` deste repositório — mesmo `json-file` com `max-size: 20m` e `max-file: 3`. Não é pendência; não rodar o `systemctl restart docker` do passo 2 achando que falta aplicar — ele derruba todos os containers em execução à toa.
+
 ## Swapfile — rede de segurança contra OOM no build de deploy
 
 Aplicado na VPS de produção. O que existe lá hoje:
@@ -71,7 +75,14 @@ Executa todo dia 1º do mês às 04:00. Remove imagens não usadas com mais de 7
 
 ### `image prune` não é `builder prune`
 
-`docker image prune` não toca no cache de build do BuildKit — são espaços de armazenamento distintos. Enquanto o deploy rodava `docker compose build --no-cache` (removido no mesmo PR que documentou isto), cada deploy **escrevia** entradas nesse cache que nunca seriam **lidas** de volta (o `--no-cache` garante isso). O resultado, medido antes da limpeza: **27,8 GB em 526 entradas** de cache de build, com o disco da VPS em **82% de uso** (39 GB de 48 GB, dos quais 40 GB eram `/var/lib/docker`). Rodar `docker builder prune -af` liberou os 27,8 GB e derrubou o uso do disco para 20%.
+`docker image prune` não toca no cache de build do BuildKit — são espaços de armazenamento distintos. Enquanto o deploy rodava `docker compose build --no-cache` (removido no mesmo PR que documentou isto), cada deploy **escrevia** entradas nesse cache que nunca seriam **lidas** de volta (o `--no-cache` garante isso).
+
+Três medidas distintas, tomadas na limpeza:
+- Antes: `df -h /` → `48G  39G  8.9G  82%` (dos quais 40 GB eram `/var/lib/docker`)
+- `docker builder prune -af` → reportou `Total: 27.8GB` em 526 entradas
+- Depois: `df -h /` → `48G  9.2G  39G  20%`
+
+O disco caiu de 39 GB para 9,2 GB usados — uma liberação real de ~29,8 GB —, enquanto o `builder prune` contabilizou 27,8 GB. Os dois números não precisam fechar exatamente: a diferença de ~2 GB é o que o prune libera indiretamente, em camadas de imagem que só o cache de build referenciava.
 
 Agora que o `--no-cache` saiu do deploy, esse mesmo cache deixa de ser lixo puro: ele é lido a cada build e torna o build mais barato (mais rápido, menos pico de CPU/memória — ver seção do swapfile acima). Por isso o cron complementar sugerido **não** usa `-a`, que apagaria justamente o cache quente:
 

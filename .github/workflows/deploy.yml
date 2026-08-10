@@ -71,6 +71,47 @@ jobs:
           # da validacao, e o k6 e justamente o que esse overlay acrescenta.
           docker compose -f docker-compose.yml -f docker-compose.load.yml --profile load config -q
 
+          # Furo que isto fecha: `config -q` valida so sintaxe/schema, nao se a tag
+          # pinada EXISTE no registry. Aconteceu de verdade na 74.0: o pin
+          # prom/prometheus:3.10.0 nao existe (a familia prom/* publica com prefixo
+          # "v", ex. prom/prometheus:v3.10.0; grafana/* publica sem prefixo) e as tres
+          # validacoes acima passavam com exit 0 mesmo assim. So um deploy real
+          # revelaria "no such manifest" -- depois do nginx ja ter sido recarregado,
+          # deixando o deploy pela metade. A lista de imagens vem do proprio
+          # `compose config` (combinacao base+load com --profile load, a unica que
+          # enxerga TODOS os servicos, incluindo o k6 que so existe atras desse
+          # profile) em vez de uma lista fixa que envelhece. `docker manifest inspect`
+          # consulta o registry sem baixar a imagem.
+          images=$(docker compose -f docker-compose.yml -f docker-compose.load.yml --profile load config --format json \
+            | jq -r '.services[] | select(.build == null) | .image' | sort -u)
+
+          failed=0
+          for image in $images; do
+            # `if output=$(...)` (em vez de `output=$(...); status=$?`) e proposital:
+            # com `set -e` ligado, uma atribuicao simples que falha mata o script ali
+            # mesmo, antes de qualquer logica de FALHA/AVISO abaixo rodar. Dentro da
+            # condicao do `if` o errexit fica suspenso so para esse comando.
+            if output=$(docker manifest inspect "$image" 2>&1); then
+              echo "OK    $image"
+            elif echo "$output" | grep -qiE 'no such manifest|manifest unknown|not found'; then
+              # Tag realmente nao existe no registry: isso e o furo que o gate cobre.
+              echo "FALHA $image (tag inexistente no registry)"
+              echo "$output"
+              failed=1
+            else
+              # Erro de outra natureza (rede, timeout, rate limit do Docker Hub
+              # anonimo no IP compartilhado do runner): nao reprova o job por um
+              # motivo alheio a tag pinada, so avisa.
+              echo "AVISO $image: falha ao consultar o manifest (ignorado, provavel rede/rate limit)"
+              echo "$output"
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "Gate reprovado: pelo menos uma tag pinada nao existe no registry."
+            exit 1
+          fi
+
   e2e:
     if: github.event_name == 'push'
     needs: test
