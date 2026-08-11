@@ -27,6 +27,14 @@ public class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifetime
     private const string ConnectionStringEnvVar = "ConnectionStrings__DefaultConnection";
     private const string ApiKeyEnvVar = "ApiKey__Key";
 
+    // Espelha o SizeLimit de producao (DependencyInjection.MemoryCacheSizeLimit).
+    // O valor em si nao importa aqui; o que importa e que exista um SizeLimit:
+    // o MemoryCache so exige Size nas entradas quando ha limite configurado.
+    // Sem isto, esta factory substituia o cache de producao por um SEM limite e
+    // toda a suite de integracao passava a nao conseguir pegar um decorator novo
+    // que esquecesse o Size — o erro so apareceria em producao, em runtime.
+    private const long MemoryCacheSizeLimit = 10_000;
+
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16-alpine")
         .Build();
 
@@ -156,7 +164,11 @@ public class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
             services.RemoveAll<IMemoryCache>();
             services.AddSingleton<IMemoryCache>(
-                _ => new MemoryCache(new MemoryCacheOptions { Clock = new FakeSystemClock(Time) }));
+                _ => new MemoryCache(new MemoryCacheOptions
+                {
+                    Clock = new FakeSystemClock(Time),
+                    SizeLimit = MemoryCacheSizeLimit
+                }));
 
             services.RemoveAll<IProjecaoMercadoService>();
             services.AddScoped<IProjecaoMercadoService>(sp => new CachedProjecaoMercadoService(

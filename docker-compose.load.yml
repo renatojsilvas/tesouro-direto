@@ -1,8 +1,19 @@
 services:
   prometheus:
+    # MESMA armadilha do `command:` do `db` (ver docker-compose.yml): o
+    # comando é SUBSTITUÍDO pelo overlay, não mesclado. Este bloco existe só
+    # para acrescentar o remote-write receiver, mas ao redefinir `command:`
+    # ele apaga silenciosamente as flags do arquivo base — inclusive as de
+    # retenção da 74.2. Sem repeti-las aqui, o teste de carga rodaria com
+    # retenção default (15d, sem teto de tamanho) justamente na janela que
+    # mais gera série e dado. Se o `command:` do prometheus mudar no
+    # docker-compose.yml, este precisa acompanhar no mesmo commit.
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--web.external-url=/prometheus/'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--storage.tsdb.retention.size=256MB'
       - '--web.enable-remote-write-receiver'
 
   k6:
