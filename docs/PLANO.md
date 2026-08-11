@@ -915,7 +915,7 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
   | Fase | Entrega | Gate para avançar |
   |---|---|---|
   | **74.0** ✅ | Pin das 5 imagens `:latest`; tirar `--no-cache` do `docker compose build` (`.github/workflows/deploy.yml:137`); Dockerfiles enxutos (parar de copiar/restaurar `tests/` — `Dockerfile:5,19,21` e `Dockerfile.web:5,19,21`); swapfile 1–2 GB + `vm.swappiness=10` na VPS (documentar em `infra/host/README.md`); conferir se `infra/host/daemon.json` está mesmo instalado na VPS | `docker compose config` válido nas 3 combinações (base; base+profiling; base+load); um deploy real verde — **cumprido em 2026-08-09, PR #59** (ver registro ao final da seção) |
-  | 74.1 | `tests/load/profiling/run-footprint.sh` + `docs/load/footprint.md` | Tabela p50/p95/máx por container × 4 janelas, mais host, SonarQube e pico de build. **Zero mudança no compose** |
+  | **74.1** ✅ | `tests/load/profiling/run-footprint.sh` + `docs/load/footprint.md` | Tabela p50/p95/máx por container × 4 janelas, mais host, SonarQube e pico de build. **Zero mudança no compose** — **cumprido em 2026-08-11, PR #60** (5 coletas para as 4 janelas: `load` foi medida em duas formas, API e circuitos; ver registro ao final da seção) |
   | 74.2 | Tuning (.NET, Npgsql, Postgres, Prometheus, Loki, Grafana, node-exporter) | Re-medição mostra queda; suíte verde; **baseline k6 inalterado** |
   | **74.4a** | Healthchecks (`app`/`db`/`web`) e gate de deploy — adiantada para antes da 74.3 (ver registro de desvio) | Deploy real ponta a ponta verde |
   | 74.3 | `deploy.resources.limits` + conversão do overlay de profiling | `docker inspect` batendo com o alvo; 24h sem `OOMKilled` |
@@ -967,7 +967,7 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
 >
 > **Defeito pego pela revisão adversarial e corrigido antes do merge:** os pins `prom/prometheus:3.10.0` e `prom/node-exporter:1.12.1` **não existem** — a família `prom/*` publica com prefixo `v`. Teriam quebrado o `up -d` **depois** do reload do nginx. O gate de `compose config` não pegava (valida schema, não existência de tag), então ganhou uma checagem de `docker manifest inspect` que reprova só em `manifest unknown` e apenas avisa em erro de rede/rate limit.
 >
-> **Pendência honesta:** o pico de build **depois** das mudanças (Dockerfiles enxutos + cache reativado) **não foi medido** — o build terminou antes da amostragem começar. O número de comparação contra os **610 MB** medidos antes sai na janela de `deploy` da fase 74.1.
+> **Pendência honesta:** o pico de build **depois** das mudanças (Dockerfiles enxutos + cache reativado) **não foi medido** — o build terminou antes da amostragem começar. O número de comparação contra os **610 MB** medidos antes sai na janela de `deploy` da fase 74.1. **[Atualizado pela 74.1 — ver o registro "Feito (74.1)" adiante: o pico foi medido em 840 MB, mas a comparação contra os 610 MB NÃO pôde ser fechada, por diferença de método. Não leia este parágrafo como pendência ainda em aberto.]**
 
 > **Desvio de ordem aprovado pelo dono (2026-08-09):** a ordem das fases muda de `74.0 → 74.1 → 74.2 → 74.3 → 74.4 → 74.5 → 74.6` para **`74.0 → 74.1 → 74.2 → 74.4a → 74.3 → 74.5 → 74.6`**. Dois motivos, ambos defeitos de ordem da versão anterior do plano:
 >
@@ -976,6 +976,20 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
 > **(b) A parte de nginx da 74.4 dependia de um número que só a 74.5 produz.** A própria 74.4 dizia que o `limit_req` da borda era "re-derivado do teto medido na 74.5" — circular. O `limit_req` sai da 74.4 e vai para a **cauda da 74.5**, junto com as tabelas de usuários simultâneos, quando o teto medido existir. A zona fica em `infra/nginx/tesouro-direto.conf:1` e as aplicações nas linhas **66 e 157**, que mudam juntas.
 >
 > Com isso a **74.4a** fica sendo só healthchecks + gate de deploy: `app` `start_period` 30s→90s, `interval` 10s→30s, `timeout` 5s→10s; `db` `pg_isready` 5s→15s; `web` ganha healthcheck; e o `timeout 60` do `curl` do deploy vai para ~180s.
+
+> **Feito (74.1, 2026-08-11, PR #60):** gate cumprido — tabela p50/p95/máx por container nas **4 janelas** previstas (5 coletas: `load` foi medida em duas formas, API e circuitos Blazor), mais host, SonarQube e pico de build, com **zero mudança no compose**. Entregas: `tests/load/profiling/run-footprint.sh` e `docs/load/footprint.md`.
+>
+> **Resultado que decide a 74.2: a conta 25/25/50 não fecha.** Bloco APP fecha em ~476 de 492 MB; bloco INFRA pede **~1053 de 492** — estouro de **561 MB**, com `db` (288) + `loki` (266) + `grafana` (209) somando mais que o bloco inteiro. O `loki` é o problema não óbvio: **dobra sob carga** (104,4 → 201,7 MB de não-descartável), porque rajada de tráfego vira rajada de log do nginx que ele ingere — o orçamento provisório de 96 MB o mataria de OOM no primeiro pico.
+>
+> **A premissa da janela `cold` foi refutada pela medição.** O plano a justificava com "o pico de RSS é no startup, não em regime"; medido, o não-descartável no startup ficou **abaixo** do regime nos oito containers, sem exceção (`app` 0,44× · `db` 0,11× · `loki` 0,41× · `grafana` 0,94×). Consequência para a 74.3: **limite dimensionado pelo pico sob carga não mata o container no boot** — nesta stack, com estes serviços.
+>
+> **As janelas `cold`/`deploy` NÃO saem de graça no merge, ao contrário do que o plano supunha** — e a causa é a própria 74.0. Os Dockerfiles copiam só `src/`, um PR de docs não toca `src/`, e sem `--no-cache` todas as camadas dão cache hit: a imagem sai com o mesmo ID e o `up -d` não recria container nenhum (exceto `prometheus`/`grafana`, que o workflow força). As duas exigiram **janela de manutenção deliberada**, aprovada pelo dono, com `--force-recreate` nos 8.
+>
+> **Pico de build medido: 840 MB**, com dois `dotnet publish` em paralelo num vCPU. A comparação contra os 610 MB de antes da 74.0 **não pode ser fechada** — outro método, e o método atual foi encontrado quebrado nas duas direções (ver abaixo). O que é comparável: RAM disponível no pior instante do deploy foi de **82 MB para 816 MB**, com **293 MB de swap** efetivamente usados — o swapfile da 74.0 é a rede de segurança real, já que o build roda no daemon, fora de qualquer cgroup de serviço, e seguirá fora do orçamento depois da 74.3.
+>
+> **Três defeitos do próprio instrumento, todos achados usando-o:** (1) a janela `deploy` encerrava por "estabilidade" ~30s depois de armada, no meio do build, sem nunca observar a recriação — um deploy COMEÇA estável, e o critério original já era verdadeiro na primeira amostra; corrigido exigindo recriação de container (troca de ID) como única prova de churn. (2) O `awk` do pico de build **casava com a própria linha de comando** (o programa contém os literais `MSBuild`/`VBCSCompiler`), reportando 7–8 MB sem build nenhum — número que a versão anterior do `footprint.md` já tinha publicado e **explicado como esperado**. (3) O mesmo `awk` era **cego ao `dotnet publish`**, por comparar o regex contra a linha do `ps` incluindo a coluna de RSS.
+>
+> **Custo colateral registrado:** o `--force-recreate` da janela `cold` **destruiu a marca d'água `memory.peak = 269 MB` do `db`** (agora 41,2 MB), que é a base do limite de 288 MB do bloco INFRA. Consequência previsível de recriar o container e não prevista. O dado segue registrado, mas não é mais reconferível no container vivo; a próxima importação das 6h UTC reconstrói a marca limpa, medindo só aquele evento — coletar custa um `cat memory.peak`.
 
 ---
 

@@ -63,10 +63,23 @@ page cache descartável) e bem acima do `anon` isolado.
 
 ## 3. Uma tabela por janela
 
-Três janelas coletadas até aqui (`cold` e `deploy` ficam para a seção 7 — pendentes).
-Todas rodaram com [`run-footprint.sh`](../../tests/load/profiling/run-footprint.sh) na VPS
-de produção, leitura pura. Os CSVs brutos **ficam só na VPS** (nunca sobem para o repo —
-o deploy faz `git reset --hard` e os apagaria).
+As **quatro janelas** previstas pelo plano (`cold`, `idle`, `load`, `deploy`) estão
+coletadas, em **cinco coletas**: a `load` foi medida em duas formas, carga de API e carga
+de circuitos Blazor, que estressam containers diferentes. Daí este documento ter cinco
+tabelas para quatro janelas — onde o texto diz "cinco", está falando de coletas. Todas
+rodaram com
+[`run-footprint.sh`](../../tests/load/profiling/run-footprint.sh) na VPS de produção,
+leitura pura. Os CSVs brutos **ficam só na VPS** (nunca sobem para o repo — o deploy faz
+`git reset --hard` e os apagaria).
+
+As duas últimas (`deploy` e `cold`) exigiram uma **janela de manutenção deliberada**, e o
+motivo é um efeito colateral da própria 74.0. O plano supunha que elas sairiam de graça no
+merge do PR desta fase; não saem. Os dois Dockerfiles copiam apenas `src/*/*.csproj` e
+`src/` (`Dockerfile:3,12`), este PR não toca `src/`, e a 74.0 removeu o `--no-cache`
+(`.github/workflows/deploy.yml:198`) — então todas as camadas dão cache hit, a imagem sai
+com o mesmo ID e `docker compose up -d` **não recria container nenhum**, exceto
+`prometheus` e `grafana`, que o workflow força (`deploy.yml:203`). Um deploy só-de-docs não
+tem build para medir nem startup para observar.
 
 ### 3.1 `idle` — 60 min @ 60s, madrugada, sem carga
 
@@ -128,32 +141,124 @@ tentativa (`load-web-report.md`, ver seção 7) foi descartada.
 Host (`load-web2`): mem. usada 1124,0/1189,0/1207,0 MB; disponível 842,0/899,0/907,0;
 swap 58,0/58,0/58,0; load1 0,8/1,7/2,8; disco 26,0%.
 
-Em nenhuma das três janelas houve `OOM kills (cgroup)`, reinício ou `OOMKilled=true` — o
-app não caiu em nenhum cenário.
+### 3.4 `deploy` — deploy real com mudança de código, 120s @ 5s
 
-### 3.4 Consolidado — máximo de cada container entre as três janelas
+CSV bruto: `/var/tmp/footprint/deploy-20260811-013452.csv`. Amostras: 25 ciclos, 200 linhas
+de container. Janela real: 120s (01:34:55 → 01:36:55 UTC). Critério de parada registrado
+pelo próprio script: *estabilidade (6 amostras consecutivas pós-recriação, sem build
+ativo); recriação de container observada na janela (ID diferente do snapshot inicial);
+processo de build observado: sim*.
+
+Ciclo medido, na ordem: linha de base de 20s → alteração no-op num arquivo de `src/` (para
+invalidar a camada `COPY src/`, que é o que um deploy com código de verdade faz) →
+`docker compose build` (68s) → `docker compose up -d` → espera de `/health/ready`.
+
+| Container | Trechos (recriado?) | mem.current MB (p50/p95/máx) | mem.peak máx MB | anon MB (p50/p95/máx) | file MB (p50/p95/máx) | shmem MB (p50/p95/máx) | kernel MB (p50/p95/máx) | slab MB (p50/p95/máx) | não-descartável MB (p50/p95/máx) | CPU% (p50/p95/máx) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| tesouro-direto-app | 2 (SIM) | 97.9/168.0/168.0 | 242.5 | 43.2/78.7/78.7 | 55.2/84.9/84.9 | 42.0/64.0/64.0 | 3.7/3.8/3.8 | 2.5/2.6/2.6 | 80.8/146.4/146.4 | 1.6/11.1/47.6 |
+| tesouro-direto-db | 1 (não) | 32.0/47.1/47.8 | 269.0 | 0.7/4.8/4.8 | 23.0/42.9/43.3 | 5.6/28.1/28.1 | 2.1/2.6/2.6 | 1.1/1.3/1.3 | 13.0/30.9/30.9 | 0.9/1.7/2.5 |
+| tesouro-direto-grafana | 1 (não) | 180.1/195.2/195.2 | 207.1 | 118.8/125.6/125.6 | 55.8/74.5/74.7 | 0.0/0.0/0.0 | 4.0/4.2/4.2 | 2.7/2.9/2.9 | 122.7/129.8/129.8 | 2.0/4.5/5.6 |
+| tesouro-direto-loki | 1 (não) | 124.8/149.4/152.5 | 321.1 | 89.7/92.5/92.8 | 33.0/62.7/62.7 | 0.0/0.0/0.0 | 2.2/2.5/2.5 | 1.3/1.6/1.6 | 91.9/94.7/95.0 | 1.2/2.4/2.6 |
+| tesouro-direto-node-exporter | 1 (não) | 10.8/12.1/12.2 | 19.2 | 8.8/9.0/9.0 | 1.9/2.5/2.5 | 0.0/0.0/0.0 | 0.9/0.9/0.9 | 0.6/0.7/0.7 | 9.6/9.9/9.9 | 0.0/1.0/1.2 |
+| tesouro-direto-prometheus | 1 (não) | 54.7/96.7/97.4 | 109.2 | 38.9/44.6/45.4 | 16.4/49.7/49.7 | 0.0/0.0/0.0 | 1.3/2.1/2.1 | 0.5/1.3/1.3 | 40.2/46.8/47.5 | 0.4/0.7/1.0 |
+| tesouro-direto-promtail | 1 (não) | 30.9/40.0/40.0 | 72.6 | 13.1/18.5/18.5 | 15.5/18.9/18.9 | 0.0/0.0/0.0 | 2.4/2.6/2.6 | 1.9/2.0/2.0 | 15.5/21.1/21.1 | 0.3/0.5/0.8 |
+| tesouro-direto-web | 1 (não) | 106.4/143.2/143.2 | 145.8 | 57.1/79.5/79.5 | 45.3/61.2/61.2 | 29.8/37.4/37.4 | 2.3/2.3/2.3 | 1.3/1.3/1.3 | 89.3/119.2/119.2 | 0.1/0.2/0.5 |
+
+Host (`deploy`): mem. usada 1151,0/1434,0/1444,0 MB; disponível 816,0/1078,0/1088,0;
+**swap 181,0/288,0/293,0**; load1 7,5/11,8/11,8; disco 26,0%.
+
+**Pico de build nesta janela: 200/834/840 MB** de RSS somado (p50/p95/máx) — ver seção 5.
+
+Só o `app` foi recriado. O `web` foi **rebuildado e não recriado**: a alteração foi num
+arquivo do projeto da API, os dois Dockerfiles copiam `src/` inteiro (então as duas imagens
+foram reconstruídas), mas o publish do `web` não inclui a API — o conteúdo final saiu
+idêntico, a imagem manteve o mesmo ID e o compose não teve o que trocar. **Rebuildar não
+implica recriar.**
+
+### 3.5 `cold` — recriação dos 8 containers, 300s @ 5s
+
+CSV bruto: `/var/tmp/footprint/cold-20260811-014031.csv`. Amostras: 60 ciclos, 471 linhas
+de container. Janela real: 294s (01:40:33 → 01:45:27 UTC), encerrada por prazo (a janela
+`cold` não tem parada antecipada).
+
+O rebuild limpo que restaurou a imagem de `origin/main` rodou **fora** da janela, de
+propósito: na primeira versão do procedimento ele ficava dentro, e um `dotnet publish`
+disputando 1 vCPU com os containers subindo mediria "startup sob carga de build", não
+startup. A janela cobre linha de base de 20s → `docker compose up -d --force-recreate` nos
+oito → espera de saúde → regime.
+
+| Container | Trechos (recriado?) | mem.current MB (p50/p95/máx) | mem.peak máx MB | anon MB (p50/p95/máx) | file MB (p50/p95/máx) | shmem MB (p50/p95/máx) | kernel MB (p50/p95/máx) | slab MB (p50/p95/máx) | não-descartável MB (p50/p95/máx) | CPU% (p50/p95/máx) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| tesouro-direto-app | 2 (SIM) | 102.4/125.4/125.4 | 128.1 | 39.7/42.5/42.5 | 59.7/80.1/80.1 | 49.8/52.0/52.0 | 2.8/2.9/2.9 | 1.8/1.8/1.8 | 92.6/97.3/97.4 | 2.2/8.2/16.9 |
+| tesouro-direto-db | 2 (SIM) | 36.5/38.1/38.1 | 269.0 | 7.9/7.9/7.9 | 24.9/26.6/26.6 | 13.7/13.7/13.7 | 3.7/3.7/3.7 | 2.5/2.5/2.5 | 25.2/25.2/25.2 | 0.9/1.8/2.5 |
+| tesouro-direto-grafana | 2 (SIM) | 286.2/296.7/301.2 | 302.6 | 116.2/126.8/131.4 | 164.9/165.2/165.2 | 0.0/0.0/0.0 | 4.9/4.9/4.9 | 3.7/3.7/3.7 | 121.1/131.8/136.3 | 1.8/4.3/23.3 |
+| tesouro-direto-loki | 2 (SIM) | 123.2/128.0/128.0 | 321.1 | 75.1/80.8/80.8 | 45.9/51.4/51.5 | 0.0/0.0/0.0 | 1.1/2.2/2.2 | 0.5/1.3/1.3 | 76.2/82.0/82.0 | 1.0/2.2/3.5 |
+| tesouro-direto-node-exporter | 2 (SIM) | 15.3/15.6/15.6 | 19.2 | 7.0/7.5/7.5 | 7.5/7.8/7.8 | 0.0/0.0/0.0 | 0.7/0.9/0.9 | 0.5/0.6/0.6 | 7.7/8.4/8.4 | 0.0/0.8/1.4 |
+| tesouro-direto-prometheus | 2 (SIM) | 97.3/100.8/101.8 | 109.2 | 28.8/38.4/39.6 | 67.6/70.8/71.1 | 0.0/0.0/0.0 | 1.1/1.3/1.3 | 0.5/0.5/0.5 | 29.9/39.7/41.0 | 0.3/0.7/0.8 |
+| tesouro-direto-promtail | 2 (SIM) | 66.2/75.1/75.1 | 75.4 | 16.0/16.2/16.3 | 49.3/57.9/57.9 | 0.0/0.0/0.0 | 0.9/2.4/2.4 | 0.4/1.9/1.9 | 16.9/17.2/17.2 | 0.3/0.5/0.6 |
+| tesouro-direto-web | 2 (SIM) | 34.2/100.6/100.6 | 145.8 | 12.3/52.6/52.6 | 19.9/44.8/44.8 | 16.1/28.9/28.9 | 1.9/2.3/2.3 | 1.1/1.3/1.3 | 30.3/83.7/83.7 | 0.2/0.8/1.4 |
+
+Host (`cold`): mem. usada 847,0/907,0/940,0 MB; disponível 1119,0/1189,0/1452,0;
+swap 51,0/177,0/177,0; load1 0,9/1,3/1,4; disco 26,0%.
+
+Pico de build nesta janela: **0/0/0 MB** — confirmação de que o rebuild ficou de fato fora
+da janela.
+
+Nas cinco coletas não houve `OOM kills (cgroup)`, reinício por política ou
+`OOMKilled=true` em container nenhum.
+
+O log operacional da janela registra `web=000` e `docs=000` nas checagens finais: o `curl`
+rodou ~1s depois de o container `web` subir (`Up 1 second`), antes de o Kestrel aceitar
+conexão. Reconferido alguns minutos depois — `web=200` e `docs=200`, e o `container_id` do
+`web` não muda mais no CSV. É ruído de tempo do procedimento, não sintoma.
+
+### 3.6 Consolidado — máximo de cada container entre as cinco coletas
 
 | Container | não-descartável máx entre janelas (MB) | Janela onde ocorreu | mem.peak máx entre janelas (MB) |
 |---|---|---|---|
 | `app` | 219,7 | load-api | 242,5 |
 | `db` | 221,7 | load-api | 269,0 |
-| `grafana` | 144,5 | load-api | 207,1 |
+| `grafana` | 144,5 | load-api | 302,6 |
 | `loki` | 201,7 | load-api | 321,1 |
 | `node-exporter` | 10,1 | load-web2 | 19,2 |
-| `prometheus` | 50,2 | load-web2 | 95,9 |
-| `promtail` | 37,5 | load-api | 72,6 |
+| `prometheus` | 50,2 | load-web2 | 109,2 |
+| `promtail` | 37,5 | load-api | 75,4 |
 | `web` | 126,4 | load-web2 | 145,8 |
 
+**A coluna que dimensiona limite não mudou.** Nenhuma das duas janelas novas estabeleceu
+máximo novo de não-descartável para container nenhum — todas as oito linhas seguem vindo de
+`load-api` ou `load-web2`. O orçamento da seção 4 fica **exatamente** como estava; as duas
+janelas custaram uma janela de manutenção e não moveram um MB da conta. Isso é resultado,
+não anticlímax: ver seção 5, onde as duas viram um achado cada.
+
 `mem.peak` é uma marca d'água **desde o start do container** (não zera entre janelas, só
-em recriação/restart-por-política) — por isso pode exceder o pico visto nas três janelas
-medidas aqui (caso do `db`, ver seção 5).
+em recriação/restart-por-política) — por isso pode exceder o pico visto nas janelas medidas
+aqui (caso do `db`, ver seção 5). Três valores subiram em relação à versão anterior desta
+tabela, e os três merecem leituras diferentes:
+
+- **`grafana` 207,1 → 302,6.** Pico **observado dentro** da janela `cold`, com a composição
+  medida no instante exato: `anon` 131,4 + `file` 164,8 + `shmem` 0 ⇒ não-descartável
+  136,3. O acréscimo é page cache, e isso está verificado, não inferido.
+- **`promtail` 72,6 → 75,4.** Também observado dentro da janela `cold`, no container
+  recriado.
+- **`prometheus` 95,9 → 109,2.** Aqui a marca d'água apenas **apareceu** na janela
+  `deploy`: já valia 109,2 na primeiríssima amostra (`memory.current` 96,6 no mesmo
+  instante), ou seja, foi estabelecida **antes de qualquer janela medida**. Depois do
+  `--force-recreate` da janela `cold`, o container novo não passou de 102,1 em cinco
+  minutos. **A composição do momento em que esses 109,2 foram atingidos nunca foi
+  observada** — diferente do `grafana`, aqui não há como afirmar se o acréscimo era page
+  cache ou não.
 
 ## 4. Orçamento: a conta que não fecha
 
 Máquina de **1 vCPU / 1967 MB** ⇒ 25% = **~492 MB** por bloco (1967 × 0,25 = 491,75).
 Regra de folga do plano (`docs/PLANO.md`, 74.3): `limite = max(pico × 1,3 ; pico + 64 MB)`,
-aplicada aqui sobre o **máximo não-descartável entre as três janelas** (coluna da tabela
-3.4). Cada limite é arredondado ao MB mais próximo antes de somar o bloco.
+aplicada aqui sobre o **máximo não-descartável entre as cinco coletas** (coluna da tabela
+3.6). Cada limite é arredondado ao MB mais próximo antes de somar o bloco.
+
+Os números desta seção **não mudaram** com as janelas `deploy` e `cold`: nenhuma das duas
+estabeleceu máximo novo (tabela 3.6). A conta abaixo é a mesma de quando só havia três
+janelas, agora com as cinco previstas pelo plano medidas.
 
 ### Bloco APP
 
@@ -199,15 +304,29 @@ serviço. O orçamento provisório do plano (`docs/PLANO.md`, tabela da 74.3) lh
 — folga de 2,3 MB, efetivamente zero. Pior: `mem.peak` = **269 MB**, uma marca d'água que
 já aparecia nos números de partida medidos em 2026-08-09 (o container não foi recriado
 desde `2026-07-26T15:18:54Z`, confirmado via `docker inspect` na VPS — **~2 semanas** antes
-desta coleta) e que **nenhuma das três janelas medidas reproduziu** — o job Quartz diário de
+desta coleta) e que **nenhuma das cinco coletas reproduziu** — o job Quartz diário de
 importação roda às `0 0 6 * * ?` (6h **UTC**; `src/TesouroDireto.Infrastructure/DependencyInjection.cs:154`),
-e nenhuma das três janelas (02:10–03:09, 09:37–09:52, 10:25–10:40 UTC) cobre esse horário.
-Como a composição de memória durante a importação não foi capturada (só a marca d'água),
-**dimensionar o `db` contra os 269 MB**, não contra os 221,7 medidos, é a escolha
-conservadora e correta até existir uma janela que cubra as 6h UTC.
+e nenhuma das cinco (02:10–03:09, 09:37–09:52, 10:25–10:40, 01:34–01:36, 01:40–01:45 UTC)
+cobre esse horário. Como a composição de memória durante a importação não foi capturada (só
+a marca d'água), **dimensionar o `db` contra os 269 MB**, não contra os 221,7 medidos, é a
+escolha conservadora e correta até existir uma janela que cubra as 6h UTC.
+
+> **A marca d'água de 269 MB não existe mais, e quem a destruiu foi a janela `cold` deste
+> documento.** O `--force-recreate` da seção 3.5 recriou o `db` (criado em
+> `2026-08-11T01:40:51Z`), e `memory.peak` é por cgroup: o do container novo começou do
+> zero. Verificado na VPS logo depois — `memory.peak` do `db` agora lê **41,2 MB** contra
+> os 269,0 de antes. Era consequência previsível de recriar o container e não foi prevista.
+>
+> O dado não deixou de valer (foi observado, está registrado aqui e nos números de partida
+> de 2026-08-09), mas **não pode mais ser reconferido no container vivo**, e é a base do
+> limite de 288 MB do `db` na seção 4 — o item mais caro do bloco INFRA. O efeito colateral
+> útil: a próxima importação das 6h UTC vai reconstruir a marca d'água **limpa**, medindo só
+> aquele evento, em vez das duas semanas de picos acumulados de origem desconhecida que
+> produziram os 269. Coletar isso custa uma linha (`cat memory.peak` do cgroup do `db`
+> depois das 6h UTC) e dá um número melhor do que o que se perdeu.
 
 **O piso de `+64 MB` da regra de folga é ruim para container pequeno.** Para o
-`node-exporter`, cujo não-descartável nunca passou de **10,1 MB** nas três janelas (máximo
+`node-exporter`, cujo não-descartável nunca passou de **10,1 MB** nas cinco coletas (máximo
 em `load-web2-report.md`), a regra dá **74,1 MB** de limite — quase 7× o pico medido, todo
 ele vindo do piso fixo (`10,1 + 64 = 74,1` vence `10,1 × 1,3 = 13,1`). Somado em
 `prometheus` (piso vence: 114,2 MB vs pico de 50,2), `promtail` (piso vence: 101,5 MB vs
@@ -234,14 +353,76 @@ medidos por método independente na tarefa 58 (`docs/load/README.md`, §7.3: "~0
 RAM por circuito"). Duas medições independentes, dois métodos diferentes, convergindo no
 mesmo número — reforça que nem um nem outro é coincidência de medição.
 
-**Pico de build.** As três janelas leram **7–8 MB** de RSS somado de processos de build
-(`dotnet build/publish/restore`, `MSBuild`, `VBCSCompiler`) porque nenhuma delas pegou um
-build em andamento — é esperado, `run-footprint.sh` roda fora do ciclo de deploy. O número
-de referência **anterior** às mudanças da 74.0 é **610 MB de RSS com 82 MB de RAM
-disponível e load 13,2** em 1 vCPU, medido nesta VPS antes do swapfile existir
-(`reference_vps_deploy.md`, registrado na memória do projeto) — a comparação **pós-74.0**
-(Dockerfiles enxutos, `--no-cache` removido) só sai na janela `deploy`, ainda pendente
-(seção 7).
+**Pico de build: 840 MB, e o instrumento estava quebrado.** A versão anterior deste
+documento afirmava que as três janelas liam "7–8 MB de RSS de processos de build ... porque
+nenhuma delas pegou um build em andamento — é esperado". Não era esperado: sem build
+rodando, o número certo é **zero**. Os 7–8 MB eram o próprio `awk` do medidor se medindo —
+o programa contém os literais `MSBuild` e `VBCSCompiler`, e o `ps` o lista com o texto do
+programa nos argumentos, então ele casava consigo mesmo, e em dobro, por casar as duas
+regras. Uma explicação plausível ocupou o lugar da investigação, que é exatamente como um
+artefato de medição sobrevive numa tabela.
+
+O mesmo `awk` tinha um segundo defeito, na direção oposta: comparava o regex contra a linha
+inteira do `ps`, que começa com a coluna de RSS, então `(^|\/)dotnet` **nunca casava com
+`dotnet publish`** — o medidor era cego justamente ao processo que mais pesa e só enxergava
+`MSBuild`/`VBCSCompiler` por substring nua. Os dois defeitos estão corrigidos
+(`run-footprint.sh`, `build_rss_kb`), com o auto-casamento fechado por um sentinela
+explícito em vez do truque de classe de caractere, que some para quem editar o arquivo
+depois.
+
+Com o instrumento consertado, a janela `deploy` mediu **200/834/840 MB** (p50/p95/máx) de
+RSS somado, com dois `dotnet publish` em paralelo (`docker compose build` builda `app` e
+`web` juntos) num único vCPU.
+
+**A comparação contra os 610 MB não pode ser feita como antes/depois, e forçá-la seria
+pior do que declarar isso.** O número de referência anterior à 74.0 — **610 MB de RSS com
+82 MB de RAM disponível e load 13,2**, medido nesta VPS antes de o swapfile existir
+(`reference_vps_deploy.md`, na memória do projeto) — vem de outro método, e o método deste
+documento acabou de ser encontrado quebrado nas duas direções. Não dá para afirmar que o
+pico "subiu de 610 para 840": os dois números não medem a mesma coisa do mesmo jeito.
+
+O que **é** comparável, e mudou muito, é a folga do host no pior instante do deploy:
+
+| | antes da 74.0 | agora (janela `deploy`) |
+|---|---|---|
+| RAM disponível no pior momento | **82 MB** | **816 MB** |
+| load1 | 13,2 | 11,8 |
+| swap | não existia | 293 MB em uso |
+
+O swapfile da 74.0 não é enfeite: 293 MB dele foram efetivamente usados durante este
+deploy. E o pico de build **não é governado por limite nenhum do compose** — o BuildKit
+roda dentro do daemon, fora do cgroup do serviço —, então esses 840 MB continuarão fora do
+orçamento 25/25/50 depois da 74.3. A rede de segurança do deploy é o swapfile mais a RAM
+livre, não os limites de container.
+
+**A premissa da janela `cold` foi refutada pela própria janela `cold`.** O plano a
+justificava assim: "o pico de RSS é no startup, não em regime". Medido, o não-descartável
+no startup ficou **abaixo** do regime para os oito containers, sem uma única exceção:
+
+| Container | `cold` (máx) | máximo em regime/carga | razão |
+|---|---|---|---|
+| `app` | 97,4 | 219,7 | 0,44× |
+| `db` | 25,2 | 221,7 | 0,11× |
+| `grafana` | 136,3 | 144,5 | 0,94× |
+| `loki` | 82,0 | 201,7 | 0,41× |
+| `node-exporter` | 8,4 | 10,1 | 0,83× |
+| `prometheus` | 41,0 | 50,2 | 0,82× |
+| `promtail` | 17,2 | 37,5 | 0,46× |
+| `web` | 83,7 | 126,4 | 0,66× |
+
+Consequência prática para a 74.3: **um limite dimensionado pelo pico sob carga não corre
+risco de matar o container no boot**, que era a preocupação implícita na quarta janela.
+Vale para esta stack, com estes serviços — não é lei geral.
+
+**Mas o `cold` achou outra coisa, no `memory.current`.** O `grafana` sobe a **301,2 MB de
+`memory.current` no startup** contra ~195 em regime — 165 MB disso é `file` (page cache,
+carregando dashboards e plugins do disco). O não-descartável correspondente é só 136,3 MB.
+É o argumento da seção 2 aparecendo em estado puro: quem dimensionasse pelo `memory.current`
+daria 301 MB ao Grafana; pelo não-descartável, 136. **Com uma ressalva que a 74.3 precisa
+absorver:** um limite fixado exatamente no não-descartável não mata o container (o kernel
+recupera page cache antes de invocar o OOM killer), mas transforma esses 165 MB de cache em
+pressão de reclaim contínua durante todo o boot — startup mais lento, não morte. A folga da
+regra (`×1,3` ou `+64`) cobre parte disso por acidente, não por projeto.
 
 ## 6. Host e SonarQube
 
@@ -258,7 +439,7 @@ disponível e load 13,2** em 1 vCPU, medido nesta VPS antes do swapfile existir
 Total de memória da VPS: **1967 MB** (`free -m`, confirmado ao escrever este documento).
 
 **SonarQube (`tesouro-direto-sonar`)**: **parado** (`docker ps -a` → `Exited (0) 4 months
-ago`, criado em `2026-03-25`) — custa **0 MB hoje**, confirmado nas três janelas
+ago`, criado em `2026-03-25`) — custa **0 MB hoje**, confirmado nas cinco coletas
 (`### SonarQube` de cada relatório). Se precisasse voltar a rodar, o parágrafo original da
 tarefa 74 já registrava a estimativa de JVM+Elasticsearch ≥1,5 GB — não caberia nesta
 máquina de 1967 MB ao lado dos outros 8 containers.
@@ -271,12 +452,26 @@ os do levantamento inicial da tarefa (que ainda contava com o `weducate` de pé)
 
 ## 7. Pendências honestas
 
-- **Janelas `cold` e `deploy` ainda não coletadas.** Saem do merge deste próprio PR (o
-  script já suporta as duas — `run-footprint.sh cold` e `run-footprint.sh deploy` — só
-  faltou rodar). Sem `deploy`, a comparação do pico de build pós-74.0 contra os 610 MB
-  (seção 5) fica pendente.
+- **O deploy medido não é idêntico ao deploy do CI.** A janela 3.4 reproduziu o ciclo à
+  mão (`build` → `up -d` → espera de saúde) para poder invalidar a camada `COPY src/` de
+  propósito, mas pulou o que o CI faz antes: `git fetch`/`reset --hard`, cópia do
+  `tesouro-direto.conf` e `nginx -t && systemctl reload nginx`
+  (`.github/workflows/deploy.yml:186-197`). São passos baratos em CPU e memória perto de
+  dois `dotnet publish`, e nenhum deles cria container — mas não foram medidos, e por isso
+  o número desta janela é o custo do **build + recriação**, não do job de deploy inteiro.
+- **O `--force-recreate` da janela `cold` recria os oito de uma vez; o CI não.** No deploy
+  real só sobem os containers cuja imagem ou config mudou (tipicamente `app`, mais
+  `prometheus`/`grafana` que o workflow força). A janela 3.5 é portanto o **pior caso** de
+  startup simultâneo, mais pesada que qualquer deploy real — o que é a direção segura para
+  dimensionar, mas convém não citá-la como "o que acontece num deploy".
+- **A comparação do pico de build contra os 610 MB continua sem poder ser fechada** — não
+  por falta de medição, mas porque os dois números vêm de métodos diferentes e o método
+  antigo era comprovadamente defeituoso (seção 5). Fechá-la exigiria re-medir o cenário
+  pré-74.0, o que significaria reverter o `--no-cache` e os Dockerfiles num deploy real só
+  para produzir o número. Não vale o risco; a folga de RAM do host (82 MB → 816 MB) responde
+  à pergunta que importava.
 - **A composição de memória durante a importação das 6h UTC não foi capturada.** Nenhuma
-  das três janelas cobre esse horário (seção 5); só a marca d'água `mem.peak = 269 MB` do
+  das cinco coletas cobre esse horário (seção 5); a marca d'água `mem.peak = 269 MB` do
   `db` a representa, e por isso o orçamento (seção 4) dimensiona o `db` contra ela, não
   contra o pico das janelas medidas.
 - **A primeira tentativa da janela de circuitos foi invalidada e descartada.** Registrada
@@ -324,7 +519,7 @@ plausivelmente rende segundo o medido aqui:
    tráfego). Não dá para estimar quanto o tuning efetivamente derruba: este documento só
    registra o baseline sem tuning nenhum. Ganho real só aparece re-medindo pós-74.2.
 3. **node-exporter: só os coletores consumidos.** Rende pouco em termos absolutos — o
-   container já é minúsculo (não-descartável nunca passou de 10,1 MB nas três janelas);
+   container já é minúsculo (não-descartável nunca passou de 10,1 MB nas cinco coletas);
    desabilitar coletores não usados dificilmente derruba isso muito mais. O ganho real
    depende de revisar a **regra de folga** (achado da seção 5: piso de `+64 MB` é
    desproporcional para container deste tamanho), não do tuning do próprio coletor.
