@@ -1,5 +1,13 @@
 global:
-  scrape_interval: 15s
+  # 74.2: 15s -> 30s. Não fomos para 60s (próximo degrau da escada de
+  # fallback, docs/PLANO.md 74.3) porque a regra de menor `for:` em
+  # infra/grafana/provisioning/alerting/rules.yaml que depende do
+  # datasource prometheus é `td-db-readiness-down` (for: 1m) — a 30s ainda
+  # sobram ~2 amostras dentro da janela de avaliação; a 60s sobraria só 1,
+  # arriscando perder a amostra por desalinhamento entre scrape e o
+  # `interval: 1m` do grupo de regras. As regras que usam rate()/increase()
+  # (5m/6h/15m/10m) têm folga de sobra nos dois casos.
+  scrape_interval: 30s
 
 scrape_configs:
   - job_name: 'tesouro-direto-api'
@@ -10,3 +18,15 @@ scrape_configs:
   - job_name: 'node'
     static_configs:
       - targets: ['node-exporter:9100']
+
+  - job_name: 'prometheus'
+    # O serviço sobe com --web.external-url=/prometheus/ e SEM
+    # --web.route-prefix explícito — o Prometheus deriva o route-prefix do
+    # path do external-url, o que move TODAS as rotas internas, inclusive
+    # /metrics, para /prometheus/metrics. Confirmado empiricamente (não
+    # presumido): rodando prom/prometheus:v3.10.0 localmente com essa mesma
+    # flag, GET /metrics -> 404 e GET /prometheus/metrics -> 200; o log do
+    # processo também imprime "Router prefix ... prefix=/prometheus".
+    metrics_path: /prometheus/metrics
+    static_configs:
+      - targets: ['prometheus:9090']
