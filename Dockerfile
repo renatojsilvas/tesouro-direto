@@ -8,9 +8,9 @@ RUN for f in src-projects/*.csproj; do \
       mkdir -p "$dir" && mv "$f" "$dir/"; \
     done && \
     rm -rf src-projects
-RUN dotnet restore src/TesouroDireto.API/TesouroDireto.API.csproj
+RUN dotnet restore src/TesouroDireto.API/TesouroDireto.API.csproj -r linux-x64 -p:PublishReadyToRun=true
 COPY src/ src/
-RUN dotnet publish src/TesouroDireto.API/TesouroDireto.API.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish src/TesouroDireto.API/TesouroDireto.API.csproj -c Release -r linux-x64 --self-contained false -p:PublishReadyToRun=true -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
