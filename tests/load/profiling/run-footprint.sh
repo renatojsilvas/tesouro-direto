@@ -26,9 +26,27 @@ ou por variável de ambiente):
                            tests/load/site/circuits.js. Use o 4º argumento (ou
                            FOOTPRINT_LOAD_LABEL) para rotular qual carga estava
                            no ar — vai para o CSV e para o cabeçalho da tabela.
-  deploy   até 30 min @ 5s — pára antes se a stack ficar estável (todos os
-                           containers esperados de pé + app healthy por N
-                           amostras seguidas; N configurável).
+  deploy   até 30 min @ 5s — SÓ pára antes do teto depois de observar uma
+                           RECRIAÇÃO DE CONTAINER de verdade (ID diferente do
+                           snapshot inicial — a única prova de que algo foi
+                           recriado; container ausente/não-healthy ou build
+                           de pé só provam "algo está acontecendo", não
+                           bastam sozinhos), seguida de N amostras
+                           CONSECUTIVAS já pós-recriação em que a stack está
+                           estável e sem build ativo (N configurável). Um
+                           deploy típico COMEÇA estável (stack de pé, build
+                           ainda não iniciou) — período calmo ANTES da
+                           recriação não conta nada para as N amostras, senão
+                           a janela fechava assim que a recriação fosse vista
+                           pela primeira vez (0 amostras depois dela) ou, se o
+                           build sozinho já tivesse "acordado" o critério,
+                           fechava logo após o build acabar — ainda ANTES do
+                           `docker compose up -d` trocar algum container.
+                           O resumo distingue, só pelo texto do critério de
+                           parada: recriação observada ou não, e processo de
+                           build observado ou não (são fatos independentes —
+                           cache hit total ainda recria containers; um build
+                           pode rodar e não produzir imagem nova nenhuma).
 
 Exemplos:
   run-footprint.sh cold
@@ -55,8 +73,12 @@ Variáveis de ambiente (todas opcionais, com default sensato):
                                  que as demais métricas, nunca a cada amostra.
   FOOTPRINT_APP_CONTAINER        nome do container do app, default tesouro-direto-app
   FOOTPRINT_SONAR_CONTAINER      nome do container do Sonar, default tesouro-direto-sonar
-  FOOTPRINT_DEPLOY_STABLE_SAMPLES  nº de amostras estáveis seguidas p/ encerrar
-                                    a janela deploy antes do teto, default 6
+  FOOTPRINT_DEPLOY_STABLE_SAMPLES  nº de amostras CONSECUTIVAS pós-recriação
+                                    (estável + sem build ativo) p/ encerrar a
+                                    janela deploy antes do teto, default 6.
+                                    Amostras ANTES da recriação de container
+                                    não contam nada para essa contagem — ver
+                                    janela `deploy` acima.
   FOOTPRINT_DOCKER_TIMEOUT_S       teto para chamadas rápidas ao daemon
                                     (docker ps/inspect/compose ps), default 20s.
                                     Usa `timeout` só se existir no PATH (ausente
@@ -89,6 +111,12 @@ COLUMNS=(timestamp janela rotulo_carga tipo nome container_id \
   docker_restart_count docker_oom_killed)
 
 declare -A ROW=()
+
+# Última leitura de build_rss_kb (ver build_rss_kb()/emit_host_row) — lida
+# pela janela "deploy" para saber se há build ativo nesta amostra (zera
+# stable_count e arma o latch BUILD_OBSERVADO, ver run_window), sem repetir
+# o `ps` já feito em emit_host_row.
+LAST_BUILD_RSS_KB=0
 
 csv_header() {
   local IFS=,
@@ -326,6 +354,7 @@ emit_host_row() {
   ROW[host_load15]="$l15"
   ROW[host_disk_used_pct]="$disk"
   ROW[build_rss_kb]="$(build_rss_kb)"
+  LAST_BUILD_RSS_KB="${ROW[build_rss_kb]}"
   ROW[sonar_status]="$(sonar_status)"
   emit_row
 }
@@ -373,6 +402,88 @@ deploy_is_stable() {
 }
 
 # ---------------------------------------------------------------------------
+# Recriação de container na janela "deploy" — a ÚNICA prova de que a stack
+# de fato se moveu, usada como gatilho do latch RECRIACAO_OBSERVADA (ver
+# run_window). `deploy_is_stable` falso e build ativo (build_rss_kb>0) só
+# provam "algo está acontecendo agora", não que um container foi recriado —
+# um deploy típico é git reset --hard → nginx reload → docker compose build
+# (minutos, TODOS os containers de pé e o app healthy, ou seja
+# deploy_is_stable() já dá verdadeiro) → só então docker compose up -d. Se
+# qualquer um desses dois virasse gatilho do latch, a janela poderia fechar
+# logo depois do build acabar — ANTES do `up -d` trocar container nenhum
+# (ver comentário em run_window sobre por que o build não conta aqui).
+#
+# INITIAL_ID_MAP é o snapshot nome→ID capturado 1x, logo após
+# resolve_expected_containers, ANTES de qualquer amostra real. Comparar o ID
+# atual contra esse snapshot (não contra a amostra anterior) é o único sinal
+# que sobrevive a uma recriação rápida entre duas amostras de 5s — serviços
+# leves como node-exporter/promtail sobem em bem menos que isso, e sem
+# comparar contra o snapshot inicial um `up -d --force-recreate` pode não
+# deixar rastro de instabilidade nenhum (container novo já healthy na
+# primeira amostra em que é visto).
+# ---------------------------------------------------------------------------
+declare -A INITIAL_ID_MAP=()
+RECRIACAO_OBSERVADA=0
+BUILD_OBSERVADO=0
+DETECCAO_INICIAL_CEGA=0
+DETECCAO_INICIAL_COBERTURA=""
+
+capture_initial_id_map() {
+  INITIAL_ID_MAP=()
+  local i
+  for i in "${!CUR_NAMES[@]}"; do
+    INITIAL_ID_MAP["${CUR_NAMES[$i]}"]="${CUR_IDS[$i]}"
+  done
+}
+
+container_recreated_since_start() {
+  local i name id
+  for i in "${!CUR_NAMES[@]}"; do
+    name="${CUR_NAMES[$i]}"
+    id="${CUR_IDS[$i]}"
+    if [ -n "${INITIAL_ID_MAP[$name]:-}" ] && [ "${INITIAL_ID_MAP[$name]}" != "$id" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Cobertura do snapshot inicial — se o daemon do Docker engasgar (ou
+# `run_with_timeout` estourar) exatamente no instante em que a janela é
+# armada, `capture_initial_id_map` pode terminar vazio ou incompleto.
+# `container_recreated_since_start` NUNCA dispara para um nome ausente do
+# snapshot — não porque não houve recriação, mas porque o detector nunca
+# teve um ID de referência para comparar. Sem checar isso, uma falha do
+# daemon vira silenciosamente "nenhuma recriação observada" no relatório
+# final: parece um resultado válido, mas é indistinguível de o detector
+# nunca ter tido chance de ver nada.
+#
+# Checado 1x, logo após o armamento (não a cada amostra): grita no stderr NA
+# HORA — o operador ainda está olhando o terminal nesse instante — e registra
+# o estado em DETECCAO_INICIAL_CEGA/DETECCAO_INICIAL_COBERTURA para
+# `deploy_facts_suffix` nunca mais afirmar ausência de recriação sobre um
+# detector que pode simplesmente não ter enxergado nada. Cobertura PARCIAL
+# (algumas entradas, não todas) recebe o MESMO tratamento do vazio total: o
+# detector funciona para os nomes capturados e é cego para o resto, então a
+# afirmação "nenhuma recriação" continua não confiável — não há meio-termo
+# "parcialmente confiável" aqui, só "confiável" ou "cego".
+# ---------------------------------------------------------------------------
+check_initial_snapshot_coverage() {
+  local svc n_expected=0 n_captured=0
+  for svc in "${EXPECTED_CONTAINERS[@]}"; do
+    [ -n "$svc" ] || continue
+    n_expected=$((n_expected + 1))
+    [ -n "${INITIAL_ID_MAP[$svc]:-}" ] && n_captured=$((n_captured + 1))
+  done
+  DETECCAO_INICIAL_COBERTURA="${n_captured}/${n_expected}"
+  if [ "$n_expected" -eq 0 ] || [ "$n_captured" -lt "$n_expected" ]; then
+    DETECCAO_INICIAL_CEGA=1
+    echo "AVISO: snapshot inicial de IDs de container incompleto (${DETECCAO_INICIAL_COBERTURA} containers esperados capturados) — a detecção de recriação por troca de ID fica CEGA para os containers não capturados nesta janela (docker ps/daemon pode ter engasgado no armamento). O relatório final vai marcar esse trecho como não confiável em vez de afirmar 'nenhuma recriação'." >&2
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Loop principal de amostragem — laço com relógio de parede, sem depender de
 # `timeout` (ausente no macOS; já quebrou um script deste repo antes).
 # ---------------------------------------------------------------------------
@@ -393,13 +504,65 @@ format_deadline_reason() {
   fi
 }
 
+# Sufixo SEMPRE anexado ao STOP_REASON da janela "deploy" — em QUALQUER dos
+# dois caminhos de parada (estabilidade ou prazo), não só no prazo. Relata os
+# dois fatos independentes que a janela observou (recriação de container?
+# processo de build?), porque um só não implica o outro: cache hit total no
+# `docker compose build` ainda pode recriar container (compose muda hash de
+# config sem rebuildar imagem); e um build pode rodar minutos e não produzir
+# imagem nova nenhuma (cache hit real), sem trocar container. Com os dois
+# fatos sempre presentes, os casos ficam distinguíveis lendo só o
+# STOP_REASON, sem inferir nada do resto do texto:
+#   recriação=sim, build=sim  → deploy normal, mudou código/imagem
+#   recriação=sim, build=não  → troca de container sem rebuild (ex.: só config)
+#   recriação=não, build=sim  → build rodou e não produziu troca de container
+#   recriação=não, build=não  → deploy no-op (nada mudou)
+#   detecção cega (snapshot inicial vazio/incompleto) → NUNCA "nenhuma
+#   recriação": a ausência relatada seria indistinguível de o detector nunca
+#   ter tido chance de ver nada (ver check_initial_snapshot_coverage). Essa
+#   checagem vale mesmo se RECRIACAO_OBSERVADA==1 — uma recriação REAL foi
+#   vista para um nome capturado, então essa parte do fato continua valendo;
+#   o que é untrustworthy é só a AUSÊNCIA relatada para os nomes fora do
+#   snapshot, por isso a nota de cegueira é anexada como alerta adicional
+#   nesse caso, sem apagar o "sim" já confirmado.
+deploy_facts_suffix() {
+  local build_txt="não"
+  [ "$BUILD_OBSERVADO" -eq 1 ] && build_txt="sim"
+
+  if [ "$RECRIACAO_OBSERVADA" -eq 1 ]; then
+    printf '; recriação de container observada na janela (ID diferente do snapshot inicial); processo de build observado: %s' "$build_txt"
+    if [ "$DETECCAO_INICIAL_CEGA" -eq 1 ]; then
+      printf '; ATENÇÃO: snapshot inicial de IDs incompleto (%s containers esperados capturados) — pode haver recriações adicionais entre os containers fora da cobertura que este relatório não detectou' "$DETECCAO_INICIAL_COBERTURA"
+    fi
+    return
+  fi
+
+  if [ "$DETECCAO_INICIAL_CEGA" -eq 1 ]; then
+    printf '; DETECÇÃO DE RECRIAÇÃO CEGA nesta janela (snapshot inicial de IDs capturou só %s dos containers esperados): a ausência de recriação relatada aqui é INDISTINGUÍVEL de falha do próprio detector — NÃO é evidência de que nenhum container foi recriado, é ausência de dado' "$DETECCAO_INICIAL_COBERTURA"
+    return
+  fi
+
+  if [ "$BUILD_OBSERVADO" -eq 1 ]; then
+    printf '; NENHUMA recriação de container observada na janela, apesar de processo de build detectado: o build rodou e não produziu troca de container (cache hit / imagem igual)'
+  else
+    printf '; nenhum churn observado na janela: nenhum container recriado e nenhum processo de build detectado'
+  fi
+}
+
 run_window() {
   local start_ts now elapsed sample_idx=0 stable_count=0
   start_ts=$(date +%s)
   STOP_REASON=""
+  RECRIACAO_OBSERVADA=0
+  BUILD_OBSERVADO=0
+  DETECCAO_INICIAL_CEGA=0
+  DETECCAO_INICIAL_COBERTURA=""
 
   if [ "$WINDOW" = "deploy" ]; then
     resolve_expected_containers
+    refresh_containers
+    capture_initial_id_map
+    check_initial_snapshot_coverage
   fi
 
   while :; do
@@ -438,13 +601,44 @@ run_window() {
     emit_host_row "$ts"
 
     if [ "$WINDOW" = "deploy" ]; then
-      if deploy_is_stable; then
+      # Estado desta amostra: is_stable (container_recreated_since_start
+      # continua vivo? deploy_is_stable) e build_ativo (build_rss_kb>0 nesta
+      # amostra de host).
+      local is_stable=1 build_ativo=0
+      deploy_is_stable || is_stable=0
+      [ "${LAST_BUILD_RSS_KB:-0}" -gt 0 ] && build_ativo=1
+      [ "$build_ativo" -eq 1 ] && BUILD_OBSERVADO=1
+
+      # RECRIACAO_OBSERVADA é um latch (nunca desarma) e o ÚNICO gatilho é
+      # container_recreated_since_start — ID diferente do snapshot inicial é
+      # a ÚNICA prova de que um container foi de fato recriado.
+      # `is_stable`/`build_ativo` NÃO armam esse latch: eles só provam "algo
+      # está acontecendo agora", e usá-los como gatilho tem um defeito
+      # concreto e medido — se o build sozinho armasse o latch, bastariam
+      # STABLE_SAMPLES amostras calmas com os containers ANTIGOS ainda de pé
+      # (o intervalo normal entre "build acabou" e "up -d trocou os
+      # containers") para a janela fechar ANTES de qualquer recriação real.
+      if container_recreated_since_start; then
+        RECRIACAO_OBSERVADA=1
+      fi
+
+      # stable_count só incrementa quando as TRÊS condições valem ao mesmo
+      # tempo: (1) já houve recriação (RECRIACAO_OBSERVADA), (2) a stack está
+      # estável AGORA, (3) não há build ativo AGORA. Qualquer amostra fora
+      # dessas três condições zera — inclusive as calmas ANTES da recriação
+      # (RECRIACAO_OBSERVADA ainda 0 nelas), que portanto NUNCA contribuem
+      # para as N amostras exigidas. Isso resolve por construção, sem
+      # depender de detectar a TRANSIÇÃO calma→recriação: o contador só
+      # existe, literalmente, como "amostras consecutivas pós-recriação", que
+      # é exatamente o que STOP_REASON abaixo afirma.
+      if [ "$RECRIACAO_OBSERVADA" -eq 1 ] && [ "$is_stable" -eq 1 ] && [ "$build_ativo" -eq 0 ]; then
         stable_count=$((stable_count + 1))
       else
         stable_count=0
       fi
+
       if [ "$stable_count" -ge "$STABLE_SAMPLES" ]; then
-        STOP_REASON="estabilidade (${STABLE_SAMPLES} amostras consecutivas)"
+        STOP_REASON="estabilidade (${STABLE_SAMPLES} amostras consecutivas pós-recriação, sem build ativo)"
         break
       fi
     fi
@@ -475,6 +669,14 @@ run_window() {
       sleep "$remaining"
     fi
   done
+
+  # Anexado UMA vez, depois do laço, independente de qual dos três `break`
+  # acima disparou — cobre inclusive o crashloop (recriação vista, mas nunca
+  # fica healthy: RECRIACAO_OBSERVADA=1, is_stable sempre falso, janela vai
+  # até o teto) sem precisar duplicar a chamada nos três pontos de saída.
+  if [ "$WINDOW" = "deploy" ]; then
+    STOP_REASON="${STOP_REASON}$(deploy_facts_suffix)"
+  fi
 }
 
 # ---------------------------------------------------------------------------
