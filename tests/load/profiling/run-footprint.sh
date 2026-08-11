@@ -306,12 +306,31 @@ collect_host_snapshot() {
 # nenhum limite de compose (roda no BuildKit do daemon, fora do cgroup do
 # serviço), e já foi medido em 610 MB de pico nesta VPS.
 #
-# ARMADILHA (achada testando ao vivo): `comm` sozinho ("dotnet") não distingue
-# uma invocação de build ("dotnet build/publish/restore") do processo do app
-# RODANDO ("dotnet TesouroDireto.API.dll") — os dois têm o mesmo `comm`, e o
-# 2º aparece no `ps` do HOST mesmo estando dentro de um container (a menos
-# que o container use pid namespace próprio isolado do host, o que não é o
-# caso aqui). Por isso o match é na linha de comando inteira, nunca em `comm`.
+# ARMADILHA #1 (achada testando ao vivo): `comm` sozinho ("dotnet") não
+# distingue uma invocação de build ("dotnet build/publish/restore") do
+# processo do app RODANDO ("dotnet TesouroDireto.API.dll") — os dois têm o
+# mesmo `comm`, e o 2º aparece no `ps` do HOST mesmo estando dentro de um
+# container (a menos que o container use pid namespace próprio isolado do
+# host, o que não é o caso aqui). Por isso o match é na linha de comando
+# inteira, nunca em `comm`.
+#
+# ARMADILHA #2 (achada ao vivo na VPS, mesma família da já registrada neste
+# projeto sobre `pgrep -f` enxergar o próprio comando que o executa — aqui
+# dentro do `awk`): `ps -eo rss,args` lista o PRÓPRIO processo `awk` abaixo,
+# e `args` desse processo é o TEXTO INTEIRO deste programa — que contém os
+# literais "MSBuild" e "VBCSCompiler". As regras de substring nua casavam
+# com o awk que as executa, e casavam as DUAS ao mesmo tempo, dobrando o RSS
+# do próprio `awk` num "pico de build" fantasma (~8 MB com build nenhum
+# rodando). A defesa NÃO é um truque de classe de caractere tipo
+# "MSBuil[d]" — invisível pra quem editar depois e volta a quebrar no
+# primeiro "clean-up" do regex. É um sentinela literal, óbvio, que só existe
+# NESTE programa: como o awk carrega o próprio texto do programa em `args`,
+# a linha do awk se auto-exclui por construção, e a razão fica legível no
+# código. `next` depois de cada match, além de aplicar o guard, também evita
+# contar o MESMO processo real 2x: uma linha de build de verdade tipo
+# `dotnet build /src/MSBuildTools/Foo.csproj` casaria a regra do `dotnet` E
+# a regra nua de "MSBuild" (basta o CAMINHO do projeto conter a substring) —
+# sem `next`, um único processo real entraria em dobro na soma.
 build_rss_kb() {
   ps -eo rss,args 2>/dev/null | awk '
     {
@@ -319,9 +338,10 @@ build_rss_kb() {
       sub(/^[^ \t]+[ \t]+/, "")
       line = $0
     }
-    line ~ /(^|\/)dotnet[ \t]+(build|publish|restore)([ \t]|$)/ { sum += rss }
-    line ~ /MSBuild/ { sum += rss }
-    line ~ /VBCSCompiler/ { sum += rss }
+    line ~ /FOOTPRINT_BUILD_RSS_SELFMATCH_GUARD_DO_NOT_REMOVE/ { next }
+    line ~ /(^|\/)dotnet[ \t]+(build|publish|restore)([ \t]|$)/ { sum += rss; next }
+    line ~ /MSBuild/ { sum += rss; next }
+    line ~ /VBCSCompiler/ { sum += rss; next }
     END { print sum+0 }'
 }
 
