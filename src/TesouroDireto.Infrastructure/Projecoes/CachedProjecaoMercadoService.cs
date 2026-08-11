@@ -44,12 +44,14 @@ public sealed class CachedProjecaoMercadoService(
             cache.Set(freshKey, projecao,
                 new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(GetTtl())
-                    .AddExpirationToken(new CancellationChangeToken(invalidator.GetProjecoesToken())));
+                    .AddExpirationToken(new CancellationChangeToken(invalidator.GetProjecoesToken()))
+                    .SetSize(1));
 
             cache.Set(lkgKey, projecao,
                 new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(GetMaxFallbackAge())
-                    .AddExpirationToken(new CancellationChangeToken(invalidator.GetProjecoesToken())));
+                    .AddExpirationToken(new CancellationChangeToken(invalidator.GetProjecoesToken()))
+                    .SetSize(1));
 
             return Result<ProjecaoMercado>.Success(projecao);
         }

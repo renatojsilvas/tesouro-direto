@@ -24,7 +24,8 @@ public static class MemoryCacheResultExtensions
         {
             var options = new MemoryCacheEntryOptions()
                 .SetAbsoluteExpiration(ttl)
-                .AddExpirationToken(new CancellationChangeToken(invalidationToken));
+                .AddExpirationToken(new CancellationChangeToken(invalidationToken))
+                .SetSize(1);
 
             cache.Set(key, result.Value, options);
         }

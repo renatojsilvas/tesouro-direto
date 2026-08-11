@@ -55,5 +55,20 @@ public sealed class CachedContentVersionProviderTests : IDisposable
         await _inner.Received(2).GetVersionAsync(Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task GetVersionAsync_WithSizeLimitedCache_ShouldNotThrow_BecauseEntrySpecifiesSize()
+    {
+        using var sizeLimitedCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10 });
+        var sut = new CachedContentVersionProvider(_inner, sizeLimitedCache, new ConfigurationBuilder().Build());
+        _inner.GetVersionAsync(Arg.Any<CancellationToken>()).Returns("2026-08-08-10-5");
+
+        var act = async () => await sut.GetVersionAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync<InvalidOperationException>(
+            "a entrada única deste provider precisa declarar Size quando o IMemoryCache " +
+            "tem SizeLimit configurado — sem isso o MemoryCache lança InvalidOperationException " +
+            "em runtime no primeiro cache miss");
+    }
+
     public void Dispose() => _cache.Dispose();
 }
