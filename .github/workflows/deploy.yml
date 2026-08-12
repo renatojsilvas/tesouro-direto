@@ -209,6 +209,12 @@ jobs:
             # sem um restart. Forcar a recriacao so desses dois relê a config a cada deploy.
             docker compose up -d --force-recreate --no-deps prometheus grafana
             echo "Waiting for app to be healthy..."
-            timeout 60 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 3; done'
+            # 74.4a: 60s -> 180s. Este e o mesmo deploy que a 74.3 impoe o
+            # limite de ~0,18 vCPU ao `app`; startup de .NET com JIT residual
+            # esperando o `db` ficar healthy nao cabe em 60s sob essa quota
+            # (a 74.2 mediu ~9s local / ~1min na VPS SEM limite de CPU nenhum
+            # -- nao usar esse numero como base, a 74.3 corta a CPU disponivel
+            # para menos de um quinto).
+            timeout 180 bash -c 'until curl -sf http://localhost:5000/health/ready; do sleep 3; done'
             echo "Deploy complete."
             docker image prune -f

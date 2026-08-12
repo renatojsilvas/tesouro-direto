@@ -1,3 +1,11 @@
+# 74.4a: healthchecks deste arquivo NAO foram alterados. Decisao explicita,
+# nao omissao. Este compose e standalone (nao herda deploy.resources.limits
+# de docker-compose.yml) e o E2E nao roda com limite de CPU nenhum -- esticar
+# start_period/interval para os mesmos valores do compose de producao so
+# deixaria o CI mais lento, sem nenhum ganho de robustez (nada aqui compete
+# por quota de CPU). Os valores atuais (start_period 10-15s, interval 3-5s)
+# ja usam o mesmo padrao bash+/dev/tcp para app/web por falta de curl na
+# imagem aspnet:8.0, adotado aqui antes desta fase.
 services:
   db:
     image: postgres:16-alpine

@@ -14,12 +14,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # 74.4a: dimensionado para o cenario COM os limites de CPU da 74.3
+    # (app -> 0,18 vCPU), nao para o startup de hoje sem limite (~9s local,
+    # ~1min no deploy real com PublishReadyToRun). start_period 90s e
+    # interval 30s dao folga para JIT residual + espera do `db` healthy sob
+    # quota de CPU pequena; interval curto faria o proprio `curl` de
+    # healthcheck competir por quota com o processo que ele mede.
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 90s
 
   db:
     image: postgres:16-alpine
@@ -89,9 +95,13 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # 74.4a: interval 5s->15s pelo mesmo motivo do `app` (74.3 traz
+    # `db` -> 0,10 vCPU; `pg_isready` a cada 5s tambem come quota de um
+    # processo que ja e pequeno). `pg_isready` e barato e nao espera
+    # nenhum outro serviço, entao start_period fica como esta.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d tesouro_direto"]
-      interval: 5s
+      interval: 15s
       timeout: 5s
       retries: 10
       start_period: 10s
@@ -115,6 +125,26 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    # 74.4a: `web` ganha healthcheck (nao tinha nenhum). ARMADILHA: a
+    # imagem mcr.microsoft.com/dotnet/aspnet:8.0 NAO tem curl instalado
+    # (diferente do Dockerfile da API, que instala curl explicitamente) e
+    # o `web` nao expoe nenhum endpoint HTTP de health (verificado em
+    # src/TesouroDireto.Web/Program.cs). Duas saidas possiveis: instalar
+    # curl no Dockerfile.web (engorda a imagem) ou checar a porta via
+    # bash+/dev/tcp. Escolhido /dev/tcp: e o padrao ja usado neste projeto
+    # para o mesmo par de imagens (docker-compose.e2e.yml, ver tambem a
+    # memoria feedback_docker_aspnet_no_curl), custo zero de imagem, e
+    # suficiente para provar que o Kestrel esta escutando. Tempos
+    # dimensionados como o `app`: a 74.3 leva `web` a 0,07 vCPU, MENOS que
+    # o `app` (0,18), e nao ha medição de startup do `web` sob CPU
+    # reduzida — usar o mesmo orcamento conservador do `app` em vez de um
+    # menor por falta de dado.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "timeout 2 bash -c 'echo > /dev/tcp/localhost/8081' 2>/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
 
   # Observabilidade
   grafana:
