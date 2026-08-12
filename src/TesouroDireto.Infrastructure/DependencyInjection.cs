@@ -35,6 +35,52 @@ namespace TesouroDireto.Infrastructure;
 
 public static class DependencyInjection
 {
+    /// <summary>
+    /// Teto de conexões do pool ÚNICO do Npgsql (EF Core + Dapper compartilham o mesmo
+    /// <see cref="NpgsqlDataSource"/>). Antes da 74.2 existiam DUAS pools da mesma
+    /// connection string (uma do EF, uma do <see cref="NpgsqlDataSource"/> usado pelos
+    /// read repositories via Dapper), cada uma capaz de crescer até o default do Npgsql
+    /// (100) — 200 conexões possíveis contra um Postgres que precisa caber em ~288 MB
+    /// (tarefa 74.3) e que passará a hospedar bancos de OUTRAS aplicações na mesma VPS.
+    /// Colapsar em uma pool só já corta o pior caso pela metade; o valor abaixo corta
+    /// mais, porque a pool única atende TANTO EF quanto Dapper sem duplicar a mesma
+    /// necessidade de conexão simultânea, e porque o `app` roda sob CPU muito apertada
+    /// (0,15–0,18 vCPU na 74.3): sob esse teto de CPU, o número real de conexões
+    /// SIMULTANEAMENTE em uso é baixo — o gargalo é CPU, não I/O — então um pool grande
+    /// só manteria conexões ociosas abertas no Postgres, gastando a memória mais escassa
+    /// do orçamento. Cada conexão ociosa custa memória privada no backend do Postgres
+    /// (a ordem de grandeza usada no dimensionamento do `db` em `docs/PLANO.md`, 74.2,
+    /// é ~4 MB/conexão) — 10 conexões ≈ 40 MB do lado do Postgres, contra os até 80 MB
+    /// que duas pools de 10 cada já reservavam antes. `NoResetOnClose = true` (abaixo)
+    /// já evita o custo de RESET a cada devolução à pool, então uma pool menor não perde
+    /// throughput por reconexão — só reduz o pico de conexões abertas ociosas.
+    /// </summary>
+    private const int NpgsqlMaxPoolSize = 10;
+
+    /// <summary>
+    /// Teto de "unidades" do <see cref="IMemoryCache"/> — cada entrada custa exatamente
+    /// 1 unidade (ver <c>MemoryCacheResultExtensions.GetOrCreateResultAsync</c>,
+    /// <c>CachedProjecaoMercadoService</c> e <c>CachedContentVersionProvider</c>, os três
+    /// pontos que escrevem no cache). "1 por entrada" limita CARDINALIDADE (nº de chaves
+    /// distintas), não bytes — decisão deliberada: os 6 decorators de cache desta camada
+    /// têm cardinalidade naturalmente pequena e ligada ao catálogo de domínio, não a
+    /// entrada de usuário — Titulos (~15 combos de indexador×vencido + 2 chaves por
+    /// título do catálogo), Tributos (2 chaves fixas), Feriados (1 chave), Projeções
+    /// (2 chaves por indexador, 4 indexadores = 8), ContentVersion (1 chave) e ApiKeys
+    /// (uma por hash de chave ATIVA — só entra no cache em sucesso, nunca em falha de
+    /// autenticação, então tentativas de adivinhação por um atacante não inflam a
+    /// cardinalidade). Nenhum desses caches é chaveado por texto livre de requisição.
+    /// Diante disso, medir/estimar bytes por entrada teria custo de implementação (e CPU
+    /// em runtime) sem ganho real de precisão: o número de chaves possíveis já é pequeno
+    /// e limitado pelo catálogo, não pela carga. O limite abaixo é deliberadamente
+    /// generoso — muito acima do total realista de chaves somando os 6 decorators — e
+    /// funciona como rede de segurança contra regressão futura (um decorator novo, ou uma
+    /// mudança que passe a cachear por parâmetro de requisição), não como orçamento de
+    /// bytes: 10.000 entradas de tamanho 1 nunca é atingido pelo uso atual, mas barra
+    /// crescimento sem limite se alguém violar essa premissa sem perceber.
+    /// </summary>
+    private const long MemoryCacheSizeLimit = 10_000;
+
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         DapperTypeHandlers.Register();
@@ -42,17 +88,18 @@ public static class DependencyInjection
         var connectionString = new NpgsqlConnectionStringBuilder(
             configuration.GetConnectionString("DefaultConnection")!)
         {
-            NoResetOnClose = true
+            NoResetOnClose = true,
+            MaxPoolSize = NpgsqlMaxPoolSize
         }.ConnectionString;
 
-        services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString));
+        services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 
-        services.AddSingleton(NpgsqlDataSource.Create(connectionString));
+        services.AddDbContext<AppDbContext>((sp, options) =>
+            options.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
 
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
 
-        services.AddMemoryCache();
+        services.AddMemoryCache(options => options.SizeLimit = MemoryCacheSizeLimit);
         services.AddSingleton<MemoryCacheInvalidator>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(MetricsBehavior<,>));
         services.AddSingleton<IBusinessMetrics, BusinessMetrics>();

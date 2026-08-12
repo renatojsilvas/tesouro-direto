@@ -29,6 +29,62 @@ services:
       POSTGRES_DB: tesouro_direto
       POSTGRES_USER: app
       POSTGRES_PASSWORD: ${DB_PASSWORD:-app123}
+    # command: SUBSTITUÍDO, não mesclado, por qualquer overlay que também
+    # defina `command:` para este serviço (docker-compose.profiling.yml
+    # repete integralmente esta lista + as flags de pg_stat_statements —
+    # ver 74.2 em docs/PLANO.md). Tuning agressivo de memória autorizado
+    # pelo dono (74.2, ampliação de escopo): teto de perda de throughput
+    # é 10% do teto medido de req/s; a conta de pior caso de memória está
+    # em docs/load/footprint.md e no relatório da tarefa.
+    command:
+      - postgres
+      # --- memória: os itens que realmente pesam ---
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - autovacuum_work_mem=16MB
+      - -c
+      - temp_buffers=4MB
+      # max_connections=25: conferido contra o Npgsql em paralelo nesta
+      # mesma tarefa — src/TesouroDireto.Infrastructure/DependencyInjection.cs
+      # colapsou EF+Dapper num ÚNICO NpgsqlDataSource com
+      # `NpgsqlMaxPoolSize=10` (não duas pools de 10, que era a suposição
+      # inicial). Conta: 10 (nossa pool, verificada no código) + 3
+      # (superuser_reserved_connections, default do Postgres, não alterado)
+      # + 12 (margem para outras aplicações que passarão a compartilhar
+      # esta instância) = 25.
+      - -c
+      - max_connections=25
+      # --- CPU/memória: 1 vCPU não tem o que paralelizar ---
+      - -c
+      - jit=off
+      - -c
+      - autovacuum_max_workers=1
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - max_parallel_workers=0
+      - -c
+      - max_parallel_maintenance_workers=0
+      # --- fecha o ponto cego de hugetlb no footprint por cgroup ---
+      - -c
+      - huge_pages=off
+      # --- WAL/checkpoint: reduz burst de I/O num vCPU só, não é memória ---
+      - -c
+      - max_wal_size=256MB
+      - -c
+      - min_wal_size=64MB
+      # --- planner: VPS é SSD; evita plano ruim sob work_mem mais baixo ---
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -72,6 +128,13 @@ services:
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN é obrigatório no .env}
+      # 74.2: GOMEMLIMIT ~80% do limite calculado em footprint.md §4 (209 MB);
+      # GOGC fica no default de propósito (GOMEMLIMIT + GOGC=off é espiral
+      # de GC sob 1 vCPU).
+      - GOMEMLIMIT=167MiB
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -84,6 +147,15 @@ services:
     ports:
       - "127.0.0.1:3100:3100"
     command: -config.file=/etc/loki/loki-config.yml
+    environment:
+      # 74.2: alvo DELIBERADAMENTE mais agressivo que os 80% de 266 MB
+      # (limite calculado em footprint.md §4). O tuning desta mesma fase
+      # (ingestão limitada + retenção 7d) ataca a causa do pico sob carga
+      # (rajada de log de acesso não mais absorvida sem teto), então o alvo
+      # usa o pico OCIOSO (104,4 MB, footprint.md §3.1) × 1,3 + margem, não
+      # o pico sob carga não-tunado. Precisa de re-medição para confirmar
+      # (gate da 74.2: "re-medição mostra queda").
+      - GOMEMLIMIT=120MiB
     volumes:
       - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki-data:/loki
@@ -94,11 +166,21 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:9090:9090"
+    environment:
+      # 74.2: footprint.md §5 mostra que o limite calculado de 114 MB é
+      # inflado pelo piso de +64 MB da regra de folga (pico real 50,2 MB;
+      # só ×1,3 daria 65,3 MB) — uso 80% do valor SEM o piso (65,3×0,8≈52),
+      # com uma margem pequena para o self-scrape novo (~4 MB).
+      - GOMEMLIMIT=56MiB
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--web.external-url=/prometheus/'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--storage.tsdb.retention.size=256MB'
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
 
   node-exporter:
     image: prom/node-exporter:v1.12.1
@@ -109,6 +191,43 @@ services:
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      # 74.2: só os coletores realmente consumidos por host.json + rules.yaml
+      # (re-verificado nesta fase, ver relatório) — cpu/meminfo/filesystem/
+      # diskstats/netdev cobrem os painéis e o alerta de disco; loadavg/stat/
+      # uname/time/os entram como baseline de saúde do próprio scrape (sem
+      # painel/alerta hoje, mas de custo desprezível e usados por
+      # convenção do node_exporter para diagnosticar o exporter em si).
+      # Esta lista é o insumo direto da 74.2b (vira `set_collectors` do
+      # `prometheus.exporter.unix` do Alloy).
+      - '--collector.disable-defaults'
+      - '--collector.cpu'
+      - '--collector.meminfo'
+      - '--collector.loadavg'
+      - '--collector.filesystem'
+      - '--collector.diskstats'
+      - '--collector.netdev'
+      # veth* de containers: verificado que este serviço NÃO usa
+      # `network_mode: host` nem `pid: host` (nenhum serviço deste compose
+      # usa) — /proc/net/dev é por-namespace-de-rede do processo que lê, e
+      # bind-montar o /proc do host não muda o namespace de rede de quem lê
+      # (`/host/proc/net/dev` é `/host/proc/self/net/dev`, "self" continua
+      # sendo o node-exporter na SUA própria rede em bridge). Consequência
+      # dupla, e a segunda é o achado real: (1) hoje ele NÃO enxerga os
+      # veth* de outros containers no host, então a explosão de séries por
+      # deploy citada não ocorre nesta configuração; (2) pelo mesmo motivo,
+      # ele também NÃO enxerga a interface física real da VPS — o painel
+      # "Network (bytes/s)" de host.json mede o tráfego do PRÓPRIO
+      # sidecar node-exporter (~zero), não o tráfego real do host. Isto é
+      # um achado pré-existente, não introduzido aqui, e não uma decisão
+      # de tuning — fica registrado para o dono decidir (precisaria de
+      # `network_mode: host`, troca de isolamento). O filtro abaixo é
+      # defensivo (protege se essa decisão mudar) e é o insumo pedido para
+      # a 74.2b (Alloy herda o mesmo risco se também ganhar host network).
+      - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$$'
+      - '--collector.stat'
+      - '--collector.uname'
+      - '--collector.time'
+      - '--collector.os'
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -121,6 +240,11 @@ services:
     container_name: tesouro-direto-promtail
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail-config.yml
+    environment:
+      # 74.2: mesmo raciocínio do prometheus (footprint.md §5) — limite
+      # calculado (102 MB) é inflado pelo piso de +64 MB (pico real 37,5 MB;
+      # só ×1,3 daria 48,8 MB); uso 80% do valor sem o piso.
+      - GOMEMLIMIT=40MiB
     volumes:
       - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
       - /var/log/nginx:/var/log/nginx:ro
@@ -132,6 +256,7 @@ volumes:
   pgdata:
   grafana-data:
   loki-data:
+  prometheus-data:
   promtail-positions:
 
 networks:

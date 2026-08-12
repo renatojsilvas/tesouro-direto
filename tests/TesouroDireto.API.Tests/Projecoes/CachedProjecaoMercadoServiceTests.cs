@@ -98,6 +98,23 @@ public sealed class CachedProjecaoMercadoServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetProjecaoAsync_WithSizeLimitedCache_ShouldNotThrow_BecauseFreshAndLkgEntriesSpecifySize()
+    {
+        using var sizeLimitedCache = new MemoryCache(
+            new MemoryCacheOptions { SizeLimit = 10, Clock = new FakeSystemClock(_timeProvider) });
+        var sut = new CachedProjecaoMercadoService(
+            _inner, sizeLimitedCache, _invalidator, _timeProvider, new ConfigurationBuilder().Build(), _logger);
+        SetupInnerSuccess(Indexador.Selic);
+
+        var act = async () => await sut.GetProjecaoAsync(Indexador.Selic, CancellationToken.None);
+
+        await act.Should().NotThrowAsync<InvalidOperationException>(
+            "as duas entradas escritas por chamada (fresh e lkg) precisam declarar Size " +
+            "quando o IMemoryCache tem SizeLimit configurado — sem isso o MemoryCache lança " +
+            "InvalidOperationException em runtime no primeiro cache miss");
+    }
+
+    [Fact]
     public async Task GetProjecaoAsync_ColdCacheAndHttpError_ShouldReturnHttpError()
     {
         _inner.GetProjecaoAsync(Indexador.IPCA, Arg.Any<CancellationToken>())

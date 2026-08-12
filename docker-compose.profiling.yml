@@ -3,5 +3,49 @@ services:
     cpus: "${PROFILE_CPUS:-1}"
     mem_limit: "${PROFILE_MEM:-1g}"
 
+  # command: do serviço `db` é SUBSTITUÍDO pelo compose, não mesclado com o
+  # docker-compose.yml base — por isso TODAS as flags de tuning da 74.2 são
+  # repetidas aqui, e não só a de pg_stat_statements. Se o `command:` do `db`
+  # no docker-compose.yml mudar, este overlay precisa acompanhar no mesmo
+  # commit (armadilha registrada em docs/PLANO.md, 74.2).
   db:
-    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - autovacuum_work_mem=16MB
+      - -c
+      - temp_buffers=4MB
+      - -c
+      - max_connections=25
+      - -c
+      - jit=off
+      - -c
+      - autovacuum_max_workers=1
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - max_parallel_workers=0
+      - -c
+      - max_parallel_maintenance_workers=0
+      - -c
+      - huge_pages=off
+      - -c
+      - max_wal_size=256MB
+      - -c
+      - min_wal_size=64MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all

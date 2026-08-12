@@ -24,6 +24,7 @@ public sealed class CachedContentVersionProvider(
         var version = await cache.GetOrCreateAsync(CacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = ttl;
+            entry.Size = 1;
             return await inner.GetVersionAsync(cancellationToken);
         });
 
