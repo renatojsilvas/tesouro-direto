@@ -609,7 +609,12 @@ groups:
       # a regra disparava com o timer perfeitamente vivo (observada em
       # `pending` 2 min depois de instalar o timer). Numa regra com
       # noDataState: Alerting a query tem de devolver SEMPRE um número e
-      # deixar a comparação para o nó de threshold. `max()` também é
+      # deixar a comparação para o nó de threshold — e o threshold tem de
+      # ser MOVIDO JUNTO: ele estava em `gt 0`, coerente com a expressão
+      # antiga (que já devolvia 1/0), e com a expressão nova devolvendo
+      # SEGUNDOS DE IDADE um `gt 0` dispara sempre. Os dois lados formam um
+      # par; mexer num sem o outro troca um alerta permanente por outro.
+      # `max()` também é
       # necessário: sem ele, um segundo arquivo `.prom` no diretório daria
       # duas séries e o alerta multiplicaria.
       # O `scrape_error` saiu da expressão e não faz falta: o node-exporter
@@ -636,12 +641,12 @@ groups:
               conditions:
                 - evaluator:
                     type: gt
-                    params: [0]
+                    params: [300]
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "O textfile collector do node-exporter está com dado velho (>5m) ou reportando erro de scrape"
+          summary: "O textfile collector do node-exporter está com dado velho (>5m) — timer do host parado ou script falhando"
         noDataState: Alerting
         execErrState: Alerting
 
