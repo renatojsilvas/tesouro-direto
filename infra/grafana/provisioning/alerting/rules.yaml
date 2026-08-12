@@ -601,6 +601,21 @@ groups:
       # a ÚNICA das 6 relacionadas a container com noDataState: Alerting:
       # se node_textfile_mtime_seconds sumir de vez (node-exporter down,
       # por exemplo), a ausência total de dado também deve tocar o alerta.
+      #
+      # A EXPRESSÃO NÃO PODE FILTRAR — pego pelo gate ao vivo (2026-08-12).
+      # A primeira versão era `(time() - mtime) > 300 or scrape_error > 0`:
+      # no caso SAUDÁVEL a comparação filtra tudo e o resultado é vetor
+      # VAZIO, que o Grafana trata como NoData; com noDataState: Alerting,
+      # a regra disparava com o timer perfeitamente vivo (observada em
+      # `pending` 2 min depois de instalar o timer). Numa regra com
+      # noDataState: Alerting a query tem de devolver SEMPRE um número e
+      # deixar a comparação para o nó de threshold. `max()` também é
+      # necessário: sem ele, um segundo arquivo `.prom` no diretório daria
+      # duas séries e o alerta multiplicaria.
+      # O `scrape_error` saiu da expressão e não faz falta: o node-exporter
+      # só exporta `node_textfile_mtime_seconds` para arquivo lido COM
+      # SUCESSO, então erro persistente de leitura faz a série sumir — o
+      # que cai no NoData e toca o alerta pelo mesmo caminho.
       - uid: td-metricas-container-obsoletas
         title: "Métricas de container obsoletas (timer do host parado)"
         condition: C
@@ -611,7 +626,7 @@ groups:
               from: 600
               to: 0
             model:
-              expr: "(time() - node_textfile_mtime_seconds) > 300 or node_textfile_scrape_error > 0"
+              expr: "time() - max(node_textfile_mtime_seconds)"
               instant: true
           - refId: C
             datasourceUid: __expr__
