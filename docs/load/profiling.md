@@ -17,8 +17,12 @@ não reproduz o joelho — a máquina de desenvolvimento tem CPU de sobra e o me
 liso (o `README.md`, seção 7, já registra isso: localmente `titulos.js` deu p95 de 262 ms a
 200 VUs, ~874 req/s, uma ordem de grandeza melhor que produção). Para reproduzir o gargalo é
 preciso **artificialmente limitar CPU/memória do container `app`** para o mesmo patamar da VPS
-— é isso que `docker-compose.profiling.yml` faz (`cpus`/`mem_limit`, controláveis por
-`PROFILE_CPUS`/`PROFILE_MEM`, default `1`/`1g`).
+— é isso que `docker-compose.profiling.yml` faz (`deploy.resources.limits.cpus`/`.memory`,
+controláveis por `PROFILE_CPUS`/`PROFILE_MEM`, default `1`/`1g`). Desde a fase 74.3, o
+`docker-compose.yml` base já traz `deploy.resources.limits` para `app`/`db` — este overlay
+sobrescreve só o `app` para o patamar escolhido pelo operador, e usa a forma canônica do
+Compose Spec de propósito: o Compose v2 rejeita o projeto se um overlay usar a forma legada
+(`cpus`/`mem_limit`) com valor distinto da forma canônica para o mesmo serviço.
 
 ## 2. O que cada peça captura
 

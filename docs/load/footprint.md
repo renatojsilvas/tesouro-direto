@@ -555,14 +555,23 @@ Loki, Prometheus, node-exporter).
 | Container | 74.1 | 74.2 | Δ | janela do pico |
 |---|---|---|---|---|
 | `db` | 221,7 | **70,0** | −151,7 (−68%) | load-api |
-| `loki` | 201,7 | **98,9** | −102,8 (−51%) | load-api |
-| `grafana` | 144,5 | **97,9** | −46,6 (−32%) | load-api |
+| `loki` | 201,7 | **100,9** | −100,8 (−50%) | idle |
 | `app` | 219,7 | **190,4** | −29,3 (−13%) | load-api |
 | `web` | 126,4 | **120,1** | −6,3 (−5%) | circuitos |
 | `prometheus` | 49,4 | **36,8** | −12,6 (−26%) | load-api |
 | `promtail` | 37,5 | **26,5** | −11,0 (−29%) | load-api |
+| `grafana` | 144,5 | **133,8** | −10,7 (−7%) | idle (**pico de boot**) |
 | `node-exporter` | 10,1 | **8,4** | −1,7 (−17%) | load-api |
-| **Total** | **1011,0** | **649,0** | **−362,0 (−36%)** | |
+| **Total** | **1011,0** | **686,9** | **−324,1 (−32%)** | |
+
+> **Correção de uma versão anterior desta seção.** A primeira redação listava `grafana` em
+> **97,9** e `loki` em **98,9**, tomando o máximo apenas da janela `load-api`. Está errado:
+> o máximo é **entre todas as janelas**, e para esses dois ele está na `idle`. O caso do
+> `grafana` não é ruído — é **pico de boot**: p50 96,0 e p95 97,8 contra máximo de 133,8, e a
+> janela `idle` começou 13 min depois de o deploy recriar o container. Bate com o que a §5
+> já registrava da janela `cold` da 74.1 (`grafana` a 136,3 no boot). O erro foi pego porque
+> um limite de 128 MB, dimensionado sobre o número errado, deixou o `grafana` a **99,9% do
+> teto com 9131 eventos de reclaim** — o sintoma apareceu na 74.3 e a causa era esta tabela.
 
 Zero OOM kill e zero reinício em todas as janelas.
 
@@ -580,14 +589,18 @@ de ingestão e `GOMEMLIMIT`, o pico sob a mesma carga é 98,9.
 Aplicando a **folga proporcional** (`pico × 1,3`, sem o piso de `+64 MB`), adotada pelo dono
 em 2026-08-12 sobre a recomendação da §5 deste documento:
 
-| Bloco | Serviços | Total | Teto (25%) |
+| Bloco | Serviços (limite aplicado na 74.3) | Total | % da máquina |
 |---|---|---|---|
-| **APP** | `app` 254 · `web` 184 | **438 MB** | 492 ✅ |
-| **INFRA** | `db` ~120 · `loki` 129 · `grafana` 127 · `prometheus` 48 · `promtail` 35 · `node-exporter` 11 | **470 MB** | 492 ✅ |
+| **APP** | `app` 256 · `web` 160 | **416 MB** | 21,1% |
+| **INFRA** | `db` 128 · `grafana` 160 · `loki` 132 · `prometheus` 48 · `promtail` 36 · `node-exporter` 16 | **520 MB** | 26,4% |
+| **Soma** | | **936 MB** | **47,6%** |
 
-**Os dois blocos somam 908 MB dos 984 (50% de 1967 MB), com 76 MB de sobra.** O estouro de
-561 MB apurado na §4 virou folga. **A migração para o Grafana Cloud deixa de ser necessária
-e passa a ser opcional.**
+**A promessa que se sustenta é a dos 50% livres, não o corte 25/25.** Os dois blocos somam
+936 MB dos 984 disponíveis — sobram 48 MB e a metade livre da máquina está preservada. Mas
+o **INFRA legitimamente precisa de mais que o APP** (26,4% contra 21,1%): é assim que a
+carga se distribui nesta stack, e forçar 25/25 significaria espremer o `grafana` abaixo do
+seu pico de boot medido. O estouro de 561 MB apurado na §4 virou folga, e **a migração para
+o Grafana Cloud deixa de ser necessária: passa a ser opcional.**
 
 **A escolha da regra de folga é o que decide, não o consumo.** Com a regra original
 (`max(pico × 1,3; pico + 64 MB)`) o bloco INFRA daria **723 MB** e não caberia. O piso fixo
@@ -644,3 +657,42 @@ trás conexões e entradas de cache que a seguinte herdava.
   o viés é muito menor, justamente por isso.
 - **O pico de build leu 0/0/0 MB na janela `idle`**, que é o valor correto sem build
   rodando — confirma que a correção do `awk` que se media a si mesmo (§5) pegou.
+
+### 9.5 CPU medida pós-74.2 — e por que ela decidiu a forma dos limites da 74.3
+
+O documento não tinha tabela de CPU pós-tuning; esta lacuna foi apontada durante a 74.3, e
+é dela que saem os números que mudaram a decisão daquela fase.
+
+| Container | `load-api` (p50/p95/máx) | `circuitos` (p50/p95/máx) | pico |
+|---|---|---|---|
+| `app` | 26,8 / 44,0 / **51,8** | 1,5 / 5,0 / 10,3 | **51,8%** |
+| `db` | 1,6 / 33,5 / **46,2** | 0,9 / 2,9 / 12,8 | **46,2%** |
+| `web` | 0,2 / 0,2 / 0,4 | 0,6 / 11,6 / **21,0** | **21,0%** |
+| `promtail` | 1,0 / 4,5 / **5,8** | 0,4 / 0,6 / 0,9 | 5,8% |
+| `loki` | 1,4 / 2,3 / **4,8** | 0,7 / 1,8 / 3,4 | 4,8% |
+| `grafana` | 0,4 / 1,1 / 2,4 | 0,4 / 1,4 / **3,4** | 3,4% |
+| `prometheus` | 0,0 / 0,3 / 0,3 | 0,0 / 0,3 / **0,5** | 0,5% |
+| `node-exporter` | 0,0 / 0,1 / 0,1 | 0,0 / 0,1 / 0,1 | 0,1% |
+
+**A memória cabe; a CPU não cabe.** O bloco APP mediu `app` + `web` = **0,73 vCPU** contra
+um teto de 0,25 — quase 3× acima; com a folga de ×1,3, 0,95, praticamente a máquina inteira.
+O INFRA mediu 0,61 contra 0,25. A provisão do plano (`app` 0,18 · `db` 0,10 · `web` 0,07)
+representaria cortes de 65–78% sobre o pico medido.
+
+**E o corte de CPU não é proporcional.** O CFS é quota por janela de 100 ms: com
+`cpus: 0.18`, uma requisição que precisa de 40 ms de CPU é estrangulada ao menos duas vezes
+e ganha 60–85 ms de espera pura — p95/p99 pioram **mais que proporcionalmente**. O dono
+tinha autorizado até 10% de perda de throughput na 74.2; um teto rígido nesses valores
+passaria longe disso.
+
+**Por isso a 74.3 desviou do plano:** memória com teto rígido (é estado — um processo pode
+retê-la e não devolver, e um vazamento leva a máquina), CPU por **peso** (`cpu_shares`) com
+teto folgado só contra loop desgovernado. Ciclo de CPU **não se estoca**: ciclo não usado é
+perdido, não fica reservado para o vizinho, e quando outra aplicação precisar dele o peso é
+aplicado naquele instante — que é exatamente quando a garantia importa.
+
+> Observação de método: as colunas de CPU do `run-footprint.sh` marcam
+> `throttling: n/d (sem período de CPU registrado)` em todas as janelas desta re-medição —
+> correto, porque **não havia limite de CPU aplicado ainda**. A partir da 74.3 esse campo
+> passa a ter valor, e `nr_throttled`/`throttled_usec` viram o sinal falsificável de que a
+> quota é a restrição vinculante.

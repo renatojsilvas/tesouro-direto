@@ -26,6 +26,33 @@ services:
       timeout: 10s
       retries: 10
       start_period: 90s
+    # 74.3 — DESVIO APROVADO PELO DONO: a 74.1 mediu pico de CPU sob carga
+    # de 55,0% (footprint.md §3.2) contra a provisao original de 0,18 vCPU
+    # (18%) da 74.0/74.2 — CPU nao se estoca, entao teto rigido (`cpus`)
+    # desperdicaria ciclo ocioso que o vizinho poderia usar; peso
+    # (`cpu_shares`) e a forma certa, com um teto FOLGADO so para conter
+    # loop desgovernado, nao para racionar. Memoria continua com teto
+    # RIGIDO (e estado, pode ser retida) via `deploy.resources.limits`,
+    # forma canonica do Compose Spec. `memswap_limit` = `memory`: falha alta
+    # e visivel (OOM) em vez de latencia arrastada por reclaim de swap —
+    # decisao explicita, sem ela o Docker permite ate 2x de swap em
+    # silencio. ACHADO EMPIRICO NAO PREVISTO NO PLANO: o teto de PIDs vai
+    # em `deploy.resources.limits.pids`, NAO no campo legado `pids_limit`
+    # — coexistir com `deploy.resources.limits` no mesmo serviço da o MESMO
+    # erro do conflito `cpus`/`mem_limit` ("can't set distinct values on
+    # 'pids_limit' and 'deploy.resources.limits.pids': invalid compose
+    # project"), confirmado com `docker compose config -q` e reproduzido
+    # num compose minimo. `deploy.resources.limits.pids` funciona fora de
+    # swarm (confirmado no `docker inspect` real: `HostConfig.PidsLimit`
+    # bate com o valor).
+    cpu_shares: 1024
+    memswap_limit: 256M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.70"
+          memory: 256M
+          pids: 200
 
   db:
     image: postgres:16-alpine
@@ -105,6 +132,21 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    # 74.3 — mesma decisao do `app` (ver comentario la): peso de CPU, nao
+    # teto rigido — pico medido de 61,5% (footprint.md §3.2) contra a
+    # provisao original de 0,10 vCPU. Memoria segue com teto rigido:
+    # OOM-kill do `db` e pior que o de qualquer outro container (o
+    # postmaster trata como crash e reinicia o cluster inteiro — ver Risco
+    # da 74 no PLANO.md), por isso `memswap_limit` = `memory` tambem aqui:
+    # falha alta e visivel em vez de latencia arrastada.
+    cpu_shares: 1024
+    memswap_limit: 128M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.60"
+          memory: 128M
+          pids: 128
 
   web:
     build:
@@ -145,6 +187,19 @@ services:
       timeout: 10s
       retries: 10
       start_period: 90s
+    # 74.3 — mesma decisao do `app`: peso de CPU (pico medido 22,1%,
+    # footprint.md §3.3, contra provisao original de 0,07 vCPU), teto de
+    # memoria rigido. `memswap_limit` NAO fixado explicitamente aqui — só
+    # `app`/`db` (falha visível) e `grafana`/`loki` (permitido) tiveram
+    # decisão explícita no desvio aprovado; para `web` fica o default do
+    # Docker, verificado no `docker inspect` da entrega.
+    cpu_shares: 512
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: 160M
+          pids: 128
 
   # Observabilidade
   grafana:
@@ -158,10 +213,13 @@ services:
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN é obrigatório no .env}
-      # 74.2: GOMEMLIMIT ~80% do limite calculado em footprint.md §4 (209 MB);
-      # GOGC fica no default de propósito (GOMEMLIMIT + GOGC=off é espiral
-      # de GC sob 1 vCPU).
-      - GOMEMLIMIT=167MiB
+      # 74.3: GOMEMLIMIT recalculado para ~80% do teto RIGIDO de memória
+      # desta fase (128M), substituindo o valor da 74.2 (167MiB), que era
+      # 80% de um teto provisório maior e hoje ultrapassaria o próprio
+      # limite do cgroup — sem isso o GC nunca dispararia antes do OOM
+      # killer. GOGC fica no default de propósito (GOMEMLIMIT + GOGC=off é
+      # espiral de GC sob 1 vCPU).
+      - GOMEMLIMIT=128MiB
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
       - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
@@ -169,6 +227,22 @@ services:
       - grafana-data:/var/lib/grafana
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU (`cpu_shares`), não
+    # teto rígido — mesmo raciocínio do `app`/`db` (ver comentário lá).
+    # Memória com teto rígido. `memswap_limit` explicitamente PERMITIDO
+    # (decisão explícita, não omissão): o Grafana está entre os que mais
+    # têm cache a perder acima do limite (armadilha §4 do pedido) —
+    # preferir reclaim/swap a matar o processo que hospeda o alerting
+    # Grafana-managed (ver Risco da 74 no PLANO.md: Grafana morto cala o
+    # "app down" em silêncio).
+    cpu_shares: 128
+    memswap_limit: 320M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.15"
+          memory: 160M
+          pids: 64
 
   loki:
     image: grafana/loki:3.6.7
@@ -185,10 +259,28 @@ services:
       # usa o pico OCIOSO (104,4 MB, footprint.md §3.1) × 1,3 + margem, não
       # o pico sob carga não-tunado. Precisa de re-medição para confirmar
       # (gate da 74.2: "re-medição mostra queda").
-      - GOMEMLIMIT=120MiB
+      # 74.3: recalculado para ~80% do teto RIGIDO desta fase (132M) — o
+      # valor da 74.2 (120MiB) já era menor que o novo teto e continuava
+      # válido, mas a 105MiB dá mais folga a um serviço com bastante page
+      # cache (footprint.md armadilha do mem.current, ver PLANO.md).
+      - GOMEMLIMIT=105MiB
     volumes:
       - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki-data:/loki
+    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
+    # rígido. `memswap_limit` explicitamente PERMITIDO: o `loki` é o
+    # container com MAIS page cache acima do limite medido (204,9 MB de
+    # mem.current contra 132M de teto, ver relatório) — preferir reclaim
+    # de cache/swap a matar o processo por OOM num container cuja memória
+    # é majoritariamente cache descartável, não heap.
+    cpu_shares: 128
+    memswap_limit: 264M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.15"
+          memory: 132M
+          pids: 64
 
   prometheus:
     image: prom/prometheus:v3.10.0
@@ -201,7 +293,10 @@ services:
       # inflado pelo piso de +64 MB da regra de folga (pico real 50,2 MB;
       # só ×1,3 daria 65,3 MB) — uso 80% do valor SEM o piso (65,3×0,8≈52),
       # com uma margem pequena para o self-scrape novo (~4 MB).
-      - GOMEMLIMIT=56MiB
+      # 74.3: o teto RIGIDO desta fase (48M) ficou abaixo dos 56MiB
+      # calculados na 74.2 — recalculado para ~80% do novo teto, senão o
+      # GOMEMLIMIT nunca dispararia antes do OOM killer do cgroup.
+      - GOMEMLIMIT=38MiB
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--web.external-url=/prometheus/'
@@ -211,6 +306,18 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
+    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
+    # rígido. `memswap_limit` NÃO fixado explicitamente — só `app`/`db`
+    # (falha visível) e `grafana`/`loki` (permitido) tiveram decisão
+    # explícita no desvio aprovado; para `prometheus` fica o default do
+    # Docker, verificado no `docker inspect` da entrega.
+    cpu_shares: 64
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 48M
+          pids: 64
 
   node-exporter:
     image: prom/node-exporter:v1.12.1
@@ -264,6 +371,18 @@ services:
       - /:/rootfs:ro
     ports:
       - "127.0.0.1:9100:9100"
+    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
+    # rígido. Sem GOMEMLIMIT porque o node-exporter nunca teve um (pico
+    # medido 8,4-10,1 MB, bem abaixo do teto — não há GC Go a governar
+    # aqui na prática). `memswap_limit` NÃO fixado explicitamente — mesmo
+    # raciocínio do `prometheus`.
+    cpu_shares: 64
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 16M
+          pids: 64
 
   promtail:
     image: grafana/promtail:3.6.8
@@ -274,13 +393,30 @@ services:
       # 74.2: mesmo raciocínio do prometheus (footprint.md §5) — limite
       # calculado (102 MB) é inflado pelo piso de +64 MB (pico real 37,5 MB;
       # só ×1,3 daria 48,8 MB); uso 80% do valor sem o piso.
-      - GOMEMLIMIT=40MiB
+      # 74.3: o teto RIGIDO desta fase (36M) ficou abaixo dos 40MiB
+      # calculados na 74.2 — recalculado para ~80% do novo teto.
+      - GOMEMLIMIT=28MiB
     volumes:
       - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
       - /var/log/nginx:/var/log/nginx:ro
       - promtail-positions:/tmp
     depends_on:
       - loki
+    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
+    # rígido. `memswap_limit` NÃO fixado explicitamente — o desvio só
+    # decidiu isso caso a caso para `app`/`db`/`grafana`/`loki`; o
+    # `promtail` tem cache acima do teto tanto quanto o `loki` (77,5 MB
+    # medidos contra 36M de teto — ver relatório), mas o dono não incluiu
+    # este serviço na lista de swap permitido, então fica o default do
+    # Docker, verificado no `docker inspect` da entrega e reportado se a
+    # pressão de reclaim se mostrar um problema real.
+    cpu_shares: 128
+    deploy:
+      resources:
+        limits:
+          cpus: "0.15"
+          memory: 36M
+          pids: 64
 
 volumes:
   pgdata:

@@ -1,7 +1,21 @@
 services:
   app:
-    cpus: "${PROFILE_CPUS:-1}"
-    mem_limit: "${PROFILE_MEM:-1g}"
+    # 74.3: convertido de `cpus`/`mem_limit` (legado) para
+    # `deploy.resources.limits` (forma canônica do Compose Spec) NO MESMO
+    # commit em que docker-compose.yml ganhou `deploy.resources.limits`
+    # para `app` — o Compose v2 REJEITA o projeto inteiro quando as duas
+    # formas coexistem para o mesmo serviço com valores distintos
+    # ("can't set distinct values on 'cpus' and
+    # 'deploy.resources.limits.cpus': invalid compose project"). As
+    # variáveis `PROFILE_CPUS`/`PROFILE_MEM` são preservadas com os mesmos
+    # defaults (`1`/`1g`) — o profiling continua podendo soltar o `app`
+    # além do orçamento de produção (0,70 vCPU/256M) para reproduzir a CPU
+    # real da VPS sob controle do operador.
+    deploy:
+      resources:
+        limits:
+          cpus: "${PROFILE_CPUS:-1}"
+          memory: "${PROFILE_MEM:-1g}"
 
   # command: do serviço `db` é SUBSTITUÍDO pelo compose, não mesclado com o
   # docker-compose.yml base — por isso TODAS as flags de tuning da 74.2 são
