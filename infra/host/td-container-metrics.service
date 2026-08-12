@@ -1,0 +1,17 @@
+[Unit]
+Description=tesouro-direto: gera metricas por container (textfile collector, tarefa 74.6)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/container-metrics.sh
+Environment=TEXTFILE_DIR=/var/lib/node_exporter/textfile
+User=root
+# VPS de 1 vCPU: uma execução travada não pode empilhar com a próxima
+# (o timer dispara a cada 30s) — mata antes disso, com folga.
+TimeoutStartSec=25
+# Este medidor não pode competir por CPU/disco com o `app`/`db` que ele
+# existe para medir.
+Nice=10
+IOSchedulingClass=idle
