@@ -541,3 +541,106 @@ plausivelmente rende segundo o medido aqui:
 Onde este documento diz "não dá para estimar", é porque a medição de hoje é o baseline
 **sem** nenhum tuning aplicado — inventar um número de melhoria projetada seria menos
 honesto do que admitir a lacuna e deixar a re-medição da 74.2 preencher.
+
+---
+
+## 9. Re-medição pós-74.2 (2026-08-12) — o gate da fase, e o que ele muda
+
+Mesmo instrumento, mesmas janelas, mesmo script de carga, mesma borda. O que mudou entre as
+duas medições é só o tuning da fase 74.2 (Postgres, Npgsql, MemoryCache, GC/ReadyToRun,
+Loki, Prometheus, node-exporter).
+
+### 9.1 Não-descartável máximo por container
+
+| Container | 74.1 | 74.2 | Δ | janela do pico |
+|---|---|---|---|---|
+| `db` | 221,7 | **70,0** | −151,7 (−68%) | load-api |
+| `loki` | 201,7 | **98,9** | −102,8 (−51%) | load-api |
+| `grafana` | 144,5 | **97,9** | −46,6 (−32%) | load-api |
+| `app` | 219,7 | **190,4** | −29,3 (−13%) | load-api |
+| `web` | 126,4 | **120,1** | −6,3 (−5%) | circuitos |
+| `prometheus` | 49,4 | **36,8** | −12,6 (−26%) | load-api |
+| `promtail` | 37,5 | **26,5** | −11,0 (−29%) | load-api |
+| `node-exporter` | 10,1 | **8,4** | −1,7 (−17%) | load-api |
+| **Total** | **1011,0** | **649,0** | **−362,0 (−36%)** | |
+
+Zero OOM kill e zero reinício em todas as janelas.
+
+**O `db` é o resultado que muda a tarefa, e não é cache frio.** O `anon` caiu de 163,9 para
+22,1 MB. Memória privada de backend do Postgres é *por conexão*: `max_connections` foi de
+100 para 25 e a pool do Npgsql, que podia chegar a 200 conexões somando EF e Dapper, foi
+capada em 10. Cortar conexão corta memória privada — os caps não eram cosméticos.
+
+**O `loki` parou de dobrar.** A 74.1 o apontou como "o problema não óbvio" porque ele
+acompanhava a rajada de log do nginx sob carga (104,4 → 201,7). Com retenção de 7d, limites
+de ingestão e `GOMEMLIMIT`, o pico sob a mesma carga é 98,9.
+
+### 9.2 O orçamento fecha — com observabilidade LOCAL
+
+Aplicando a **folga proporcional** (`pico × 1,3`, sem o piso de `+64 MB`), adotada pelo dono
+em 2026-08-12 sobre a recomendação da §5 deste documento:
+
+| Bloco | Serviços | Total | Teto (25%) |
+|---|---|---|---|
+| **APP** | `app` 254 · `web` 184 | **438 MB** | 492 ✅ |
+| **INFRA** | `db` ~120 · `loki` 129 · `grafana` 127 · `prometheus` 48 · `promtail` 35 · `node-exporter` 11 | **470 MB** | 492 ✅ |
+
+**Os dois blocos somam 908 MB dos 984 (50% de 1967 MB), com 76 MB de sobra.** O estouro de
+561 MB apurado na §4 virou folga. **A migração para o Grafana Cloud deixa de ser necessária
+e passa a ser opcional.**
+
+**A escolha da regra de folga é o que decide, não o consumo.** Com a regra original
+(`max(pico × 1,3; pico + 64 MB)`) o bloco INFRA daria **723 MB** e não caberia. O piso fixo
+dava 72 MB de limite ao `node-exporter`, que nunca passou de 8,4 — folga que não protege
+nada e ocupa orçamento de quem precisa.
+
+### 9.3 Baseline k6: não houve perda, houve ganho
+
+O gate da 74.2 foi afrouxado pelo dono para aceitar até 10% de queda de throughput em troca
+de aperto agressivo de `db` e `app`. **Não foi preciso usar essa margem.** Mesmo script,
+mesma borda (`zone=api` a 100 r/s), 3 runs de cada lado, comparação pela mediana entre runs:
+
+| | 74.1 | 74.2 | Δ |
+|---|---|---|---|
+| Vazão **atendida** (req/s) | 58,3 | **69,1** | **+18,6%** |
+| Latência mediana (ms) | 386,9 | **272,8** | **−29,5%** |
+| Latência p95 (ms) | 2505,4 | **1453,4** | **−42,0%** |
+
+> Vazão **atendida** = `http_reqs × (1 − http_req_failed)`. A vazão *total* do k6 é métrica
+> enganosa aqui: ela conta os 429 da borda, que são baratos e rápidos, então **mais rejeição
+> infla a vazão**. Por essa métrica errada o ganho pareceria +92,6%.
+
+**O achado estrutural vale mais que as medianas: o sistema parou de degradar run a run.**
+
+| run | 74.1 (atendidas/s · med) | 74.2 (atendidas/s · med) |
+|---|---|---|
+| 1º | 67,8 · 270 ms | 70,1 · 257 ms |
+| 2º | 58,3 · 387 ms | 68,1 · 273 ms |
+| 3º | 55,6 · 579 ms | 69,1 · 289 ms |
+
+Antes, três rampas seguidas derrubavam a vazão em 18% e **dobravam** a latência mediana —
+o sistema acumulava pressão de um run para o outro. Depois, fica plano. É o comportamento
+esperado de capar a pool de conexões e limitar o cache: sem teto, cada rampa deixava para
+trás conexões e entradas de cache que a seguinte herdava.
+
+### 9.4 Ressalvas honestas desta re-medição
+
+- **O `db` está projetado no teto, não medido nele.** O pico medido foi 70,0 MB, mas o
+  `shmem` (42,4) ainda cresce até os 64 MB de `shared_buffers` conforme as páginas são
+  tocadas. O limite de ~120 MB usa uma projeção de ~92 MB, não o número medido.
+- **Nenhuma janela satura o `app`.** 69,6% das requisições levaram **429 na borda**, nos
+  dois lados da comparação — o limitador rejeita antes de a aplicação ver a carga. A
+  comparação 74.1×74.2 é justa (mesma condição), mas nenhuma das duas mede o teto real da
+  aplicação. Isso é escopo da 74.5.
+- **A concorrência real de circuitos Blazor continua não medida.** O ramp abriu 919
+  circuitos (confirmados por 919 respostas `101` no log do nginx) e sustentou sessões de
+  ~76s com 399 VUs, mas a concorrência simultânea só pode ser estimada entre ~166 e ~400 —
+  faixa larga demais para fechar o custo por circuito. É a mesma pendência que a §7 já
+  registrou para a 74.5, e o `blazor_circuits_live` do k6 não serve (é um `Gauge`: sempre 0
+  ou 1). Por isso os −5% do `web` **não** devem ser lidos como ganho: podem ser só menos
+  circuitos simultâneos que na 74.1 (~255 estimados lá).
+- **A janela `idle` tinha viés de uptime a favor do número novo** (containers com ~1h de
+  vida contra semanas na 74.1). Os números desta seção usam as janelas **sob carga**, onde
+  o viés é muito menor, justamente por isso.
+- **O pico de build leu 0/0/0 MB na janela `idle`**, que é o valor correto sem build
+  rodando — confirma que a correção do `awk` que se media a si mesmo (§5) pegou.
