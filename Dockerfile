@@ -8,9 +8,20 @@ RUN for f in src-projects/*.csproj; do \
       mkdir -p "$dir" && mv "$f" "$dir/"; \
     done && \
     rm -rf src-projects
-RUN dotnet restore src/TesouroDireto.API/TesouroDireto.API.csproj -r linux-x64 -p:PublishReadyToRun=true
+# PublishReadyToRun exige RID explicito, e o RID tem que ser o da arquitetura de
+# DESTINO. Fixar linux-x64 producia R2R x64 dentro de uma imagem arm64 em qualquer
+# maquina Apple Silicon: o runtime rejeita o assembly inteiro (FileLoadException,
+# "Could not load file or assembly") porque o machine type do PE nao bate. A VPS e
+# amd64 e o CI tambem, entao o defeito passava despercebido nos dois e so quebrava
+# o desenvolvimento local — inclusive o docker-compose.e2e.yml, que builda daqui.
+# TARGETARCH e preenchido pelo BuildKit; so o nome difere do RID do .NET (amd64/x64).
+ARG TARGETARCH
+RUN RID="linux-$(test "$TARGETARCH" = amd64 && echo x64 || echo "$TARGETARCH")" && \
+    echo "RID=$RID" && \
+    dotnet restore src/TesouroDireto.API/TesouroDireto.API.csproj -r "$RID" -p:PublishReadyToRun=true
 COPY src/ src/
-RUN dotnet publish src/TesouroDireto.API/TesouroDireto.API.csproj -c Release -r linux-x64 --self-contained false -p:PublishReadyToRun=true -o /app/publish --no-restore
+RUN RID="linux-$(test "$TARGETARCH" = amd64 && echo x64 || echo "$TARGETARCH")" && \
+    dotnet publish src/TesouroDireto.API/TesouroDireto.API.csproj -c Release -r "$RID" --self-contained false -p:PublishReadyToRun=true -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
