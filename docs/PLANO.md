@@ -921,7 +921,7 @@ Baseado no domínio Tesouro Direto e no que o código **já** tem (dado disponí
   | **74.4a** ✅ | Healthchecks (`app`/`db`/`web`) e gate de deploy — adiantada para antes da 74.3 (ver registro de desvio) | Deploy real ponta a ponta verde — **cumprido em 2026-08-12, PR #62** |
   | **74.3** ✅ | `deploy.resources.limits` + conversão do overlay de profiling | `docker inspect` batendo com o alvo; 24h sem `OOMKilled` — **cumprido em 2026-08-12, PR #63** (memória com teto rígido, CPU por peso; ver desvio) |
   | 74.5 | Re-medição de capacidade + `docs/load/README.md` §7.4 + `limit_req` do nginx re-derivado do teto medido (movido da 74.4, ver registro de desvio) | Teto, joelho, p95, tabelas de usuários e `limit_req` registrados |
-  | **74.6** 🟡 | Alertas por container (textfile collector, **sem cAdvisor**) + OOM via Loki | Forçar um OOM → alerta dispara. **Código pronto e não-vacuidade da 74.3 provada em produção (2026-08-12)**; falta o deploy + instalação do timer no host para a prova ponta a ponta no Telegram |
+  | **74.6** ✅ | Alertas por container (textfile collector, **sem cAdvisor**) + OOM via Loki | Forçar um OOM → alerta dispara — **cumprido em produção em 2026-08-12, PR #64** (+ 2 correções ao vivo). Não-vacuidade da 74.3 provada junto |
 
   **74.1 — medição, correta desta vez.** `docker stats` sozinho engana: `MemUsage` é `memory.current − inactive_file` e inclui page cache, mas quem decide OOM é anon+kernel. `run-footprint.sh` (renomeado do `footprint.sh` original, seguindo a convenção do `run-profile.sh`) lê **cgroup v2 direto** — `memory.current`, `memory.peak`, `memory.stat` (separando `anon` de `file`), `memory.events` (campo `oom_kill`, prova de OOM sem depender de log), `cpu.stat` (`usage_usec`, **`nr_throttled`, `throttled_usec`** — o sinal falsificável de que a quota é a restrição vinculante) e `pids.current`; `docker stats` entra só por cima para NetIO/BlockIO. Reporta **p50/p95/máximo**, nunca média. **Script novo, não extensão do `run-profile.sh`**: este é destrutivo (`pg_stat_statements_reset()`, `tests/load/profiling/run-profile.sh:74`) e o novo precisa ser seguro para rodar em produção com outros apps de pé. **Quatro janelas**, não três: **cold boot** (5 min @ 5s — o pico de RSS é no startup, não em regime); **idle 60 min @ 60s** (Prometheus compacta blocos e o Loki compacta a cada 10 min — janela de 5 min não vê esses picos e subestima o orçamento); **sob carga** (15 min, em **duas** formas: ramp de API `tests/load/api/titulos.js` e ramp de circuitos `tests/load/site/circuits.js`, que estressa a memória do `web` e a primeira não toca); **deploy** (ciclo inteiro @ 5s). Saída: `docs/load/footprint.md`.
 
@@ -1092,7 +1092,24 @@ No x64 a variável **funciona** — zera as regiões e o `shmem` — mas a memó
 >
 > **Correção colateral no deploy:** `.github/workflows/deploy.yml` force-recreata `prometheus` e `grafana` por serem bind-mounts, mas o `promtail-config.yml` é bind-mount igual e **não** estava na lista — o job `kernel` entraria no repo e nunca subiria na VPS. Bug latente desde sempre, invisível porque esse arquivo nunca tinha mudado depois do primeiro deploy.
 >
-> **Pendente para fechar o gate:** deploy real, instalação manual do timer no host (`infra/host/README.md`), e a prova ponta a ponta de que o alerta chega no Telegram — isca de OOM com o pipeline já no ar, verificando que `td-oom-kernel-log` (Loki) dispara **independentemente** das métricas de container. **Sequenciar timer e deploy na mesma janela:** a regra dead-man (`td-metricas-container-obsoletas`) usa `noDataState: Alerting` de propósito, e `node_textfile_mtime_seconds` não existe até o primeiro `.prom` — um alerta logo após o deploy é o dead-man funcionando, não defeito.
+> **GATE CUMPRIDO EM PRODUÇÃO (2026-08-12, deploy `203edef`).** Timer instalado no host e isca de OOM disparada com o pipeline no ar:
+>
+> | verificação | resultado medido |
+> |---|---|
+> | `td-oom-kernel-log` (Loki) dispara | **firing**, independente das métricas de container |
+> | Volume no Loki | 2 entradas no stream `kernel` — só os 2 OOM, nada do resto do kern.log |
+> | Métricas por container | 80 séries, `count(...)=8`, `node_textfile_scrape_error 0` |
+> | Falso positivo nas 5 regras de recurso | nenhum — todas `inactive`, 8 instâncias cada |
+> | Dead-man com timer parado | **firing** (instância `Alerting`, 1 alerta ativo) |
+> | Dead-man com timer religado | volta a `Normal`, 0 alertas ativos |
+> | Custo do medidor | 0,498s de relógio / 0,35s de CPU por execução |
+>
+> **O gate cobrou dois defeitos que NENHUMA verificação de bancada pegaria** — YAML válido, `promtool` verde, `for`/`noDataState` plausíveis no papel, e a regra mesmo assim invertida. Ambos na dead-man, ambos corrigidos ao vivo:
+>
+> 1. **Expressão que filtra + `noDataState: Alerting` = alerta permanente.** `(time() - mtime) > 300` devolve vetor **vazio** no caso saudável, e vazio é NoData — que nesta regra, de propósito, é `Alerting`. Ela entrou em `pending` dois minutos depois de instalar o timer, com o timer perfeitamente vivo. Numa regra com `noDataState: Alerting` a query tem de devolver **sempre um número** e deixar a comparação para o nó de threshold.
+> 2. **O limiar tem de mudar JUNTO com a expressão.** A primeira correção trocou a expressão mas deixou o threshold em `gt 0`, coerente com a expressão antiga (que devolvia 1/0) — com a nova devolvendo **segundos de idade**, qualquer valor positivo dispara. Trocou um alerta permanente por outro. Corrigido para `gt 300`, e os **oito** pares expressão↔limiar das regras novas foram auditados de uma vez em vez de só o que quebrou.
+>
+> **Operação:** a instalação do timer é manual e por host (`infra/host/README.md`) — **VPS nova não herda**. Sequenciar timer e deploy na mesma janela, senão o dead-man toca no intervalo, corretamente.
 
 ---
 
