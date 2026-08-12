@@ -91,3 +91,88 @@ Agora que o `--no-cache` saiu do deploy, esse mesmo cache deixa de ser lixo puro
 ```
 
 Remove só entradas de cache de build não usadas há mais de 30 dias, preservando o cache recente.
+
+## Métricas por container — textfile collector (74.6)
+
+### O quê
+
+`infra/host/container-metrics.sh` lê os arquivos de cgroup v2 de cada container em execução no host (`memory.current`, `memory.stat`, `memory.max`, `memory.peak`, `cpu.stat`, `memory.events`) mais o `RestartCount` do `docker inspect`, e escreve um arquivo `.prom` em `/var/lib/node_exporter/textfile/container_resources.prom`. O node-exporter, com `--collector.textfile` habilitado (`docker-compose.yml`, serviço `node-exporter`), serve esse arquivo como se fossem métricas suas próprias. Um systemd timer (`td-container-metrics.timer`) roda o script a cada 30s no host, casando com o `scrape_interval` do Prometheus (`prometheus.yml:10`).
+
+Métricas emitidas, com label `container="<nome>"`:
+
+| métrica | tipo | papel |
+|---|---|---|
+| `td_container_memory_unreclaimable_bytes` | gauge | **rege os alertas de memória** |
+| `td_container_memory_reclaim_events_total` | counter | pressão real contra o teto |
+| `td_container_memory_working_set_bytes` | gauge | diagnóstico (comparável ao cAdvisor) |
+| `td_container_memory_limit_bytes` (ausente se o container não tem `memory.max`) | gauge | |
+| `td_container_memory_peak_bytes` | gauge | |
+| `td_container_cpu_cfs_periods_total` | counter | |
+| `td_container_cpu_cfs_throttled_periods_total` | counter | |
+| `td_container_oom_kill_total` | counter | best-effort (zera no restart) |
+| `td_container_restarts_total` | counter | atravessa o restart |
+| `td_container_up` | gauge | |
+
+**Por que os alertas de memória NÃO usam `working_set`.** `working_set` (`memory.current − inactive_file`) é a definição do cAdvisor e inclui `active_file` — page cache **reclamável**, que o kernel joga fora sob pressão sem matar ninguém. Os tetos da 74.3 foram dimensionados a partir do **não-descartável** (`anon + shmem + kernel`), então alertar sobre `working_set` mediria uma coisa diferente da que o teto governa. Medido na VPS: `node-exporter` a 78% de `working_set` contra **45%** de não-descartável, `promtail` a 70% contra **42%** — um alerta de 85% sobre `working_set` acusaria risco de OOM onde só há cache.
+
+`td_container_memory_reclaim_events_total` é o campo `max` de `memory.events`: quantas vezes uma alocação bateu no teto e forçou reclaim. Foi ele que acusou os 9131 eventos do `grafana` mal dimensionado na 74.3, e com os tetos corrigidos a linha de base medida é **zero nos oito containers** — o que dispensa limiar chutado.
+
+Cobre TODOS os containers em execução no host — não só os do `docker-compose.yml` deste projeto (o container-isca do gate de deploy, por exemplo, não tem nome do projeto e ainda assim aparece).
+
+### Por quê (e por que não cAdvisor)
+
+`docs/PLANO.md` (74.6) decidiu cAdvisor pela medição, e a medição o rejeitou: ele dá exatamente as métricas certas, mas custa **60-120 MB de RSS** contra um orçamento de **~42 MB** no bloco INFRA compartilhada — 15-25% do bloco gasto só para monitorar o próprio bloco. A alternativa de custo quase zero é o textfile collector do node-exporter: o mesmo binário que já roda no bloco, alimentado por um script simples de host via systemd timer, sem container novo, sem sidecar, sem explosão de séries realimentando a memória do Prometheus.
+
+O preço é dado mais grosso (leitura de cgroup direta, não a agregação fina do cAdvisor) e uma instalação manual de host — o mesmo trade-off já aceito para `daemon.json` e o swapfile acima.
+
+### Instalação manual na VPS
+
+```bash
+sudo cp infra/host/container-metrics.sh /usr/local/bin/container-metrics.sh
+sudo chmod +x /usr/local/bin/container-metrics.sh
+
+sudo cp infra/host/td-container-metrics.service /etc/systemd/system/
+sudo cp infra/host/td-container-metrics.timer /etc/systemd/system/
+
+sudo mkdir -p /var/lib/node_exporter/textfile
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now td-container-metrics.timer
+```
+
+O `docker compose up -d` seguinte (ou um `up -d node-exporter` isolado) precisa recriar o `node-exporter` para pegar o novo `--collector.textfile` e o mount de `/var/lib/node_exporter/textfile` — um `docker-compose.yml` mudo (sem tocar `src/`) não recria containers por si só (ver `feedback_deploy_docs_nao_recria`), então force manualmente se não houver deploy de código no mesmo commit:
+
+```bash
+docker compose up -d --force-recreate node-exporter
+```
+
+### Como verificar
+
+```bash
+sudo systemctl status td-container-metrics.service
+systemctl list-timers td-container-metrics.timer
+
+curl -s localhost:9100/metrics | grep td_container_
+```
+
+A ausência prolongada de atualização do arquivo (timer parado, script falhando) fica visível pela métrica padrão `node_textfile_mtime_seconds` do próprio node-exporter — é ela quem sustenta um alerta de obsolescência, não uma métrica nova deste script.
+
+### ⚠️ Instalar o timer na MESMA janela do deploy
+
+A regra `td-metricas-container-obsoletas` é o dead-man's switch de todo este mecanismo: sem ela, se o timer do host morrer, as cinco regras por container param de disparar **em silêncio**. Por isso ela usa `noDataState: Alerting` — e `node_textfile_mtime_seconds` **não existe** enquanto não houver nenhum `.prom` no diretório.
+
+Consequência prática: entre o deploy do código e a instalação manual do timer, o Telegram recebe um alerta *"Métricas de container obsoletas"*. **Isso é esperado, não é defeito** — é o dead-man funcionando. Ele resolve sozinho no primeiro ciclo do timer (até 30s depois do `systemctl enable --now`). Fazer as duas coisas na mesma janela evita o ruído.
+
+O diretório em si não é problema: o Docker **cria** o caminho do bind mount se ele não existir (verificado na VPS), então o `node-exporter` sobe normalmente com o diretório vazio — ele só não exporta nenhuma série `td_container_*` até o primeiro `.prom` aparecer.
+
+### Como reverter
+
+```bash
+sudo systemctl disable --now td-container-metrics.timer
+sudo rm /etc/systemd/system/td-container-metrics.service /etc/systemd/system/td-container-metrics.timer
+sudo systemctl daemon-reload
+sudo rm -rf /var/lib/node_exporter/textfile
+sudo rm /usr/local/bin/container-metrics.sh
+```
+
+Depois, remover `--collector.textfile`/`--collector.textfile.directory` e o mount de `/var/lib/node_exporter/textfile` do serviço `node-exporter` em `docker-compose.yml` e recriar o container (`docker compose up -d --force-recreate node-exporter`) — sem isso ele fica com um coletor apontando para um diretório que não existe mais (inofensivo, mas sujo).

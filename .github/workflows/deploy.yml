@@ -203,11 +203,15 @@ jobs:
             # .csproj, entao a invalidacao de cache do Docker e correta por construcao.
             docker compose build
             docker compose up -d
-            # prometheus.yml e o provisioning do grafana sao bind-mounts: o compose
-            # nao recria esses containers so porque o CONTEUDO do arquivo mudou, entao
-            # scrape jobs novos (ex.: node) e regras de alerta novas nao carregariam
-            # sem um restart. Forcar a recriacao so desses dois relê a config a cada deploy.
-            docker compose up -d --force-recreate --no-deps prometheus grafana
+            # prometheus.yml, o provisioning do grafana e o promtail-config.yml sao
+            # bind-mounts: o compose nao recria esses containers so porque o CONTEUDO
+            # do arquivo mudou, entao scrape jobs novos (ex.: node), regras de alerta
+            # novas e pipelines de log novos nao carregariam sem um restart. Forcar a
+            # recriacao so desses tres relê a config a cada deploy.
+            # 74.6: promtail entrou nesta lista junto com o scrape do log de kernel --
+            # ele estava sujeito a MESMA armadilha desde sempre, sem ninguem notar
+            # porque o promtail-config.yml nunca tinha mudado depois do primeiro deploy.
+            docker compose up -d --force-recreate --no-deps prometheus grafana promtail
             echo "Waiting for app to be healthy..."
             # 74.4a: 60s -> 180s. Este e o mesmo deploy que a 74.3 impoe o
             # limite de ~0,18 vCPU ao `app`; startup de .NET com JIT residual

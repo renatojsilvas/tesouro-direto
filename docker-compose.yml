@@ -365,10 +365,19 @@ services:
       - '--collector.uname'
       - '--collector.time'
       - '--collector.os'
+      # 74.6: cAdvisor rejeitado (60-120 MB de RSS contra ~42 MB de orçamento
+      # do bloco INFRA) — métricas por container vêm do textfile collector,
+      # alimentado por infra/host/container-metrics.sh via systemd timer no
+      # host (infra/host/td-container-metrics.{service,timer}), não por um
+      # segundo container. `--collector.textfile` precisa ser habilitado
+      # explicitamente porque a lista acima usa `--collector.disable-defaults`.
+      - '--collector.textfile'
+      - '--collector.textfile.directory=/host/textfile'
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - /var/lib/node_exporter/textfile:/host/textfile:ro
     ports:
       - "127.0.0.1:9100:9100"
     # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
@@ -399,6 +408,14 @@ services:
     volumes:
       - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
       - /var/log/nginx:/var/log/nginx:ro
+      # 74.6: DIRETÓRIO, não `/var/log/kern.log:/var/log/host/kern.log:ro`.
+      # Bind-mount de arquivo fixa o inode; o logrotate troca o inode na
+      # rotação (rename+recria) e o promtail continuaria seguindo para
+      # sempre o arquivo ROTACIONADO, parando de ver log novo em silêncio.
+      # Montando o diretório, o path `/var/log/host/kern.log` sempre resolve
+      # para o inode atual. `infra/promtail/promtail-config.yml` aponta o
+      # scrape para `/var/log/host/kern.log` (editado em paralelo).
+      - /var/log:/var/log/host:ro
       - promtail-positions:/tmp
     depends_on:
       - loki

@@ -344,3 +344,331 @@ groups:
           summary: "Mais de 20 respostas 429 (rate limit) na borda nginx em 5m"
         noDataState: OK
         execErrState: Alerting
+
+      # 74.6 - Alertas por container + OOM (cAdvisor descartado pela medição
+      # da 74.1; fonte é o textfile collector do node-exporter escrevendo
+      # `td_container_*` a partir dos cgroups, via systemd timer no host).
+      #
+      # 9 - Memória de container > 85% do limite (warning). Sobre
+      # td_container_memory_unreclaimable_bytes (anon+shmem+kernel), NÃO
+      # sobre td_container_memory_working_set_bytes: os tetos da 74.3 foram
+      # dimensionados a partir do não-descartável, e working_set inclui
+      # active_file (page cache RECLAMÁVEL, o kernel joga fora sob pressão
+      # sem matar ninguém). Medido na VPS: alertar sobre working_set
+      # acusaria 78%/70% no node-exporter/promtail (risco de OOM por causa
+      # de cache) contra 45%/42% real de não-descartável — falso positivo.
+      # Guarda "and on(container) (limit > 0)": sem ela, um container sem
+      # limite configurado (limit=0) faria a divisão virar +Inf e disparar
+      # sempre.
+      - uid: td-container-memoria-warning
+        title: "Memória de container acima de 85% do limite"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "(td_container_memory_unreclaimable_bytes / td_container_memory_limit_bytes) * 100 and on(container) (td_container_memory_limit_bytes > 0)"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [85]
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memória não-descartável (anon+shmem+kernel) de um container acima de 85% do limite configurado por mais de 5m"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 10 - Memória de container > 95% do limite (critical). Mesma base
+      # (não-descartável, não working_set) e mesma guarda de limit>0 da
+      # regra anterior; janela mais curta (2m) porque acima de 95% o OOM
+      # killer do cgroup pode agir a qualquer instante.
+      - uid: td-container-memoria-critical
+        title: "Memória de container acima de 95% do limite"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "(td_container_memory_unreclaimable_bytes / td_container_memory_limit_bytes) * 100 and on(container) (td_container_memory_limit_bytes > 0)"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [95]
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memória não-descartável (anon+shmem+kernel) de um container acima de 95% do limite configurado por mais de 2m — risco iminente de OOM kill"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 10b - Reclaim sustentado (warning). Complementa 9/10: em vez de uma
+      # razão contra um limiar chutado, usa o campo `max` de memory.events
+      # (quantas vezes uma alocação bateu no teto e forçou reclaim), cuja
+      # linha de base medida na VPS é ZERO nos oito containers com os tetos
+      # da 74.3 já corrigidos — então qualquer valor sustentado é pressão
+      # real, não ruído de dimensionamento. O limiar (>100 em 15m, não >0)
+      # existe para não disparar sobre um evento isolado; os 9131 eventos
+      # do incidente do `grafana` mal dimensionado (74.3) dão a ordem de
+      # grandeza de um caso verdadeiro — 100 fica bem abaixo disso.
+      - uid: td-container-reclaim-sustentado
+        title: "Reclaim de memória sustentado em container"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              expr: "increase(td_container_memory_reclaim_events_total[15m])"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [100]
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mais de 100 eventos de reclaim de memória (memory.events max) em 15m — linha de base medida é zero, então isto é pressão real"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 11 - Throttling de CPU sustentado. Razão rate(throttled)/rate(periods)
+      # numa janela de 5m, exigida por 10m para não reagir a um pico curto de
+      # CPU (o CFS é quota/100ms, vide feedback_cpu_peso_memoria_teto). Guarda
+      # "and on(container) (rate(periods) > 0)": sem ela, um container ocioso
+      # (periods=0 no numerador e denominador) daria 0/0 = NaN em vez de
+      # simplesmente não ter série.
+      # SEGUNDA GUARDA (rate(throttled) > 1), MEDIDA, NÃO CHUTADA: a razão
+      # sozinha é falso positivo garantido em container ocioso de quota
+      # pequena. O `node-exporter` (cpus: 0.05, ou seja 5ms a cada 100ms)
+      # fica ocioso quase o tempo todo e, quando acorda para servir um
+      # scrape, estoura a quota — medido na VPS em 90s: 8 períodos, 2
+      # throttled, 25,0%, acima do limiar de 20% SEM problema nenhum. O que
+      # distingue isso de um aperto real não é a razão, é o volume absoluto:
+      # o mesmo `node-exporter` throttla a 0,022 períodos/s, enquanto o
+      # `app` sob carga na sua quota throttla perto de 10/s. O corte em 1/s
+      # fica ~45x acima do ruído medido e uma ordem de grandeza abaixo do
+      # caso real.
+      - uid: td-container-cpu-throttling
+        title: "Throttling de CPU sustentado em container"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              expr: "(sum(rate(td_container_cpu_cfs_throttled_periods_total[5m])) by (container) / sum(rate(td_container_cpu_cfs_periods_total[5m])) by (container)) * 100 and on(container) (sum(rate(td_container_cpu_cfs_periods_total[5m])) by (container) > 0) and on(container) (sum(rate(td_container_cpu_cfs_throttled_periods_total[5m])) by (container) > 1)"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [20]
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mais de 20% dos períodos de CPU de um container foram throttled (janela de 5m, com volume absoluto acima de 1 período/s), sustentado por 10m"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 12 - Container reiniciou. increase() sobre um counter monotônico:
+      # um recreate de deploy zera o contador (novo container ID), e
+      # increase() já lida nativamente com reset de counter (soma só os
+      # incrementos positivos entre amostras) — não conta o "salto para
+      # baixo" do reset como aumento, então um deploy normal não dispara
+      # falso positivo.
+      # LIMIAR ZERO, DE PROPÓSITO: increase() EXTRAPOLA para as bordas da
+      # janela, então um único restart não rende exatamente 1,0 e sim algo
+      # como 1,2 — um limiar de "> 1" prometeria "reiniciando" e entregaria
+      # "reiniciou uma vez", com o número dependendo de onde as amostras
+      # caem na janela. "> 0" é o único limiar honesto sobre um counter
+      # extrapolado: qualquer valor positivo significa "houve pelo menos um
+      # reinício". Nesta stack nada reinicia em operação normal, então um
+      # reinício já merece aviso.
+      # Este é também o caminho CONFIÁVEL de detecção de OOM pelo lado das
+      # métricas: o .RestartCount do docker inspect ATRAVESSA o restart, ao
+      # contrário do contador de cgroup da regra 13.
+      - uid: td-container-restart
+        title: "Container reiniciou"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              expr: "increase(td_container_restarts_total[15m])"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container reiniciou nos últimos 15m — nada reinicia sozinho nesta stack fora de um deploy"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 13 - OOM kill por métrica de cgroup. Sinal rápido (for: 1m) dado que
+      # é critical. REDUNDÂNCIA BEST-EFFORT, E ISSO NÃO TEM CONSERTO POR ESTA
+      # VIA: o contador pode perder o evento INTEIRO. Duas causas somadas,
+      # ambas medidas na 74.1: (a) o `oom_kill` do cgroup ZERA quando o
+      # container reinicia mantendo o mesmo container ID, porque
+      # `restart: unless-stopped` destrói e recria o cgroup por baixo;
+      # (b) o scrape é de 30s, então a sequência realista 0 -> OOM (1) ->
+      # restart -> 0 pode acontecer inteira ENTRE dois scrapes e o valor 1
+      # nunca ser amostrado. Não confie nesta regra sozinha.
+      # Os dois caminhos CONFIÁVEIS são: a regra 19 (Loki / log de kernel),
+      # independente de qualquer métrica de container, e a regra 12
+      # (restart), cujo .RestartCount do docker inspect atravessa o restart.
+      - uid: td-container-oom-kill
+        title: "OOM kill detectado (métrica de container)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "increase(td_container_oom_kill_total[10m])"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Contador de OOM kill do cgroup incrementou nos últimos 10m"
+        noDataState: OK
+        execErrState: Alerting
+
+      # 14 - Dead-man's switch do timer do host (textfile collector). SEM
+      # esta regra, se o systemd timer que escreve os `.prom` morrer, as 5
+      # regras de container acima (9-13) ficam sem série nova e, com
+      # noDataState: OK, simplesmente PARAM DE DISPARAR EM SILÊNCIO — o
+      # modo de falha que a 74.6 existe para fechar. Por isso esta regra é
+      # a ÚNICA das 6 relacionadas a container com noDataState: Alerting:
+      # se node_textfile_mtime_seconds sumir de vez (node-exporter down,
+      # por exemplo), a ausência total de dado também deve tocar o alerta.
+      - uid: td-metricas-container-obsoletas
+        title: "Métricas de container obsoletas (timer do host parado)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              expr: "(time() - node_textfile_mtime_seconds) > 300 or node_textfile_scrape_error > 0"
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "O textfile collector do node-exporter está com dado velho (>5m) ou reportando erro de scrape"
+        noDataState: Alerting
+        execErrState: Alerting
+
+      # 15 - OOM detectado no log de kernel (via Loki). Modelada em
+      # td-rate-limit-anomalo (regra 8). O pipeline do promtail
+      # (infra/promtail/promtail-config.yml, job "kernel") já garante que só
+      # linha de OOM chega neste job (drop de tudo o mais antes do envio ao
+      # Loki, por causa do teto de 132MB/retenção 7d do loki - tarefa 74.2).
+      # Esta regra é INDEPENDENTE das métricas de container de propósito: se
+      # Grafana/Prometheus/o textfile collector falharem, ela ainda dispara,
+      # porque só depende do promtail conseguir ler o kern.log do host e
+      # empurrar pro Loki.
+      - uid: td-oom-kernel-log
+        title: "OOM detectado no log de kernel (via Loki)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: loki
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: loki
+                uid: loki
+              expr: "sum(count_over_time({job=\"kernel\"}[5m]))"
+              queryType: instant
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Log de kernel do host reportou OOM (memcg de container ou global) nos últimos 5m"
+        noDataState: OK
+        execErrState: Alerting

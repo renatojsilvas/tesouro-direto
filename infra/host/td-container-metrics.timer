@@ -1,0 +1,10 @@
+[Unit]
+Description=tesouro-direto: dispara container-metrics.sh a cada 30s (casa com scrape_interval do Prometheus, prometheus.yml:10)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
