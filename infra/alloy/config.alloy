@@ -1,0 +1,22 @@
+// Tarefa 77 — coletor único que substitui prometheus/loki/promtail/node-exporter/grafana.
+// Os nomes de `job` abaixo são CONTRATO com as 18 regras de alerta: mudar um deixa
+// alertas mudos em silêncio. Ver docs/superpowers/plans/2026-08-14-tarefa-77-*.md.
+
+prometheus.remote_write "cloud" {
+	endpoint {
+		url = sys.env("GC_PROM_URL")
+
+		basic_auth {
+			username = sys.env("GC_PROM_USER")
+			password = sys.env("GC_TOKEN")
+		}
+	}
+}
+
+// job="tesouro-direto-api" — consumido por 12 das 18 regras.
+prometheus.scrape "app" {
+	targets         = [{__address__ = "app:8080", job = "tesouro-direto-api"}]
+	metrics_path    = "/metrics"
+	scrape_interval = "30s" // NÃO subir para 60s: quebra o `for: 1m` de td-db-readiness-down
+	forward_to      = [prometheus.remote_write.cloud.receiver]
+}

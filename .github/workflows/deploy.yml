@@ -63,6 +63,11 @@ jobs:
           GRAFANA_PASSWORD: dummy
           TELEGRAM_BOT_TOKEN: dummy
           K6_PROMETHEUS_RW_SERVER_URL: http://dummy:9090/prometheus/api/v1/write
+          # 77.0: docker-compose.yml ganhou o serviço `alloy` com ${GC_*:?} obrigatórios;
+          # sem estas dummies as 3 validações abaixo falham a partir desta fase.
+          GC_PROM_URL: http://dummy
+          GC_PROM_USER: "1"
+          GC_TOKEN: dummy
         run: |
           set -e
           docker compose -f docker-compose.yml config -q
@@ -164,7 +169,13 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             mkdir -p /opt/tesouro-direto
-            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\n' \
+            # ANCORA: este .env e reescrito POR COMPLETO a cada deploy (nao e um merge
+            # com o que ja existe na VPS). Qualquer ${VAR:?...} novo que entre no
+            # docker-compose.yml (ex.: GC_* na 77.0) TEM que entrar neste printf no MESMO
+            # PR -- senao a interpolacao do compose falha inteira (nenhum servico e
+            # recriado, nem os que nao tem nada a ver com a variavel nova) antes mesmo do
+            # `docker compose up -d` rodar. Ver scratchpad/medir-alloy.md secao 3.0/CHECKLIST.
+            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGC_PROM_URL=%s\nGC_PROM_USER=%s\nGC_TOKEN=%s\n' \
               '${{ secrets.DB_PASSWORD }}' \
               '${{ secrets.API_KEY }}' \
               '${{ secrets.GRAFANA_PASSWORD }}' \
@@ -173,6 +184,9 @@ jobs:
               '${{ secrets.ADMIN_EMAIL }}' \
               '${{ secrets.GOOGLE_CLIENT_ID }}' \
               '${{ secrets.GOOGLE_CLIENT_SECRET }}' \
+              '${{ secrets.GC_PROM_URL }}' \
+              '${{ secrets.GC_PROM_USER }}' \
+              '${{ secrets.GC_TOKEN }}' \
               > /opt/tesouro-direto/.env
             chmod 600 /opt/tesouro-direto/.env
       - name: Deploy via SSH
@@ -181,6 +195,11 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          # 77.0: sem script_stop: true, um comando que falha nao para a execucao.
+          # A ultima linha (docker image prune -f) sempre sucede, entao o healthcheck
+          # testa o container ANTIGO que continua respondendo 200, fechando o job VERDE
+          # mesmo com deploy quebrado no meio. Achado pela revisao adversarial da 77.0.
+          script_stop: true
           script: |
             cd /opt/tesouro-direto
             if [ ! -d .git ]; then

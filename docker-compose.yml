@@ -435,12 +435,38 @@ services:
           memory: 36M
           pids: 64
 
+  # 77.0 — PORTÃO de medição: Alloy sobe AO LADO da stack acima, sem remover
+  # nada, para medir o pico real da não-descartável (td_container_memory_
+  # unreclaimable_bytes) em 24h antes de decidir se a tarefa 77 se paga
+  # (ver docs/superpowers/plans/2026-08-14-tarefa-77-*.md, Fase 77.0).
+  alloy:
+    image: grafana/alloy:v1.18.1
+    container_name: tesouro-direto-alloy
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      - GC_PROM_URL=${GC_PROM_URL:?defina GC_PROM_URL no .env}
+      - GC_PROM_USER=${GC_PROM_USER:?defina GC_PROM_USER no .env}
+      - GC_TOKEN=${GC_TOKEN:?defina GC_TOKEN no .env}
+    ports:
+      - "127.0.0.1:12345:12345"
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    # SEM deploy.resources.limits nesta fase: o objetivo é medir o pico REAL, não
+    # observar o container bater num teto que eu escolhi antes de saber o número.
+
 volumes:
   pgdata:
   grafana-data:
   loki-data:
   prometheus-data:
   promtail-positions:
+  alloy-data:
 
 networks:
   default:
