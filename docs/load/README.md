@@ -453,7 +453,8 @@ para deixar a diferença visível:
 | node-exporter | 9 MiB / 16 | 61% | 6 | 0,3 s | 80,4 s |
 
 **Leitura que importa:** o teto **não** é a cota de CPU do `app` — ele levou **0,1 s** de
-throttling em 11 min de carga, contra 62,3 s do `promtail`. O gargalo é disputa pelo único vCPU
+throttling nos **6m37s** amostrados desta execução (degraus 60–150), contra 62,3 s do `promtail`
+no mesmo intervalo. O gargalo é disputa pelo único vCPU
 físico (loadavg 8,27), e o
 desenho da 74.3 (`cpu_shares` como peso + `cpus` como teto folgado) funcionou como projetado:
 sob pressão o `app` ganha o ciclo e a observabilidade cede. `loki` a 99% e `prometheus` a 95%
@@ -485,10 +486,16 @@ global — usuários distintos não disputam esse balde entre si.
 
 - O limitador é anti-abuso **por IP**. Com joelho de 100 req/s, 30 r/s por IP significa que são
   necessários **~3,3 IPs abusivos simultâneos** para levar a máquina ao joelho e ~4 para o teto.
-- **Tráfego real nunca é barrado.** No log do nginx de 2026-08-13, as horas 09h e 10h somam
-  ~30 mil requisições com **0% de 429**. Todos os 429 do dia estão nas horas 03h e 04h e vieram
-  de **um único IP distinto** — o do medidor, durante um run que ficou preso (ver Limitações,
-  abaixo).
+- **Nenhum 429 é de usuário orgânico.** No log do nginx de 2026-08-13 há **753.454** respostas
+  `429`, e a decomposição por IP fecha em dois:
+  **753.436 do IP do medidor** — as horas 03h e 04h são o run que ficou preso (ver Limitações), e
+  a hora 10h sozinha tem **752.194**, que é a tentativa de medir circuitos com a zona `web` ainda
+  em 10 r/s (o mesmo incidente de 751.695 × `429` citado no bloco de circuitos);
+  e **18 de um segundo IP**, um scanner sondando `.aws/credentials`, `.env` e `/RDWeb/`.
+  Esses 18 são o limitador **fazendo exatamente o trabalho dele**.
+  **Cuidado ao citar isto como prova:** descontado o medidor, o volume orgânico na janela é de
+  poucas dezenas de requisições. É evidência de que o limitador não está atrapalhando usuário,
+  **não** uma prova de alto volume. Para essa prova seria preciso uma janela sem teste de carga.
 - **A premissa registrada de que os 30 r/s estariam "apertados demais" está refutada.** Ela
   vinha de "69,6% das requisições batem no limitador"; o log de 2026-08-12 mostra 63,35% de 429
   em 165 mil requisições, e 12/08 foi dia de teste de carga — o número media o próprio medidor.
@@ -578,7 +585,12 @@ reciclagem soma pressão de conexões novas sobre a mesma zona de `worker_connec
 **Consequência prática.** O site sustenta **~350 circuitos simultâneos** hoje. Elevar esse número
 é mudança de configuração da **borda** (`worker_connections` e o `nofile` do processo nginx), não
 de recurso de container — subir o `memory` do `web` não compraria um circuito sequer. Essa mudança
-de nginx **não** foi feita na 74.5 (fica como follow-up), e o `limit_req` da zona `web` continua em
+de nginx **não** foi feita na 74.5 (fica como follow-up). **Armadilha para quem for fazê-la:** o
+`worker_connections` em vigor **não está no repositório**. O `infra/nginx/nginx.conf` versionado
+diz `1024`, mas quem vale na VPS é `/etc/nginx/nginx.conf` — arquivo comum, de 2023, com o default
+`768`. Só o `tesouro-direto.conf` é symlink do repo; o `nginx.conf` principal não é, então `git
+pull` não o atualiza e uma VPS nova não herda a mudança. Mesma fragilidade já registrada para o
+timer do dead-man. O `limit_req` da zona `web` continua em
 10 r/s de produção, restringindo a **taxa de novas conexões**, que é coisa diferente do número de
 circuitos simultâneos.
 
