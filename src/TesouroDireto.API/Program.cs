@@ -24,18 +24,25 @@ await app.InitializeDatabaseAsync();
 app.UseForwardedHeaders();
 app.UseMiddleware<ForwardedPrefixMiddleware>();
 
+// UseHttpMetrics precisa envolver o UseExceptionHandler (não o contrário): o prometheus-net
+// só lê o status code final da resposta no "finally" do seu próprio middleware, e é o
+// UseExceptionHandler quem reescreve a resposta para 5xx quando um endpoint lança exceção.
+// Se o UseHttpMetrics ficar por dentro (mais perto do endpoint), a exceção atravessa o seu
+// try/finally antes do status ser reescrito, e o label `code` fica errado — mascarando
+// incidentes no alerta td-http-5xx-alto. Ver docs/PLANO.md (tarefa 29) e
+// tests/.../HttpMetricsExceptionOrderingTests.cs.
+var httpMetricsExcludedPaths = app.Configuration.GetSection("ApiKey:ExcludedPaths").Get<string[]>() ?? [];
+app.UseWhen(
+    ctx => !httpMetricsExcludedPaths.Any(p =>
+        ctx.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase)),
+    branch => branch.UseHttpMetrics());
+
 app.UseExceptionHandler();
 
 app.UseSerilogDefaults();
 
 app.UseSwagger();
 app.UseSwaggerUI();
-
-var httpMetricsExcludedPaths = app.Configuration.GetSection("ApiKey:ExcludedPaths").Get<string[]>() ?? [];
-app.UseWhen(
-    ctx => !httpMetricsExcludedPaths.Any(p =>
-        ctx.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase)),
-    branch => branch.UseHttpMetrics());
 
 app.UseMiddleware<ApiKeyMiddleware>();
 app.UseRateLimiter();

@@ -249,7 +249,15 @@ public sealed class SwaggerEndpointTests
                 + "é estático/global do processo — outras classes de teste (ex.: 401 do ApiKeyMiddleware, "
                 + "que curto-circuita antes do roteamento) já podem ter produzido endpoint=\"\".");
 
-            var throwBefore = await ScrapeHttpMetricSumAsync("endpoint=\"/_test/throw\"");
+            // Positivo de controle via code="500", não via endpoint="/_test/throw": desde que
+            // UseHttpMetrics passou a envolver o UseExceptionHandler (fix do label `code`
+            // reportar o status real em requisições com exceção — ver
+            // HttpMetricsExceptionOrderingTests), o UseExceptionHandler limpa o endpoint
+            // resolvido (context.SetEndpoint(null)) antes de reescrever a resposta para 5xx,
+            // então a série final gravada para /_test/throw carrega endpoint="" (não mais o
+            // path). O código de status, porém, é gravado corretamente como 500 — e é esse o
+            // sinal que prova que UseHttpMetrics está ativo e o scrape não é vácuo.
+            var throwBefore = await ScrapeHttpMetricSumAsync("code=\"500\"");
 
             using (var request = new HttpRequestMessage(HttpMethod.Get, "/_test/throw"))
             {
@@ -257,10 +265,11 @@ public sealed class SwaggerEndpointTests
                 await _client.SendAsync(request, CancellationToken.None);
             }
 
-            var throwAfter = await ScrapeHttpMetricSumAsync("endpoint=\"/_test/throw\"");
+            var throwAfter = await ScrapeHttpMetricSumAsync("code=\"500\"");
             throwAfter.Should().BeGreaterThan(throwBefore,
-                "positivo de controle: a rota roteada /_test/throw É instrumentada, provando que "
-                + "UseHttpMetrics está ativo e o scrape funciona (senão o delta acima seria vácuo).");
+                "positivo de controle: a rota roteada /_test/throw É instrumentada e o label code "
+                + "reflete o status real (500), provando que UseHttpMetrics está ativo e o scrape "
+                + "funciona (senão o delta acima seria vácuo).");
         }
 
         private async Task<double> ScrapeHttpMetricSumAsync(string labelToken)

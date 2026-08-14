@@ -1134,6 +1134,20 @@ No x64 a variável **funciona** — zera as regiões e o `shmem` — mas a memó
 
 ---
 
+### 76. Confiabilidade do alerting 🟡
+
+> Dois defeitos independentes, achados pela medição da 74.5, que anulam o investimento da tarefa 74: o alerting pode **morrer calado** e pode **disparar sobre dado errado**.
+
+- **Defeito A — o alerta mente sobre o próprio dado.** `src/TesouroDireto.API/Program.cs`: `UseExceptionHandler()` vem **antes** do `UseHttpMetrics()`. A doc do prometheus-net exige o inverso — nessa ordem o handler já converteu a resposta antes do middleware observar o status, e o label `code` reporta errado justamente em erro. A série `http_request_duration_seconds{code=…}` alimenta a regra `td-http-5xx-alto`, então o alerta que existe para detectar incidente **não dispara no incidente**.
+- **Defeito B — o alerting morre calado.** Gate de 31,6 h da 74.3 (`scratchpad/fp-24h-gate-74.3.csv.gz`): `prometheus` **100% do teto** (48/48 MiB), `grafana` **96%** (153/160), `node-exporter` 86%, `loki` 84% — todos em **operação normal**, não sob carga; os testes de carga da 74.5 deram picos *menores*. O alerting é Grafana-managed: `grafana` morto por OOM cala **todos** os alertas, inclusive "app down" — risco já registrado no Risco da 74 e nunca mitigado.
+- **Escopo A:** mover o `UseWhen(... UseHttpMetrics())` para antes do `UseExceptionHandler()`, preservando a exclusão de `/health*` e `/metrics` da tarefa 29 (o predicado reusa `ApiKey:ExcludedPaths`) e a precedência do `UseForwardedHeaders`.
+- **Escopo B:** elevar os tetos para ~70% de uso no pico, a mesma folga dos containers saudáveis (`app` 58%, `db` e `web` 70%, `promtail` 74%): `prometheus` 48M→**72M**, `grafana` 160M→**224M**, `loki` 132M→**160M**, `node-exporter` 16M→**24M**. **O `GOMEMLIMIT` sobe junto** (grafana 128→179MiB, loki 105→128MiB, prometheus 38→57MiB): é auto-limite do runtime Go e, deixado no valor antigo, o container ignora a folga nova e a mudança de teto vira **no-op**. `memswap_limit` acompanha nos dois que tinham decisão explícita da 74.3 (grafana 320→448M, loki 264→320M); `prometheus`/`node-exporter` seguem sem, como decidido lá.
+- **Trade-off assumido:** +124 MB levam o total de **936 MB (47,6% da VPS)** para **1060 MB (53,9%)** — **rompe a promessa de "50% livres"** da tarefa 74, de propósito. Quatro pontos de folga da máquina em troca de alerting que não morre calado.
+- **Risco:** baixo em A (ordem de middleware, coberta por teste), médio em B — **exige deploy com recriação de containers**, e é a primeira vez que o orçamento passa de 50%.
+- **Verificação:** (A) teste de integração assertando **delta** (nunca absoluto) de `http_request_duration_seconds{code="5xx"}` após uma requisição que estoura, com **não-vacuidade provada por mutação** (reverter a ordem ⇒ vermelho; restaurar ⇒ verde), e a exclusão de `/health*`/`/metrics` da 29 sem regressão. (B) `docker compose config -q` nas três combinações; pós-deploy, `docker inspect` batendo com os tetos novos e um novo gate de 24 h com os picos abaixo de ~80% do teto.
+
+---
+
 ## Dependências entre tarefas
 
 - **8 (testes de integração)** dá rede de segurança para **4, 7, 15, 16** — fazer antes ou junto.

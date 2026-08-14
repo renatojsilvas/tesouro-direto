@@ -214,12 +214,12 @@ services:
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN é obrigatório no .env}
       # 74.3: GOMEMLIMIT recalculado para ~80% do teto RIGIDO de memória
-      # desta fase (128M), substituindo o valor da 74.2 (167MiB), que era
+      # desta fase (224M), substituindo o valor da 74.2 (167MiB), que era
       # 80% de um teto provisório maior e hoje ultrapassaria o próprio
       # limite do cgroup — sem isso o GC nunca dispararia antes do OOM
       # killer. GOGC fica no default de propósito (GOMEMLIMIT + GOGC=off é
       # espiral de GC sob 1 vCPU).
-      - GOMEMLIMIT=128MiB
+      - GOMEMLIMIT=179MiB
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
       - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
@@ -236,12 +236,12 @@ services:
     # Grafana-managed (ver Risco da 74 no PLANO.md: Grafana morto cala o
     # "app down" em silêncio).
     cpu_shares: 128
-    memswap_limit: 320M
+    memswap_limit: 448M
     deploy:
       resources:
         limits:
           cpus: "0.15"
-          memory: 160M
+          memory: 224M
           pids: 64
 
   loki:
@@ -263,7 +263,7 @@ services:
       # valor da 74.2 (120MiB) já era menor que o novo teto e continuava
       # válido, mas a 105MiB dá mais folga a um serviço com bastante page
       # cache (footprint.md armadilha do mem.current, ver PLANO.md).
-      - GOMEMLIMIT=105MiB
+      - GOMEMLIMIT=128MiB
     volumes:
       - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki-data:/loki
@@ -274,12 +274,12 @@ services:
     # de cache/swap a matar o processo por OOM num container cuja memória
     # é majoritariamente cache descartável, não heap.
     cpu_shares: 128
-    memswap_limit: 264M
+    memswap_limit: 320M
     deploy:
       resources:
         limits:
           cpus: "0.15"
-          memory: 132M
+          memory: 160M
           pids: 64
 
   prometheus:
@@ -293,10 +293,10 @@ services:
       # inflado pelo piso de +64 MB da regra de folga (pico real 50,2 MB;
       # só ×1,3 daria 65,3 MB) — uso 80% do valor SEM o piso (65,3×0,8≈52),
       # com uma margem pequena para o self-scrape novo (~4 MB).
-      # 74.3: o teto RIGIDO desta fase (48M) ficou abaixo dos 56MiB
-      # calculados na 74.2 — recalculado para ~80% do novo teto, senão o
+      # 74.3: o teto RIGIDO desta fase (72M) ficou acima dos 56MiB
+      # calculados na 74.2 — mantido em ~80% do teto, senão o
       # GOMEMLIMIT nunca dispararia antes do OOM killer do cgroup.
-      - GOMEMLIMIT=38MiB
+      - GOMEMLIMIT=57MiB
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--web.external-url=/prometheus/'
@@ -316,7 +316,7 @@ services:
       resources:
         limits:
           cpus: "0.10"
-          memory: 48M
+          memory: 72M
           pids: 64
 
   node-exporter:
@@ -390,7 +390,7 @@ services:
       resources:
         limits:
           cpus: "0.05"
-          memory: 16M
+          memory: 24M
           pids: 64
 
   promtail:
