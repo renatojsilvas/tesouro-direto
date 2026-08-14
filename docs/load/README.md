@@ -368,6 +368,227 @@ usuário`:
 - Ou seja: o site sustenta **centenas de usuários navegando ao mesmo tempo**; o cuidado é uma
   rajada de muitos acessos novos no mesmo segundo (> 10/s).
 
+### 7.4 Re-medição com os limites da 74.3 aplicados (2026-08-13) — correção de método
+
+Contexto: a tarefa 74.3 aplicou limites de recursos (cgroup v2 — `cpu_shares`/`cpus`, memória)
+aos 8 containers da stack. Esta seção **re-mede** a capacidade da API contra produção com esses
+limites em vigor, e corrige um vício de método que inflava os números da §7.3.
+
+**O vício de método.** Medindo do laptop via `https`+nginx, ~99% da latência observada é **rede
+do medidor**, não aplicação: de dentro da VPS, `curl http://localhost:5000/v1/titulos` responde
+em **4–12 ms**; do laptop, o mesmo endpoint dá **~1000 ms total / ~650 ms de TTFB**. Decomposição
+do 1 s: TCP connect 190 ms, TLS +200 ms, TTFB 650 ms, e mais ~380 ms transferindo os
+**73.153 bytes** do corpo. A §7.3 reportou p95 de 0,3–1,3 s como se fosse latência de
+aplicação — não era.
+
+Por isso a 74.5 mudou três coisas no método:
+
+1. A métrica que decide teto e joelho passa a ser **`http_req_waiting`** (TTFB menos
+   conexão/TLS = tempo de servidor + 1 RTT). Linha de base ociosa medida: ~195–200 ms, o que é
+   essencialmente a RTT de 190 ms. `http_req_duration` continua reportado, mas rotulado como
+   experiência ponta a ponta — **não** decide teto.
+2. **Dois fluxos**: `full` = `GET /v1/titulos` sem `If-None-Match` → 200 com 73 KB (tráfego
+   realista, satura banda); `etag` = o mesmo request com `If-None-Match` → **304 com corpo
+   vazio** (mesmo caminho de código, zero bytes — isola CPU/app da banda). O ETag é lido em
+   `setup()`, nunca fixo.
+3. **Degraus discretos** (`constant-arrival-rate`, 60 s cada, ~10 s de dreno entre eles), com
+   p95 **por degrau**. Corrige a limitação de método registrada na §7.2, que só tinha o p95 do
+   ramp inteiro e por isso **interpolava** o joelho.
+
+A borda foi aberta temporariamente (zona `api` em 200 e depois 300 r/s), com watchdog de
+reversão armado antes do run, e revertida ao final com prova em `nginx -T`.
+
+**Fluxo `etag` (304, zero bytes) — é o que decide teto e joelho.** Coluna "servidor" = p95
+menos a RTT medida de 190 ms. Os degraus 25–50 vêm de uma execução e 60–150 de outra:
+
+| ofertado | atendido | p50 | p90 | p95 | p99 | servidor | erros |
+|---|---|---|---|---|---|---|---|
+| 25 | 25,00 | 196 | 212 | 222 | 255 | ~32 ms | 0 |
+| 30 | 30,02 | 199 | 220 | 249 | 1630 | ~58 ms | 0 |
+| 40 | 40,00 | 198 | 239 | 370 | 1046 | ~180 ms | 0 |
+| 50 | 50,02 | 200 | 362 | 749 | 1173 | ~559 ms | 0 |
+| 60 | 60,00 | 195 | 410 | 721 | 2317 | ~531 ms | 0 |
+| 80 | 80,02 | 196 | 638 | 1008 | 3706 | ~818 ms | 0 |
+| 100 | 100,02 | 265 | 1154 | 1529 | 3758 | ~1338 ms | 0 |
+| 120 | **119,48** | 313 | 1186 | 3051 | 14878 | ~2861 ms | 0 |
+| 150 | **138,82** | 580 | 1727 | 3476 | 15566 | ~3286 ms | **135** |
+
+(Latências em ms.)
+
+- **Teto ≈ 120 req/s** — é onde a vazão atendida para de acompanhar a ofertada (119,48 de 120;
+  depois 138,82 de 150, já com 135 erros).
+- **Capacidade limpa = 100 req/s** — atendido igual ao ofertado, zero erro.
+- **Joelho ≈ 100 req/s** — é onde o **p50 sai do platô**: fica plano em 195–200 ms de 25 até
+  80 req/s (~10 ms de servidor na mediana, o mesmo valor medido em repouso dentro da VPS) e só
+  então sobe para 265, 313, 580. Antes disso o que cresce é só a **cauda**.
+- O ruído nos degraus baixos (p95 de 418 ms a 5 req/s, 445 ms a 15 req/s, não incluídos na
+  tabela) é jitter do link do medidor com amostra pequena (300–900 requisições por degrau), não
+  servidor.
+- **Variância entre execuções é real**: o degrau de 60 req/s deu p95 de 1105 ms numa execução e
+  721 ms na outra (a tabela reporta o valor da execução usada para compor a série 60–150).
+
+**Fluxo `full` (200 com 73 KB).** Degraus 5, 10, 15, 20, 25, 30, 40, 50, 60, 80 req/s: **a
+vazão atendida foi igual à ofertada em todos**, com **zero 429, zero 5xx e zero erro**. A
+80 req/s isso são **48,8 Mbit/s**. O teto deste fluxo **não** foi encontrado — a medição parou
+em 80 req/s. O sinal importante: **`http_req_receiving` p95 ficou plano em ~420–455 ms em
+TODOS os degraus**, de 5 a 80 req/s. Latência de download que não varia com a carga é o link do
+medidor, não o servidor — é a prova direta do vício de método descrito acima.
+
+**Lado da VPS durante o run** (amostragem de cgroup v2 a cada 5 s): loadavg de 1 min foi de
+**0,32 a 8,27** num único vCPU, e **zero `oom_kill`** nos 8 containers. Pico de memória e
+throttling do CFS. As colunas de throttling são **delta dentro da janela do run** (último menos
+primeiro), não o valor lido do cgroup: `cpu.stat` acumula desde o boot do container, e reportar o
+absoluto superestimaria tudo em uma ordem de grandeza — a coluna "desde o boot" está ao lado só
+para deixar a diferença visível:
+
+| container | pico | % do teto | eventos (delta) | throttled no run | (desde o boot) |
+|---|---|---|---|---|---|
+| app | 190 MiB / 256 | 74% | 26 | **0,1 s** | 2,0 s |
+| db | 89 MiB / 128 | 69% | 100 | 1,9 s | 8,5 s |
+| grafana | 110 MiB / 160 | 69% | 9 | 0,5 s | 89,6 s |
+| loki | 131 MiB / 132 | **99%** | 27 | 1,1 s | 52,7 s |
+| prometheus | 45 MiB / 48 | **95%** | 4 | 0,2 s | 52,7 s |
+| promtail | 18 MiB / 36 | 52% | 1110 | **62,3 s** | 704,2 s |
+| web | 81 MiB / 160 | 50% | 0 | 0,0 s | 5,6 s |
+| node-exporter | 9 MiB / 16 | 61% | 6 | 0,3 s | 80,4 s |
+
+**Leitura que importa:** o teto **não** é a cota de CPU do `app` — ele levou **0,1 s** de
+throttling em 11 min de carga, contra 62,3 s do `promtail`. O gargalo é disputa pelo único vCPU
+físico (loadavg 8,27), e o
+desenho da 74.3 (`cpu_shares` como peso + `cpus` como teto folgado) funcionou como projetado:
+sob pressão o `app` ganha o ciclo e a observabilidade cede. `loki` a 99% e `prometheus` a 95%
+são **achados de orçamento sob carga** — não houve OOM, mas é apertado.
+
+**Comparação com a §7.3, com a ressalva.** A §7.3 (antes dos limites) reportou teto ~90–95 req/s
+com loadavg ~2,9. **Não é comparação direta**: a §7.3 mediu com corpo completo. No fluxo
+equivalente (`full`) esta medição chegou a 80 req/s sem um único erro sem procurar o teto,
+limitada pela banda do medidor. O que se pode afirmar: **os limites da 74.3 não tornaram o app
+mais lento**.
+
+**Tabelas de usuários simultâneos — recalculadas com o número medido (aritmética, não
+medição).** A §7.3 dizia ~450 usuários no teto (~90 req/s antigo). Com **joelho 100 req/s** e
+**teto 120 req/s**:
+
+| Ritmo de cada usuário | No joelho (100 req/s) | No teto (120 req/s) |
+|---|---|---|
+| 1 req/s (intenso) | 100 | 120 |
+| 1 req a cada 3 s | 300 | 360 |
+| 1 req a cada 5 s (navegação) | 500 | 600 |
+| 1 req a cada 10 s (leitura) | 1.000 | 1.200 |
+| 1 req a cada 30 s | 3.000 | 3.600 |
+
+Como já explicava a §7.3 e continua valendo: os 30 r/s do `limit_req` são **por IP**, não teto
+global — usuários distintos não disputam esse balde entre si.
+
+**`limit_req` da borda — re-derivado e mantido em `rate=30r/s burst=50`.** Decisão do dono; o
+`infra/nginx/tesouro-direto.conf` **não muda** nesta fase, o entregável é a derivação:
+
+- O limitador é anti-abuso **por IP**. Com joelho de 100 req/s, 30 r/s por IP significa que são
+  necessários **~3,3 IPs abusivos simultâneos** para levar a máquina ao joelho e ~4 para o teto.
+- **Tráfego real nunca é barrado.** No log do nginx de 2026-08-13, as horas 09h e 10h somam
+  ~30 mil requisições com **0% de 429**. Todos os 429 do dia estão nas horas 03h e 04h e vieram
+  de **um único IP distinto** — o do medidor, durante um run que ficou preso (ver Limitações,
+  abaixo).
+- **A premissa registrada de que os 30 r/s estariam "apertados demais" está refutada.** Ela
+  vinha de "69,6% das requisições batem no limitador"; o log de 2026-08-12 mostra 63,35% de 429
+  em 165 mil requisições, e 12/08 foi dia de teste de carga — o número media o próprio medidor.
+- O risco que o plano previa — o app cair para 15–25 req/s e os 30 r/s deixarem de proteger o
+  backend — **não se materializou**: o app faz 120 req/s. A estimativa do plano supunha `app`
+  com 0,15 vCPU rígido; a config real é `cpu_shares: 1024` com teto folgado `cpus: "0.70"`.
+
+**Limitações desta medição.**
+
+- Medidor fica fora da VPS, atrás de ~190 ms de RTT; por isso `http_req_waiting` e não
+  `http_req_duration`, mas a RTT ainda está embutida no número.
+- 60 s por degrau dá 300–900 amostras nos degraus baixos: p95/p99 são ruidosos ali.
+- O teto do fluxo `full` não foi encontrado (banda do medidor).
+- Uma execução foi perdida: o laptop do medidor entrou em *idle sleep* no meio, o k6 ficou 1h45
+  com conexões penduradas e, durante a pausa, o watchdog de reversão fechou a borda no horário
+  programado — as retentativas então bateram em `429`. Esse ponto foi **descartado** e
+  re-medido sob `caffeinate`. Vale como aviso de operação: **rodar carga longa sempre sob
+  `caffeinate`**.
+
+**Circuitos Blazor sob o teto de memória da 74.3.** A §7.3 afirmava "≥343 circuitos simultâneos,
+~0,2–0,3 MiB por circuito, memória não é o gargalo". Dois defeitos nessa medição: (a) foi feita
+**sem** teto de memória no container — hoje o `web` tem `memory: 160M`; (b) o run de 2026-08-09
+foi **abortado pelo guard do próprio medidor** (`MemAvailable` do **host** abaixo de 220 MiB), então
+343 é onde o medidor parou, não onde o servidor cedeu.
+
+**Método corrigido.** O guard passou a ler o **cgroup v2 do container** `tesouro-direto-web` (não
+o host), distinguindo três pontos: teto de RAM (`memory.current` ≥ 95% de `memory.max`), teto
+prático (swap/`pgmajfault` sustentados + latência de handshake subindo) e teto absoluto
+(`oom_kill`/`RestartCount`). A zona `web` do nginx foi **aberta para 100 r/s** durante o run — com
+ela nos 10 r/s de produção o teste mede o nginx recusando e não o container (uma tentativa
+anterior produziu 751.695 respostas `429` contra 192 handshakes bem-sucedidos). Cada VU segura um
+circuito; em caso de falha há backoff exponencial (1s→30s) e o VU desiste após 5 falhas seguidas,
+para que uma recusa transitória não vire tempestade de retentativas.
+
+**Resultado por patamar** (VUs simultâneos, cada um segurando um circuito):
+
+| VUs | handshakes ok | falhas do container | 429 da borda |
+|---|---|---|---|
+| 50 | 4 | 0 | 0 |
+| 100 | 24 | 0 | 0 |
+| 150 | 58 | 0 | 0 |
+| 200 | 106 | 0 | 0 |
+| 250 | 160 | 0 | 0 |
+| 300 | 206 | 0 | 0 |
+| 350 | 256 | 0 | 0 |
+| **400** | 279 | **307** | 0 |
+| **500** | 203 | **401** | 0 |
+
+(handshakes ok = handshakes concluídos durante a janela de hold daquele patamar, não circuitos
+simultâneos.) Total do run: 2.177 ok, 1.398 falhas de container, **zero 429**, 119 VUs
+desistiram. Latência de handshake ~2,0–2,2 s de 50 a 350 VUs, subindo para ~2,5 s em 400.
+
+**Memória: não é o gargalo, e agora isso está medido sob o teto.** Pico do `web`: **146,6 MiB de
+160 (91%)** a 495 VUs — os 95% do teto de RAM **nunca** foram atingidos. Swap total **1,08 MiB**,
+apenas **5 `pgmajfault`** no run inteiro (242→247), zero `oom_kill`, zero restart. Sem paginação,
+sem thrashing. Progressão do consumo: 105,7 MiB em repouso → 68% a 50 circuitos → 75% a 150 → 82%
+de 300 a 350 (platô, o GC segurando) → 91% no pico.
+
+**O gargalo real é a borda, não o container — e explica o número da §7.3.** Nenhum limite da 74.3
+foi atingido: memória parou em 91%, `pids.events` do cgroup mostra `max 0` (o limite de 128 nunca
+foi tocado; 14 em repouso), e o throttling de CPU do `web` no run somou ~2,1 s. A causa está no
+nginx:
+
+    worker_processes auto;    →  nproc = 1
+    worker_connections 768;
+    error.log durante o run: "768 worker_connections are not enough"
+
+Um único worker com 768 conexões. **Cada circuito Blazor proxiado consome duas conexões**
+(cliente→nginx e nginx→container), então o teto aritmético é **768 ÷ 2 = 384 circuitos** — e as
+falhas começaram em 400. O processo nginx também roda com `Max open files` soft de **1024**, que
+morderia logo em seguida. **Os "≥343" da §7.3 eram esta mesma parede**, atribuída na época ao
+guard de memória do host: dois runs com limites de container
+completamente diferentes pararam no mesmo número porque o limite nunca esteve no container.
+
+**O que "350 circuitos" significa aqui — leia antes de citar o número.** Os circuitos **não**
+ficaram parados: cada VU segurou o seu por **75 s**, fechou e reabriu, ~7 vezes ao longo do run
+(3.548 iterações completas para ~500 VUs). Foi um defeito do medidor, não escolha: o script de
+cenário define um `HOLD_MS_CIRCUITO` de 15 min como constante local, mas quem lê o valor é
+`tests/load/site/circuits.js` via `__ENV.HOLD_MS`, e o runner nunca exporta essa variável — então
+valeu o default de 75 s. Portanto o que foi medido são **~350 circuitos concorrentes sob
+reciclagem contínua** (~4–5 conexões novas/s no topo), não 350 circuitos ociosos segurados. Isso
+torna o número **conservador** para o caso de uso real (usuário que abre a página e fica), porque
+inclui o custo de reconexão o tempo todo — mas quem quiser o teto de circuitos ociosos precisa
+re-medir exportando `HOLD_MS`. É também parte da explicação das falhas a partir de 400 VUs: a
+reciclagem soma pressão de conexões novas sobre a mesma zona de `worker_connections`.
+
+**Consequência prática.** O site sustenta **~350 circuitos simultâneos** hoje. Elevar esse número
+é mudança de configuração da **borda** (`worker_connections` e o `nofile` do processo nginx), não
+de recurso de container — subir o `memory` do `web` não compraria um circuito sequer. Essa mudança
+de nginx **não** foi feita na 74.5 (fica como follow-up), e o `limit_req` da zona `web` continua em
+10 r/s de produção, restringindo a **taxa de novas conexões**, que é coisa diferente do número de
+circuitos simultâneos.
+
+**Limitações.** O contador de circuitos do medidor é cumulativo de aberturas, então a
+concorrência real é inferida do nº de VUs — e, pela reciclagem de 75 s descrita acima, ela oscila
+em torno desse número em vez de ser exatamente ele. O marco de "teto prático" do medidor disparou um
+falso positivo a 50 VUs porque a condição implementada testa `swap > 0` em vez de `swap`
+crescendo — o swap estava em 480 KiB residuais desde antes do run e nunca cresceu de forma
+relevante.
+
 ## 8. Não entra na pipeline
 
 Este teste de carga **não roda em CI/CD** — é uma ferramenta sob demanda, executada
