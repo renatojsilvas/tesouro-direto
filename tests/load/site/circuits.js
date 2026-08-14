@@ -10,7 +10,7 @@ const circuitOpened = new Counter("blazor_circuit_opened");
 const circuitClosed = new Counter("blazor_circuit_closed");
 const circuitFailed = new Rate("blazor_circuit_failed");
 
-const HOLD_DURATION_MS = 75000;
+const HOLD_DURATION_MS = Number(__ENV.HOLD_MS) || 75000;
 const PING_INTERVAL_MS = 15000;
 const HANDSHAKE_TEXT = `${JSON.stringify({ protocol: "blazorpack", version: 1 })}\x1e`;
 
@@ -54,7 +54,7 @@ function handshakeText(data) {
   return text;
 }
 
-export function holdCircuit() {
+export function holdCircuit(onEstablished) {
   const wsBase = wsUrlFromWebUrl(base);
   const html = fetchPage(base, interactivePath);
   const { descriptorsJson, applicationState } = extractCircuitStartArgs(html);
@@ -69,7 +69,7 @@ export function holdCircuit() {
     let settled = false;
     let circuitEstablished = false;
 
-    const finish = (asFailure) => {
+    const finish = (asFailure, reason) => {
       if (settled) return;
       settled = true;
       if (pingTimer !== null) clearInterval(pingTimer);
@@ -84,7 +84,11 @@ export function holdCircuit() {
       } catch (alreadyClosedError) {
         void alreadyClosedError;
       }
-      resolve();
+      resolve({
+        ok: !asFailure,
+        established: circuitEstablished,
+        reason: reason || (asFailure ? "erro" : "hold-completo"),
+      });
     };
 
     ws.onopen = () => {
@@ -101,17 +105,20 @@ export function holdCircuit() {
       try {
         handshakeAck = JSON.parse(text);
       } catch (e) {
-        finish(true);
+        finish(true, "handshake-ack-invalido");
         return;
       }
       if (handshakeAck && handshakeAck.error) {
-        finish(true);
+        finish(true, "handshake-ack-erro");
         return;
       }
 
       circuitEstablished = true;
       circuitOpened.add(1);
       circuitsLive.add(1);
+      if (typeof onEstablished === "function") {
+        onEstablished();
+      }
 
       ws.send(encodeInvocation("StartCircuit", [descriptorsJson, applicationState]));
 
@@ -119,14 +126,15 @@ export function holdCircuit() {
         try {
           ws.send(encodePing());
         } catch (e) {
-          finish(true);
+          finish(true, "ping-falhou");
         }
       }, PING_INTERVAL_MS);
 
       holdTimer = setTimeout(() => finish(false), HOLD_DURATION_MS);
     };
 
-    ws.onerror = () => finish(true);
-    ws.onclose = () => finish(!circuitEstablished);
+    ws.onerror = () => finish(true, circuitEstablished ? "ws-erro-pos-estabelecimento" : "ws-erro-pre-estabelecimento");
+    ws.onclose = () =>
+      finish(!circuitEstablished, circuitEstablished ? "ws-fechado-pos-estabelecimento" : "ws-fechado-pre-estabelecimento");
   });
 }
