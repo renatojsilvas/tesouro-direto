@@ -78,3 +78,105 @@ prometheus.scrape "node" {
 	scrape_interval = "30s"
 	forward_to      = [prometheus.remote_write.cloud.receiver]
 }
+
+// 77.2 — substitui loki + promtail. Quatro fluxos: nginx e kernel por tail
+// (como o promtail fazia), API e Web via push HTTP (o loki.source.api abaixo),
+// porque o sink Serilog.Sinks.Grafana.Loki não tem parâmetro de credencial
+// (SerilogExtensions.cs:11). Em vez de dar o token do Grafana Cloud a dois
+// processos .NET, o Alloy recebe o push em claro só na rede interna e reenvia
+// autenticado — a credencial fica num lugar só.
+loki.write "cloud" {
+	endpoint {
+		url = sys.env("GC_LOKI_URL")
+
+		basic_auth {
+			username = sys.env("GC_LOKI_USER")
+			password = sys.env("GC_TOKEN")
+		}
+	}
+}
+
+// ---------- nginx ----------
+local.file_match "nginx" {
+	path_targets = [{__path__ = "/var/log/nginx/*access.log", job = "nginx"}]
+}
+
+loki.source.file "nginx" {
+	targets    = local.file_match.nginx.targets
+	forward_to = [loki.process.nginx.receiver]
+}
+
+loki.process "nginx" {
+	// Formato combined log; ver infra/promtail/promtail-config.yml:20-21 (mesma decisão,
+	// grupos nomeados equivalentes — a sintaxe de regex do Alloy é RE2, a do Promtail
+	// também, só a forma de cada classe de caractere varia).
+	stage.regex {
+		expression = `^(?P<remote_addr>[\w\.]+) - (?P<remote_user>[^ ]*) \[(?P<time_local>.*)\] "(?P<method>[^ ]*) (?P<request_uri>[^ ]*) (?P<protocol>[^"]*)" (?P<status>[\d]+) (?P<body_bytes_sent>[\d]+) "(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"`
+	}
+
+	// LGPD: o IP é dado pessoal e a transferência para o Grafana Labs é internacional
+	// (Res. CD/ANPD 19/2024). Hash com salt ANTES do envio — nunca em claro sai da VPS.
+	// O `topk by ip` do dashboard continua funcionando: ele só precisa DISTINGUIR
+	// clientes, não saber o IP real. O salt é interpolado no NÍVEL DO RIVER via
+	// sys.env(), concatenado à string do template — não dentro do template Go, porque
+	// não há garantia de que `env` exista no escopo do template do stage.replace, e
+	// descobrir isso só em produção (com o hash falhando calado) seria pior.
+	stage.replace {
+		expression = `^(\d+\.\d+\.\d+\.\d+)`
+		replace    = "{{ .Value | Hash \"" + sys.env("GC_IP_SALT") + "\" }}"
+	}
+
+	// Só status e method viram label — igual ao promtail (promtail-config.yml:22-24).
+	// Promover o IP a label seria cardinalidade aberta pelo usuário.
+	stage.labels {
+		values = {status = "status", method = "method"}
+	}
+
+	stage.timestamp {
+		source = "time_local"
+		format = "02/Jan/2006:15:04:05 -0700"
+	}
+
+	forward_to = [loki.write.cloud.receiver]
+}
+
+// ---------- kernel (OOM) ----------
+local.file_match "kernel" {
+	path_targets = [{__path__ = "/var/log/host/kern.log", job = "kernel"}]
+}
+
+loki.source.file "kernel" {
+	targets    = local.file_match.kernel.targets
+	forward_to = [loki.process.kernel.receiver]
+}
+
+loki.process "kernel" {
+	// Descarta tudo que não é OOM ANTES do envio — 50 GB/mês é o teto do free tier
+	// (mesmo raciocínio de promtail-config.yml:41-52, duas formas de OOM: dentro de
+	// um cgroup de container e OOM global do host).
+	stage.match {
+		selector            = `{job="kernel"} !~ "Memory cgroup out of memory|Out of memory: Killed process"`
+		action              = "drop"
+		drop_counter_reason = "not_oom"
+	}
+
+	// SEM stage.timestamp de propósito: o kern.log traz timestamp de syslog sem ano
+	// (ex.: "Aug 12 03:14:07"). Parseado, o ano viraria 0000 e o Loki rejeitaria a
+	// linha por estar fora da janela de aceitação ("too far behind") — a linha de OOM
+	// sumiria calada, o oposto do objetivo desta tarefa. Usa-se o horário de ingestão
+	// (mesma decisão de promtail-config.yml:53-58).
+	forward_to = [loki.write.cloud.receiver]
+}
+
+// ---------- API e Web (push do Serilog) ----------
+// job="tesouro-direto-api" e job="tesouro-direto-web" nascem do PRÓPRIO sink Serilog
+// (SerilogExtensions.cs:22 em cada projeto), não daqui — loki.source.api só recebe o
+// stream já rotulado e reenvia autenticado para a nuvem.
+loki.source.api "app" {
+	http {
+		listen_address = "0.0.0.0"
+		listen_port    = 3100
+	}
+
+	forward_to = [loki.write.cloud.receiver]
+}

@@ -55,16 +55,22 @@ mkdir -p /opt/alloy-shadow
 cp infra/alloy/config.alloy /opt/alloy-shadow/config.alloy
 cp tests/load/profiling/alloy-shadow/docker-compose.yml /opt/alloy-shadow/docker-compose.yml
 
-# .env com as 3 variáveis exigidas pelo docker-compose.yml (env_file: .env).
+# .env com as 6 variáveis exigidas pelo docker-compose.yml (env_file: .env).
 # NUNCA commitar este arquivo — contém segredo. Valores vêm do stack do
-# Grafana Cloud (Connections > Prometheus > Remote write / Access Policy):
+# Grafana Cloud (Connections > Prometheus/Loki > Remote write / Access Policy):
 #   GC_PROM_URL  — endpoint remote_write do Prometheus do Grafana Cloud
 #   GC_PROM_USER — username/instance ID do Prometheus do Grafana Cloud
-#   GC_TOKEN     — API token (access policy) com escopo metrics:write
+#   GC_TOKEN     — API token (access policy) com escopo metrics:write,logs:write
+#   GC_LOKI_URL  — endpoint de push do Loki do Grafana Cloud (77.2)
+#   GC_LOKI_USER — username/instance ID do Loki do Grafana Cloud (77.2)
+#   GC_IP_SALT   — salt do hash de IP (LGPD), `openssl rand -hex 32` (77.2)
 cat > /opt/alloy-shadow/.env <<'EOF'
 GC_PROM_URL=...
 GC_PROM_USER=...
 GC_TOKEN=...
+GC_LOKI_URL=...
+GC_LOKI_USER=...
+GC_IP_SALT=...
 EOF
 
 cd /opt/alloy-shadow && docker compose up -d

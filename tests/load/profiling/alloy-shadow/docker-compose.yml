@@ -27,6 +27,12 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
       - /var/lib/node_exporter/textfile:/host/textfile:ro
+      # 77.2 — mesmos binds read-only que o promtail tinha (docker-compose.yml:410,418),
+      # necessários para os pipelines local.file_match "nginx"/"kernel" do config.alloy.
+      # DIRETÓRIO, não arquivo: bind de arquivo fixa o inode e o logrotate quebraria o
+      # tail em silêncio (mesma decisão referenciada em infra/alloy/config.alloy).
+      - /var/log/nginx:/var/log/nginx:ro
+      - /var/log:/var/log/host:ro
     networks:
       - tesouro-net
     # SEM deploy.resources.limits, SEM cpu_shares, SEM mem_limit nesta fase:

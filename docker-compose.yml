@@ -8,7 +8,9 @@ services:
     environment:
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=${DB_PASSWORD:-app123}
       - ASPNETCORE_ENVIRONMENT=Production
-      - Loki__Uri=http://loki:3100
+      # 77.2: alvo passa a ser o Alloy (loki.source.api na porta 3100), não mais o
+      # container `loki` — nada muda no protocolo, o sink Serilog não sabe a diferença.
+      - Loki__Uri=http://alloy:3100
       - ApiKey__Key=${API_KEY:?API_KEY é obrigatório no .env}
       - ADMIN_EMAIL=${ADMIN_EMAIL:?ADMIN_EMAIL é obrigatório no .env}
     depends_on:
@@ -163,7 +165,9 @@ services:
       - ApiSettings__ApiKey=${API_KEY:?API_KEY é obrigatório no .env}
       - Google__ClientId=${GOOGLE_CLIENT_ID:-}
       - Google__ClientSecret=${GOOGLE_CLIENT_SECRET:-}
-      - Loki__Uri=http://loki:3100
+      # 77.2: alvo passa a ser o Alloy (loki.source.api na porta 3100), não mais o
+      # container `loki` — nada muda no protocolo, o sink Serilog não sabe a diferença.
+      - Loki__Uri=http://alloy:3100
     depends_on:
       app:
         condition: service_healthy
@@ -452,6 +456,11 @@ services:
       - GC_PROM_URL=${GC_PROM_URL:?defina GC_PROM_URL no .env}
       - GC_PROM_USER=${GC_PROM_USER:?defina GC_PROM_USER no .env}
       - GC_TOKEN=${GC_TOKEN:?defina GC_TOKEN no .env}
+      # 77.2 — os 4 fluxos de log (nginx, kernel, API, Web) todos passam pelo mesmo
+      # loki.write "cloud" do config.alloy.
+      - GC_LOKI_URL=${GC_LOKI_URL:?defina GC_LOKI_URL no .env}
+      - GC_LOKI_USER=${GC_LOKI_USER:?defina GC_LOKI_USER no .env}
+      - GC_IP_SALT=${GC_IP_SALT:?defina GC_IP_SALT no .env}
     ports:
       - "127.0.0.1:12345:12345"
     volumes:
@@ -463,6 +472,13 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
       - /var/lib/node_exporter/textfile:/host/textfile:ro
+      # 77.2 — mesmos binds read-only que o promtail tinha (docker-compose.yml:410,418).
+      - /var/log/nginx:/var/log/nginx:ro
+      # DIRETÓRIO, não `/var/log/kern.log:/var/log/host/kern.log:ro`: bind de arquivo
+      # fixa o inode e o logrotate troca o inode na rotação (rename+recria), o que faria
+      # o tail parar de ver log novo em silêncio (decisão original em
+      # docker-compose.yml:411-417, no serviço `promtail` que este substitui).
+      - /var/log:/var/log/host:ro
     # SEM deploy.resources.limits nesta fase: o objetivo é medir o pico REAL, não
     # observar o container bater num teto que eu escolhi antes de saber o número.
 

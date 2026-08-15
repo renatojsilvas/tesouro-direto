@@ -68,6 +68,10 @@ jobs:
           GC_PROM_URL: http://dummy
           GC_PROM_USER: "1"
           GC_TOKEN: dummy
+          # 77.2: mesmo motivo, para os 3 fluxos de log novos do serviço `alloy`.
+          GC_LOKI_URL: http://dummy
+          GC_LOKI_USER: "1"
+          GC_IP_SALT: dummy
         run: |
           set -e
           docker compose -f docker-compose.yml config -q
@@ -175,7 +179,7 @@ jobs:
             # PR -- senao a interpolacao do compose falha inteira (nenhum servico e
             # recriado, nem os que nao tem nada a ver com a variavel nova) antes mesmo do
             # `docker compose up -d` rodar. Ver scratchpad/medir-alloy.md secao 3.0/CHECKLIST.
-            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGC_PROM_URL=%s\nGC_PROM_USER=%s\nGC_TOKEN=%s\n' \
+            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGC_PROM_URL=%s\nGC_PROM_USER=%s\nGC_TOKEN=%s\nGC_LOKI_URL=%s\nGC_LOKI_USER=%s\nGC_IP_SALT=%s\n' \
               '${{ secrets.DB_PASSWORD }}' \
               '${{ secrets.API_KEY }}' \
               '${{ secrets.GRAFANA_PASSWORD }}' \
@@ -187,6 +191,9 @@ jobs:
               '${{ secrets.GC_PROM_URL }}' \
               '${{ secrets.GC_PROM_USER }}' \
               '${{ secrets.GC_TOKEN }}' \
+              '${{ secrets.GC_LOKI_URL }}' \
+              '${{ secrets.GC_LOKI_USER }}' \
+              '${{ secrets.GC_IP_SALT }}' \
               > /opt/tesouro-direto/.env
             chmod 600 /opt/tesouro-direto/.env
       - name: Deploy via SSH

@@ -52,6 +52,24 @@ public class AlloyContractTests
     }
 
     /// <summary>
+    /// job="nginx" e job="kernel" (77.2) nascem no `path_targets` de cada
+    /// `local.file_match` (ex.: `path_targets = [{__path__ = "...", job = "nginx"}]`) — a
+    /// mesma posição sintática do teste acima. O literal "nginx"/"kernel" também aparece
+    /// nos rótulos dos blocos `local.file_match "nginx"`, `loki.source.file "nginx"` e
+    /// `loki.process "nginx"` (idem para "kernel") — esses são só nomes de componente
+    /// Alloy e não determinam o label da série; um `Contains` solto casaria com
+    /// qualquer um deles e ficaria verde mesmo com o `job =` real errado ou ausente.
+    /// </summary>
+    [Theory]
+    [InlineData("nginx")]
+    [InlineData("kernel")]
+    public void ConfigAlloy_DeclaraJobDoPathTargetDeLog(string job)
+    {
+        var config = ConfigSemComentarios();
+        Assert.Matches(new Regex($"job\\s*=\\s*\"{job}\""), config);
+    }
+
+    /// <summary>
     /// job="node" não nasce de nenhum literal `job = "..."` — o `prometheus.exporter.unix`
     /// rotula os alvos com um job próprio e é o `replacement = "node"` dentro do
     /// `discovery.relabel` que força o nome do contrato. O rótulo do bloco
