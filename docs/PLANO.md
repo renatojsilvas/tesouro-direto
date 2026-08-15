@@ -1179,6 +1179,26 @@ No x64 a variável **funciona** — zera as regiões e o `shmem` — mas a memó
 >
 > **Ressalvas registradas pela revisão, aceitas e não corrigidas nesta fase:** (a) o número medido na 77.0 é um **piso**, não o custo final — mede um único `prometheus.scrape`, enquanto a 77.1 acrescenta o exporter de host e a 77.2 os 4 fluxos de log; o runbook exige re-medir ao fim da 77.2 contra a mesma tabela, e o risco é contido porque nada é removido antes da 77.4; (b) o Alloy roda sem teto e sem alerta próprio numa VPS com ~907 MB de folga — mitigado por uma guarda de cron em 500 MB no runbook, calibrada acima do teto de decisão de 350 MB para não enviesar o número; (c) durante o shadow mode, Alloy e Prometheus local fazem scrape concorrente do mesmo `app:8080/metrics`, efeito colateral esperado e de baixo impacto.
 
+> **Portão FECHADO em 15/08/2026: segue.** Pico medido da não-descartável do Alloy: **51,99 MB** pela métrica canônica `td_container_memory_unreclaimable_bytes` (a `fp-alloy-guard.sh`, com a fórmula errada de `slab`, reportava 50,8 MB). Contra o limiar `<200 MB` da tabela de decisão, margem de **3,8×**.
+>
+> **O que o "segue" autoriza:** abrir a **77.1**, não a tarefa 77 inteira. O número é um **piso**: mede UM alvo de scrape, sem exporter de host e sem pipeline de log. A 77.1 traz as **370 séries** que o `node-exporter` expõe hoje (das quais **89** são `td_container_*`) e a 77.2 traz o log do nginx, que sob a carga medida chegou a **~610 linhas/s**. Re-medir contra a mesma tabela ao fim da 77.2.
+>
+> **Condições da medição:** janela de **~9h** (15/08 01:26:56 UTC até ~10:30), não as 24h planejadas — encurtada por decisão do dono, justificada pela estabilidade (valor cresceu monotonicamente 50,55→50,83 MB, sem platô mas com inclinação de ~0,15 MB/9h, que extrapolada a 24h daria ~52,3 MB). Zero OOM, zero restart, zero throttling de CPU (`nr_throttled=0`), WAL em disco de 2 MB, 570k amostras enviadas com **zero falha e zero retry**.
+>
+> **Janela de carga executada** 10:24-10:28 UTC contra produção (autorizada explicitamente pelo dono via `ALLOW_PROD=1`): pico de **36.558 req/min** no nginx, dos quais **91,5% viraram 429** barrados pelo `limit_req` de 30 r/s por IP — só 6.128 chegaram ao app. **A não-descartável do Alloy não variou** (51,97→51,98 MB), confirmando que o custo do Alloy é função da quantidade de séries, não do tráfego. Consequência honesta: a janela de carga **não prova nada** sobre 77.1/77.2 sob carga.
+>
+> **A carga caiu dentro dos últimos ~30 min do gate de 24h da tarefa 76** (que fechava 10:55 UTC). Varredura do `fp-gate76.csv` inteiro confirma **sem dano**: nenhum OOM, nenhum restart, pico do `app` em 53% da não-descartável. Foi coincidência de dimensionamento, não coordenação — registrado como tal.
+>
+> **Defeito de método que respinga na tarefa 76:** o `fp-gate76.sh` usa `anon+shmem+slab` em vez da fórmula canônica `anon+shmem+kernel` de `infra/host/container-metrics.sh`, que avisa explicitamente contra somar `slab`. Os números do gate da 76 **subcontam** a não-descartável em ~2% e são ligeiramente otimistas. É a terceira vez que a tarefa tropeça na definição desta métrica (74.3, 76 e agora 77.0).
+>
+> **Correção da tabela de decisão do plano, levantada pelo dono:** o limiar `>350 MB → para` é errado. O ponto de equilíbrio real é **516 MB** (o teto somado dos 5 containers que saem). Entre 350 e 516 MB a migração ainda **economiza** memória *e* entrega o alerting que sobrevive à queda da VPS *e* mata o promtail EOL. A tabela mandaria abortar exatamente aí, sacrificando o motivo principal da tarefa para proteger um orçamento que não estava sendo violado. Registrado porque o raciocínio errado sobrevive à medição que o tornou irrelevante.
+>
+> **Projeção de economia** (regra de folga da 74.3, `max(pico×1,3 ; pico+64MB)`): teto do Alloy ≈ **116 MB** → arredondar para 128M. Saem 516 MB de teto somado; saldo em repouso **−388 MB**, levando a VPS de 1060 MB (53,9%) para ~672 MB (~34%). **Piso, não final.**
+>
+> **BLOQUEIO DE MERGE novo (achado da revisão):** o serviço `alloy` commitado no `docker-compose.yml` usa `container_name: tesouro-direto-alloy`, **o mesmo nome** do container da stack-sombra que segue rodando em `/opt/alloy-shadow`. Mergear antes de limpar a sombra faz o próximo deploy colidir no nome entre dois projetos compose no mesmo host. A limpeza está documentada em `tests/load/profiling/alloy-shadow/README.md` e é critério de aceite da fase. Some-se à pré-condição já registrada (os 3 secrets `GC_*` não vazios).
+>
+> **Pendência operacional:** há **dois** cron órfãos na VPS agora — `fp-gate76.sh` (herdado da 76, janela já fechada) e `fp-alloy-guard.sh` (desta fase). Ambos precisam sair; o da 76 pode sair já.
+
 ---
 
 ## Dependências entre tarefas

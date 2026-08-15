@@ -1,0 +1,35 @@
+# Tarefa 77.0 — stack "sombra" (shadow) do Grafana Alloy, isolada de
+# /opt/tesouro-direto propositalmente: existe só para medir o pico real de
+# memória/CPU do Alloy antes de decidir se ele entra na stack de produção.
+# Ficar separada evita merge/deploy na produção e faz com que o próximo
+# deploy de /opt/tesouro-direto não seja afetado por este experimento.
+# Rollback: docker compose -f /opt/alloy-shadow/docker-compose.yml down -v
+
+services:
+  alloy:
+    image: grafana/alloy:v1.18.1
+    container_name: tesouro-direto-alloy
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    env_file: .env
+    ports:
+      - "127.0.0.1:12345:12345"
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    networks:
+      - tesouro-net
+    # SEM deploy.resources.limits, SEM cpu_shares, SEM mem_limit nesta fase:
+    # o objetivo é medir o pico REAL, não observar o container bater num
+    # teto escolhido antes de saber o número.
+
+volumes:
+  alloy-data:
+
+networks:
+  tesouro-net:
+    external: true
