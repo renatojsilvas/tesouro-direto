@@ -110,8 +110,30 @@ loki.process "nginx" {
 	// Formato combined log; ver infra/promtail/promtail-config.yml:20-21 (mesma decisão,
 	// grupos nomeados equivalentes — a sintaxe de regex do Alloy é RE2, a do Promtail
 	// também, só a forma de cada classe de caractere varia).
+	//
+	// Revisão adversarial da 77.2 (achados 3 e 4) — divergências de classe de caractere
+	// vs. promtail-config.yml:21, avaliadas uma a uma:
+	//   - remote_addr ganhou `:` (`[\w\.:]+`, era `[\w\.]+`) DE PROPÓSITO: o combined log
+	//     format sempre começa pelo remote_addr, seja qual for a família; sem `:` uma
+	//     linha IPv6 falha a extração INTEIRA e perde status/method em silêncio.
+	//   - method volta a `[A-Z]+` (era `[^ ]*`) — ver stage.labels abaixo.
+	//   - status volta a `\d{3}` (era `[\d]+`) — status TAMBÉM é label (stage.labels);
+	//     `[\d]+` sem teto de tamanho abre a mesma classe de risco de cardinalidade do
+	//     achado do `method`, caso os campos se desalinhem numa linha malformada.
+	//   - remote_user (`[^ ]*` vs `\S+`), request_uri (`[^ ]*` vs `\S+`) e protocol
+	//     (`[^"]*` vs `[^"]+`) MANTIDOS como no diff da 77.2: nenhum dos três é
+	//     promovido a label pelo stage.labels abaixo, então a diferença (0+ vs 1+,
+	//     ou excluir só espaço vs. todo whitespace) não tem efeito de cardinalidade;
+	//     sendo mais permissivos, na pior hipótese eles ajudam a linha a casar em vez
+	//     de derrubar o parse inteiro por um campo que nem vira label.
+	//   - time_local (`.*` vs `[^\]]+`) MANTIDO: em teoria `.*` guloso poderia
+	//     estender a captura até um `] "` mais adiante na linha, mas o nginx escapa
+	//     `"` nos campos referer/user_agent, então não há como injetar o literal `] "`
+	//     que o faria backtrackar para o lugar errado; e mesmo que falhasse, o
+	//     stage.timestamp cai para o horário de ingestão em vez de quebrar a linha —
+	//     não é label, não abre cardinalidade.
 	stage.regex {
-		expression = `^(?P<remote_addr>[\w\.]+) - (?P<remote_user>[^ ]*) \[(?P<time_local>.*)\] "(?P<method>[^ ]*) (?P<request_uri>[^ ]*) (?P<protocol>[^"]*)" (?P<status>[\d]+) (?P<body_bytes_sent>[\d]+) "(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"`
+		expression = `^(?P<remote_addr>[\w\.:]+) - (?P<remote_user>[^ ]*) \[(?P<time_local>.*)\] "(?P<method>[A-Z]+) (?P<request_uri>[^ ]*) (?P<protocol>[^"]*)" (?P<status>\d{3}) (?P<body_bytes_sent>[\d]+) "(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"`
 	}
 
 	// LGPD: o IP é dado pessoal e a transferência para o Grafana Labs é internacional
@@ -121,13 +143,27 @@ loki.process "nginx" {
 	// sys.env(), concatenado à string do template — não dentro do template Go, porque
 	// não há garantia de que `env` exista no escopo do template do stage.replace, e
 	// descobrir isso só em produção (com o hash falhando calado) seria pior.
+	//
+	// Achado da revisão adversarial: `^(\d+\.\d+\.\d+\.\d+)` só casa IPv4. Uma linha que
+	// comece com IPv6 (ou `::ffff:a.b.c.d`) não sofre a substituição e o IP vai em claro
+	// para o Grafana Labs, sem erro visível. Ancorar no primeiro TOKEN da linha (sempre o
+	// remote_addr no combined log format, qualquer que seja a família) é seguro mesmo no
+	// pior caso: se a linha não for do formato esperado, o pior resultado é hashear um
+	// token que não era IP — inofensivo, e falha para o lado seguro (nunca vaza em claro).
 	stage.replace {
-		expression = `^(\d+\.\d+\.\d+\.\d+)`
+		expression = `^(\S+)`
 		replace    = "{{ .Value | Hash \"" + sys.env("GC_IP_SALT") + "\" }}"
 	}
 
 	// Só status e method viram label — igual ao promtail (promtail-config.yml:22-24).
 	// Promover o IP a label seria cardinalidade aberta pelo usuário.
+	//
+	// Achado da revisão adversarial: o diff original trocou `[A-Z]+` (promtail) por
+	// `[^ ]*` para method. Não é cosmético — com `[A-Z]+`, um token que não seja só
+	// maiúsculas derruba a regex INTEIRA e a linha some sem labels (barreira de
+	// cardinalidade de fato). Com `[^ ]*`, qualquer lixo de scanner vira valor do label
+	// `method`, e o nginx só escapa `"`, `\`, controle e bytes altos — nada impedia um
+	// método arbitrário de virar label. Restaurado para `[A-Z]+`.
 	stage.labels {
 		values = {status = "status", method = "method"}
 	}

@@ -57,8 +57,18 @@ public class AlloyContractTests
     /// mesma posição sintática do teste acima. O literal "nginx"/"kernel" também aparece
     /// nos rótulos dos blocos `local.file_match "nginx"`, `loki.source.file "nginx"` e
     /// `loki.process "nginx"` (idem para "kernel") — esses são só nomes de componente
-    /// Alloy e não determinam o label da série; um `Contains` solto casaria com
-    /// qualquer um deles e ficaria verde mesmo com o `job =` real errado ou ausente.
+    /// Alloy e não determinam o label da série.
+    ///
+    /// Achado da revisão adversarial da 77.2: o `selector` LogQL do `stage.match` dentro
+    /// de `loki.process "kernel"` (`{job="kernel"} !~ "..."`) TAMBÉM contém o literal
+    /// `job="kernel"` — mas ele só FILTRA a série por esse label, não a DEFINE. Um regex
+    /// livre `job\s*=\s*"kernel"` solto no arquivo casa esse `selector` sozinho e fica
+    /// verde mesmo com o `path_targets` quebrado — provado por mutação: trocar
+    /// `job = "kernel"` para `"kernel-BROKEN"` só dentro do `path_targets` deixava os 10
+    /// testes verdes antes desta correção (vácuo). Por isso o padrão abaixo ancora
+    /// especificamente dentro do literal de lista `path_targets = [{...}]`, a única
+    /// posição sintática que de fato define o label — vale tanto para nginx quanto para
+    /// kernel, ainda que hoje só kernel tenha um `stage.match` que repete o literal.
     /// </summary>
     [Theory]
     [InlineData("nginx")]
@@ -66,7 +76,9 @@ public class AlloyContractTests
     public void ConfigAlloy_DeclaraJobDoPathTargetDeLog(string job)
     {
         var config = ConfigSemComentarios();
-        Assert.Matches(new Regex($"job\\s*=\\s*\"{job}\""), config);
+        var pattern = new Regex(
+            "path_targets\\s*=\\s*\\[\\{[^}]*\\bjob\\s*=\\s*\"" + job + "\"[^}]*\\}\\]");
+        Assert.Matches(pattern, config);
     }
 
     /// <summary>
