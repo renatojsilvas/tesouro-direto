@@ -21,6 +21,12 @@ services:
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
       - alloy-data:/var/lib/alloy/data
+      # 77.1 — mesmos binds read-only do node-exporter (docker-compose.yml:377-380),
+      # que o prometheus.exporter.unix do config.alloy passa a ler.
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /var/lib/node_exporter/textfile:/host/textfile:ro
     networks:
       - tesouro-net
     # SEM deploy.resources.limits, SEM cpu_shares, SEM mem_limit nesta fase:

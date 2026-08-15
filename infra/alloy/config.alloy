@@ -20,3 +20,61 @@ prometheus.scrape "app" {
 	scrape_interval = "30s" // NÃO subir para 60s: quebra o `for: 1m` de td-db-readiness-down
 	forward_to      = [prometheus.remote_write.cloud.receiver]
 }
+
+// Substitui o container node-exporter. Os NOMES de coletor são os mesmos de
+// docker-compose.yml:339-375 — inclusive o textfile, que sustenta 7 regras de alerta.
+// Os SUB-FILTROS default do node-exporter embutido no Alloy v1.18.1 divergem dos do
+// prom/node-exporter:v1.12.1 usado hoje (lib vendored de versão diferente): o default do
+// Alloy para diskstats.device-exclude NÃO exclui zram, e o de filesystem.fs-types-exclude
+// NÃO exclui erofs. Por isso os dois blocos abaixo declaram os valores EFETIVOS lidos do
+// próprio node-exporter em produção (`docker logs tesouro-direto-node-exporter`, linhas
+// "Parsed flag --collector.diskstats.device-exclude"/"...filesystem.fs-types-exclude" —
+// são os defaults compilados dele, já que o compose não os sobrescreve), em vez de confiar
+// no default de biblioteca do Alloy. Inofensivo nesta VPS hoje (só vda/vdb, sem zram), mas
+// evita divergência silenciosa em outra máquina.
+prometheus.exporter.unix "host" {
+	procfs_path = "/host/proc"
+	sysfs_path  = "/host/sys"
+	rootfs_path = "/rootfs"
+
+	set_collectors = [
+		"cpu", "meminfo", "loadavg", "filesystem", "diskstats",
+		"netdev", "stat", "uname", "time", "os", "textfile",
+	]
+
+	filesystem {
+		mount_points_exclude = "^/(sys|proc|dev|host|etc)($|/)"
+		fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$"
+	}
+
+	// O bloco de configuração do coletor "diskstats" chama-se "disk" no schema do Alloy.
+	disk {
+		device_exclude = "^(z?ram|loop|fd|(h|s|v|xv)d[a-z]|nvme\\d+n\\d+p)\\d+$"
+	}
+
+	// Sem isso, cada deploy cria veth* novas = lote novo de séries ativas contra o teto de 10k.
+	netdev {
+		device_exclude = "^(veth.*|docker.*|br-.*)$"
+	}
+
+	textfile {
+		directory = "/host/textfile"
+	}
+}
+
+// job="node" — consumido por td-disco-cheio e pelas 7 regras td-container-*.
+// O exporter.unix rotula os alvos com um job próprio; discovery.relabel força o nome do contrato.
+discovery.relabel "node" {
+	targets = prometheus.exporter.unix.host.targets
+
+	rule {
+		target_label = "job"
+		replacement  = "node"
+	}
+}
+
+prometheus.scrape "node" {
+	targets         = discovery.relabel.node.output
+	scrape_interval = "30s"
+	forward_to      = [prometheus.remote_write.cloud.receiver]
+}
