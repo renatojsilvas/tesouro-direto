@@ -8,7 +8,7 @@
 services:
   alloy:
     image: grafana/alloy:v1.18.1
-    container_name: tesouro-direto-alloy
+    container_name: tesouro-direto-alloy-shadow
     restart: unless-stopped
     command:
       - run

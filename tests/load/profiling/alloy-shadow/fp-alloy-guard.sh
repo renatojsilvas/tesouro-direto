@@ -24,7 +24,7 @@
 # não pode mudar a decisão, só evita OOM do host.
 set -euo pipefail
 
-CONTAINER="tesouro-direto-alloy"
+CONTAINER="tesouro-direto-alloy-shadow"
 CSV=/var/tmp/fp-alloy.csv
 LIMITE_BYTES=$((500 * 1024 * 1024))
 
