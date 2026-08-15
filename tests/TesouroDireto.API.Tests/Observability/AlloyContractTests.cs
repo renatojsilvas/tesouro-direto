@@ -35,8 +35,9 @@ public class AlloyContractTests
     }
 
     // Cobre SÓ os jobs que existem ao fim desta fase. `nginx` e `kernel` entram na 77.2 e
-    // `TodoJobUsadoNasRegras` na 77.3, junto com os fatos que verificam — teste que nasce
-    // vermelho e atravessa PR viola o Global Constraint e a regra never_skip_failing_tests.
+    // `TodoJobUsadoNasRegras_NasceNaPosicaoQueODefineNoConfigAlloy` na 77.3, junto com os
+    // fatos que verificam — teste que nasce vermelho e atravessa PR viola o Global Constraint
+    // e a regra never_skip_failing_tests.
 
     /// <summary>
     /// job="tesouro-direto-api" nasce no target do `prometheus.scrape "app"`
@@ -93,6 +94,74 @@ public class AlloyContractTests
     {
         var config = ConfigSemComentarios();
         Assert.Matches(new Regex("replacement\\s*=\\s*\"node\""), config);
+    }
+
+    /// <summary>
+    /// Passo 9 da 77.3 — trava os jobs que as 18 regras de `infra/grafana/cloud/rules.yaml`
+    /// consomem contra as posições que os DEFINEM em config.alloy. O teste do PLANO, copiado
+    /// literalmente, nasceria vácuo pela terceira vez: fazia `config.Contains($"\"{job}\"")`,
+    /// o mesmo `Contains` solto que as revisões adversariais da 77.1 e da 77.2 já condenaram
+    /// (comentários acima). Concretamente, o literal `"tesouro-direto-api"` aparece duas vezes
+    /// em COMENTÁRIO no config.alloy — no cabeçalho que anuncia o job do
+    /// `prometheus.scrape "app"` e no bloco que explica de onde `loki.source.api` recebe o
+    /// stream já rotulado — além da ocorrência de verdade, dentro do `targets` desse mesmo
+    /// `prometheus.scrape "app"`; quebrar só essa última deixaria o `Contains` verde mesmo
+    /// assim, sustentado pelos comentários. Por isso: (1) os jobs vêm de rules.yaml por regex,
+    /// nunca hardcoded aqui; (2) cada job é checado contra a posição sintática que o DEFINE em
+    /// config.alloy, reaproveitando `ConfigSemComentarios()` e os mesmos padrões âncora usados
+    /// acima — nunca o literal solto; (3) o mapa job→padrão é FECHADO: um job novo em
+    /// rules.yaml sem entrada aqui falha com mensagem explícita, em vez de passar batido — o
+    /// mesmo buraco de sempre.
+    ///
+    /// Fora de escopo deliberado: job="node" não é citado por NENHUMA regra de rules.yaml —
+    /// `td-disco-cheio` e as 7 regras `td-container-*` selecionam por NOME DE MÉTRICA
+    /// (`node_filesystem_*`, `td_container_*`), sem filtro de `job`; `host.json` idem. Quem
+    /// cobre job="node" é `ConfigAlloy_ForcaJobNodeViaRelabel`, não este teste — este teste é
+    /// derivado de rules.yaml e não pode inventar cobertura que os dados não sustentam.
+    /// </summary>
+    [Fact]
+    public void TodoJobUsadoNasRegras_NasceNaPosicaoQueODefineNoConfigAlloy()
+    {
+        var rulesYaml = File.ReadAllText(Path.Combine(RepoRoot(), "infra/grafana/cloud/rules.yaml"));
+
+        // `=~?` casa tanto o matcher exato do PromQL/LogQL (`job="x"`) quanto o de regex
+        // (`job=~"x"`). Sem o `?`, uma regra futura escrita como `job=~"nginx|kernel"` não
+        // casaria o extrator, o job sumiria da lista abaixo e o teste passaria sem checar
+        // nada sobre ela — vácuo silencioso. Com o `?`, essa mesma regra extrai o valor
+        // literal `nginx|kernel` (a alternação não é interpretada — deliberado: este teste
+        // não faz parsing de regex PromQL), que não existe no mapa fechado abaixo, e o teste
+        // FALHA alto pedindo uma decisão humana. Falhar é o comportamento certo aqui: hoje
+        // nenhuma regra usa `=~` (confirmado por grep em rules.yaml), então isto é uma trava
+        // para o dia em que alguém escrever uma, não uma tentativa de decifrar a alternação.
+        var jobsNasRegras = Regex.Matches(rulesYaml, "job\\s*=~?\\s*\"([^\"]+)\"")
+            .Select(m => m.Groups[1].Value)
+            .Distinct()
+            .ToList();
+
+        // Sem isto, um regex que não casa nada deixaria o foreach abaixo sem iterações — o
+        // teste passaria sem checar coisa nenhuma (o mesmo vácuo de sempre, só que disfarçado
+        // de fonte de dados vazia em vez de asserção solta).
+        Assert.NotEmpty(jobsNasRegras);
+
+        var padraoAncoraPorJob = new Dictionary<string, Regex>
+        {
+            // Mesma posição sintática de ConfigAlloy_DeclaraJobDoScrapeDireto.
+            ["tesouro-direto-api"] = new Regex("job\\s*=\\s*\"tesouro-direto-api\""),
+            // Mesma posição sintática (path_targets) de ConfigAlloy_DeclaraJobDoPathTargetDeLog.
+            ["nginx"] = new Regex("path_targets\\s*=\\s*\\[\\{[^}]*\\bjob\\s*=\\s*\"nginx\"[^}]*\\}\\]"),
+            ["kernel"] = new Regex("path_targets\\s*=\\s*\\[\\{[^}]*\\bjob\\s*=\\s*\"kernel\"[^}]*\\}\\]"),
+        };
+
+        var config = ConfigSemComentarios();
+        foreach (var job in jobsNasRegras)
+        {
+            Assert.True(
+                padraoAncoraPorJob.TryGetValue(job, out var padrao),
+                $"job=\"{job}\" aparece em rules.yaml mas não tem posição definidora conhecida " +
+                "em config.alloy — decida onde esse job nasce e acrescente ao mapa acima.");
+
+            Assert.Matches(padrao!, config);
+        }
     }
 
     [Theory]

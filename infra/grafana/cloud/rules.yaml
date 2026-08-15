@@ -1,0 +1,697 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: tesouro-alertas
+    folder: TesouroDireto
+    interval: 1m
+    rules:
+      - uid: td-frescor-dado
+        title: Dado velho (frescor > 48h útil)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: (time() - max(import_last_success_timestamp_seconds{job="tesouro-direto-api"})) and on() (day_of_week(vector(time()-3*3600))>=1) and on() (day_of_week(vector(time()-3*3600))<=5) and on() (hour(vector(time()-3*3600))>=9)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 172800
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 15m
+        annotations:
+          summary: Preço do Tesouro sem atualização há mais de 48h úteis
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-app-down
+        title: App down (target não respondendo)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: up{job="tesouro-direto-api"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: eq
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: O Prometheus não está conseguindo fazer scrape do target tesouro-direto-api
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: td-db-readiness-down
+        title: DB/readiness down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: aspnetcore_healthcheck_status{job="tesouro-direto-api",name="AppDbContext"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: eq
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: Health check do banco de dados (readiness) está falhando
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: td-http-5xx-alto
+        title: Taxa de erro 5xx alta
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: (sum(rate(http_request_duration_seconds_count{job="tesouro-direto-api",code=~"5.."}[5m])) / sum(rate(http_request_duration_seconds_count{job="tesouro-direto-api"}[5m]))) and on() (sum(rate(http_request_duration_seconds_count{job="tesouro-direto-api"}[5m])) > 0.05)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.05
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Mais de 5% das respostas HTTP são 5xx nos últimos 5m (com tráfego mínimo)
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: td-http-p95-alto
+        title: Latência p95 alta
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="tesouro-direto-api"}[5m])) by (le))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1.5
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: p95 de latência HTTP acima de 1.5s nos últimos 10m
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-import-falha
+        title: Falha de import (E2)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(import_runs_total{job="tesouro-direto-api",outcome="failure"}[6h])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Import de CSV falhou nas últimas 6h
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-simulador-degradado
+        title: Simulador degradado (BCB indisponível)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(simulation_failures_total{job="tesouro-direto-api",reason="Projecao.HttpError"}[15m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 3
+                    type: gte
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: 3 ou mais falhas de simulação por indisponibilidade do BCB (Projecao.HttpError) em 15m
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-simulador-falha-ratio
+        title: Simulador - taxa de falhas alta (ratio)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: (sum(rate(simulation_failures_total{job="tesouro-direto-api"}[10m])) / sum(rate(simulations_total{job="tesouro-direto-api"}[10m]))) and on() (sum(increase(simulations_total{job="tesouro-direto-api"}[10m])) >= 5)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.2
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: Taxa de falha de simulação acima de 20% (com volume mínimo de amostras) em 10m
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-disco-cheio
+        title: Disco raiz acima de 85%
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: (1 - (node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"})) * 100
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 85
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: Uso do disco raiz (/) acima de 85% há mais de 10m
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: td-rate-limit-anomalo
+        title: Rate limit anômalo (429 na borda)
+        condition: C
+        data:
+          - refId: A
+            queryType: instant
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_LOKI__
+            model:
+              datasource:
+                type: loki
+                uid: __DS_LOKI__
+              expr: sum(count_over_time({job="nginx", status="429"}[5m]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: instant
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 20
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        annotations:
+          summary: Mais de 20 respostas 429 (rate limit) na borda nginx em 5m
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-container-memoria-warning
+        title: Memória de container acima de 85% do limite
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: (td_container_memory_unreclaimable_bytes / td_container_memory_limit_bytes) * 100 and on(container) (td_container_memory_limit_bytes > 0)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 85
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Memória não-descartável (anon+shmem+kernel) de um container acima de 85% do limite configurado por mais de 5m
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-container-memoria-critical
+        title: Memória de container acima de 95% do limite
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: (td_container_memory_unreclaimable_bytes / td_container_memory_limit_bytes) * 100 and on(container) (td_container_memory_limit_bytes > 0)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 95
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: Memória não-descartável (anon+shmem+kernel) de um container acima de 95% do limite configurado por mais de 2m — risco iminente de OOM kill
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: td-container-reclaim-sustentado
+        title: Reclaim de memória sustentado em container
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(td_container_memory_reclaim_events_total[15m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 100
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Mais de 100 eventos de reclaim de memória (memory.events max) em 15m — linha de base medida é zero, então isto é pressão real
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-container-cpu-throttling
+        title: Throttling de CPU sustentado em container
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: (sum(rate(td_container_cpu_cfs_throttled_periods_total[5m])) by (container) / sum(rate(td_container_cpu_cfs_periods_total[5m])) by (container)) * 100 and on(container) (sum(rate(td_container_cpu_cfs_periods_total[5m])) by (container) > 0) and on(container) (sum(rate(td_container_cpu_cfs_throttled_periods_total[5m])) by (container) > 1)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 20
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: Mais de 20% dos períodos de CPU de um container foram throttled (janela de 5m, com volume absoluto acima de 1 período/s), sustentado por 10m
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-container-restart
+        title: Container reiniciou
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(td_container_restarts_total[15m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Container reiniciou nos últimos 15m — nada reinicia sozinho nesta stack fora de um deploy
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-container-oom-kill
+        title: OOM kill detectado (métrica de container)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(td_container_oom_kill_total[10m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: Contador de OOM kill do cgroup incrementou nos últimos 10m
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: td-metricas-container-obsoletas
+        title: Métricas de container obsoletas (timer do host parado)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: time() - max(node_textfile_mtime_seconds)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 300
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: O textfile collector do node-exporter está com dado velho (>5m) — timer do host parado ou script falhando
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-oom-kernel-log
+        title: OOM detectado no log de kernel (via Loki)
+        condition: C
+        data:
+          - refId: A
+            queryType: instant
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_LOKI__
+            model:
+              datasource:
+                type: loki
+                uid: __DS_LOKI__
+              expr: sum(count_over_time({job="kernel"}[5m]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: instant
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        annotations:
+          summary: Log de kernel do host reportou OOM (memcg de container ou global) nos últimos 5m
+        labels:
+          severity: critical
+        isPaused: false

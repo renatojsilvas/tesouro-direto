@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# Recria na nuvem o alerting versionado em infra/grafana/cloud/.
+#
+# A API de provisioning do Grafana Cloud NAO aceita o formato de arquivo do
+# /export (confirmado ao vivo: POST /api/v1/provisioning/contact-points com o YAML
+# 'apiVersion: 1 / contactPoints: [...]' devolve HTTP 400 "bad request data"). Esse
+# formato so e consumivel pelo provisioning POR ARQUIVO — que e justamente o recurso
+# que a nuvem nao tem. Por isso este script nao faz POST/PUT do YAML inteiro: ele
+# decompoe cada arquivo na forma que a API de fato aceita (um EmbeddedContactPoint
+# por receiver, uma arvore de rota sem envelope para policies, um grupo de regras
+# por PUT). As formas abaixo foram confirmadas por sondagem HTTP real contra a
+# stack, nao inferidas da documentacao.
+#
+# ORCAMENTO DE VERSAO: o free tier do Grafana Cloud guarda no maximo 10 VERSOES POR
+# REGRA. Cada PUT de rule-group deste script gera uma versao nova para as regras
+# daquele grupo — reaplicar o script em loop (ex.: um cron ou um retry automatico)
+# consome esse orcamento e eventualmente perde o historico mais antigo. Rodar sob
+# demanda, nao em loop.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+source scripts/grafana-cloud/lib.sh
+
+DS_PROM=$(gc_datasource_uid prometheus)
+DS_LOKI=$(gc_datasource_uid loki)
+[ -n "$DS_PROM" ] || { echo "datasource prometheus nao encontrado na nuvem" >&2; exit 1; }
+[ -n "$DS_LOKI" ] || { echo "datasource loki nao encontrado na nuvem" >&2; exit 1; }
+echo "datasources: prom=$DS_PROM loki=$DS_LOKI"
+
+FOLDER_UID=$(gc_folder_uid TesouroDireto)
+echo "folder TesouroDireto: $FOLDER_UID"
+
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+
+sed -e "s/__DS_PROM__/${DS_PROM}/g" \
+    -e "s/__DS_LOKI__/${DS_LOKI}/g" \
+    infra/grafana/cloud/rules.yaml > "$TMP/rules.yaml"
+
+# Rede de seguranca: o export-local.sh normaliza o bottoken (real ou '[REDACTED]',
+# ver comentario la) para este placeholder. Se ele nao estiver aqui, o sed abaixo e
+# um NO-OP silencioso — o contact point sobe na nuvem com o valor literal que estava
+# no arquivo (as vezes '[REDACTED]') em vez do token real, e o Telegram nunca
+# entrega, sem erro nenhum na criacao do contact point.
+grep -q '\${TELEGRAM_BOT_TOKEN}' infra/grafana/cloud/contactpoints.yaml || {
+  echo "ABORTADO: infra/grafana/cloud/contactpoints.yaml nao contem o placeholder \${TELEGRAM_BOT_TOKEN} — o sed seria um no-op e o Telegram ficaria mudo em silencio" >&2
+  exit 1
+}
+
+# O contact point traz o token por env, igual ao provisioning local.
+sed -e "s|\${TELEGRAM_BOT_TOKEN}|${TELEGRAM_BOT_TOKEN:?defina TELEGRAM_BOT_TOKEN}|g" \
+    infra/grafana/cloud/contactpoints.yaml > "$TMP/contactpoints.yaml"
+
+# Helper generico para POST/PUT de corpo JSON na API de provisioning (diferente do
+# YAML de arquivo: este e o formato que a API realmente aceita).
+provisioning_call() {
+  local method="$1" path="$2" body="$3"
+  curl -sf -X "$method" \
+    -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -H 'X-Disable-Provenance: true' \
+    -d "$body" \
+    "${GC_GRAFANA_URL}${path}"
+}
+
+# Converte duracao no estilo Go ("1m", "30s", "2h") — formato do campo `interval` no
+# arquivo — para segundos inteiros, que e o que a API de rule-groups exige. ABORTA em
+# vez de cair num default silencioso: um intervalo errado muda QUANDO a regra avalia
+# (ex.: o `for: 1m` de td-db-readiness-down pressupoe scrape de 30s — um interval
+# errado por default quebraria essa premissa sem avisar ninguem).
+converter_intervalo_para_segundos() {
+  local intervalo="$1"
+  if [[ "$intervalo" =~ ^([0-9]+)h$ ]]; then
+    echo $(( ${BASH_REMATCH[1]} * 3600 ))
+  elif [[ "$intervalo" =~ ^([0-9]+)m$ ]]; then
+    echo $(( ${BASH_REMATCH[1]} * 60 ))
+  elif [[ "$intervalo" =~ ^([0-9]+)s$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    echo "ABORTADO: intervalo de grupo '${intervalo}' em formato desconhecido (esperado Ns/Nm/Nh)" >&2
+    return 1
+  fi
+}
+
+# --- Contact points -----------------------------------------------------------------
+#
+# A API espera um EmbeddedContactPoint por receiver (uid/name/type/settings/
+# disableResolveMessage), NAO a arvore {contactPoints:[{name, receivers:[...]}]} do
+# arquivo — o `name` do contact point pai (ex.: "telegram-tesouro") tem de ser
+# copiado para dentro de cada receiver. Iteramos TODOS os contactPoints x receivers,
+# sem hardcode de indice — hoje e 1x1, mas o formato do arquivo permite mais.
+#
+# Idempotencia: um segundo POST com o mesmo uid provavelmente conflita (a API nao
+# documenta upsert por POST). Consultamos os uids ja existentes uma vez e decidimos
+# POST (criar) ou PUT .../contact-points/<uid> (atualizar) por receiver — rodar o
+# script duas vezes seguidas tem de terminar 0 nas duas.
+uids_cp_existentes=$(gc_curl GET /api/v1/provisioning/contact-points | jq -r '.[].uid')
+
+n_cp=$(yq '.contactPoints | length' "$TMP/contactpoints.yaml")
+for ((i = 0; i < n_cp; i++)); do
+  n_recv=$(yq ".contactPoints[$i].receivers | length" "$TMP/contactpoints.yaml")
+  for ((j = 0; j < n_recv; j++)); do
+    recv_uid=$(yq -r ".contactPoints[$i].receivers[$j].uid" "$TMP/contactpoints.yaml")
+    corpo=$(yq -o=json ".contactPoints[$i] as \$cp | .contactPoints[$i].receivers[$j] |
+        {\"uid\": .uid, \"name\": \$cp.name, \"type\": .type, \"settings\": .settings, \"disableResolveMessage\": .disableResolveMessage}" \
+      "$TMP/contactpoints.yaml")
+
+    if echo "$uids_cp_existentes" | grep -qx "$recv_uid"; then
+      provisioning_call PUT "/api/v1/provisioning/contact-points/${recv_uid}" "$corpo" >/dev/null
+      echo "contact point ${recv_uid}: atualizado"
+    else
+      provisioning_call POST "/api/v1/provisioning/contact-points" "$corpo" >/dev/null
+      echo "contact point ${recv_uid}: criado"
+    fi
+  done
+done
+
+# --- Notification policy -------------------------------------------------------------
+#
+# PUT recebe a arvore de rotas PURA (o objeto de dentro de `.policies[0]`), sem o
+# envelope {apiVersion, policies:[...]} do arquivo e sem `orgId` (a stack da nuvem e
+# de org unica; mandar orgId de outra org quebra o PUT).
+politica_corpo=$(yq -o=json '.policies[0] | del(.orgId)' infra/grafana/cloud/policies.yaml)
+provisioning_call PUT /api/v1/provisioning/policies "$politica_corpo" >/dev/null
+echo "notification policy aplicada"
+
+# --- Regras ---------------------------------------------------------------------------
+#
+# Nao existe POST em lote do arquivo inteiro. O que a API aceita e um PUT POR GRUPO:
+# /api/v1/provisioning/folder/<FOLDER_UID>/rule-groups/<nome-do-grupo>, corpo
+# {title, interval (segundos, int), rules: [...]} — cada regra precisa ganhar
+# folderUID e ruleGroup, que nao existem no arquivo (o arquivo so faz sentido dentro
+# de um group: no provisioning por arquivo; a API por grupo precisa dessa info
+# explicita em cada regra). Iteramos TODOS os .groups[] do arquivo, sem hardcode do
+# nome nem da contagem — hoje e so "tesouro-alertas".
+#
+# Este PUT e naturalmente idempotente (reaplica o grupo inteiro por cima).
+n_grupos=$(yq '.groups | length' "$TMP/rules.yaml")
+for ((gi = 0; gi < n_grupos; gi++)); do
+  nome_grupo=$(yq -r ".groups[$gi].name" "$TMP/rules.yaml")
+  intervalo_raw=$(yq -r ".groups[$gi].interval" "$TMP/rules.yaml")
+  intervalo_seg=$(converter_intervalo_para_segundos "$intervalo_raw") || exit 1
+
+  regras_grupo=$(yq -o=json ".groups[$gi].rules" "$TMP/rules.yaml" \
+    | jq --arg fu "$FOLDER_UID" --arg rg "$nome_grupo" 'map(. + {folderUID: $fu, ruleGroup: $rg})')
+
+  corpo_grupo=$(jq -n --arg t "$nome_grupo" --argjson interval "$intervalo_seg" --argjson rules "$regras_grupo" \
+    '{title: $t, interval: $interval, rules: $rules}')
+
+  provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
+  echo "grupo de regras aplicado: ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
+done
+
+# --- Dashboards -------------------------------------------------------------------
+#
+# Dashboards no MESMO processo: DS_PROM/DS_LOKI/FOLDER_UID sao variaveis locais deste
+# script. Um bloco bash separado nao as enxerga e `jq --arg p ""` gravaria uid vazio em
+# todos os paineis com HTTP 200 — dashboard salvo e quebrado, sem erro nenhum.
+# (Este endpoint e o de dashboards, /api/dashboards/db — nao e a API de provisioning,
+# entao o formato de arquivo do /export nao se aplica aqui; sempre funcionou.)
+for d in tesouro-direto host load-test; do
+  jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
+     'walk(if type=="object" and .uid=="prometheus" then .uid=$p
+           elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
+     "infra/grafana/dashboards/$d.json" > "$TMP/$d.json"
+
+  jq -nc --slurpfile db "$TMP/$d.json" --arg f "$FOLDER_UID" \
+     '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
+    | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
+        -H 'Content-Type: application/json' --data-binary @- \
+        "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
+done
+
+# --- Verificacao final: regras --------------------------------------------------------
+#
+# HTTP 200/202 em cada PUT acima nao prova que as 18 regras existem nem que os
+# datasources resolveram — confere de volta contra a API de leitura.
+echo "conferindo regras aplicadas:"
+regras_nuvem=$(gc_curl GET /api/v1/provisioning/alert-rules)
+qtd_nuvem=$(echo "$regras_nuvem" | jq 'length')
+echo "$qtd_nuvem"
+if [ "$qtd_nuvem" -ne 18 ]; then
+  echo "ABORTADO: a nuvem tem ${qtd_nuvem} regras de alerta, esperado 18" >&2
+  exit 1
+fi
+
+# __expr__ e o pseudo-datasource do no de threshold (condition C de toda regra) —
+# NAO e um datasource real e aparece em todas as 18 regras; nao e erro. So
+# 'prometheus'/'loki' (uid de casa que nao existe na nuvem) e uid vazio sao erro.
+# Medido ao vivo: distribuicao real e {__expr__: 18, grafanacloud-prom: 16,
+# grafanacloud-logs: 2} no nivel data[], e {grafanacloud-logs: 2} no aninhado
+# model.datasource.uid (so as 2 regras Loki tem essa posicao — mesma assimetria do
+# export-local.sh).
+uids_ruins=$(echo "$regras_nuvem" | jq -r '
+  [.[].data[] | (.datasourceUid, (.model.datasource.uid? // empty))]
+  | map(select(. == "" or . == "prometheus" or . == "loki"))
+  | unique | .[]')
+if [ -n "$uids_ruins" ]; then
+  echo "ABORTADO: uid de datasource nao resolvido nas regras da nuvem: $(echo "$uids_ruins" | tr '\n' ' ')" >&2
+  exit 1
+fi
+echo "distribuicao de datasourceUid na nuvem: $(echo "$regras_nuvem" | jq -c '[.[].data[].datasourceUid] | group_by(.) | map({(.[0] // "(vazio)"): length}) | add')"
+
+# --- Verificacao final: dashboards -----------------------------------------------
+#
+# O modo de falha do bloco de dashboards acima e silencioso: o walk() so troca .uid
+# quando o valor bate exatamente com "prometheus"/"loki"; se o schema do painel mudar
+# (ex.: um datasource sem .uid, ou aninhado diferente) o walk simplesmente NAO acha
+# nada para trocar, o POST volta 200 igual, e o dashboard fica com "No data" em
+# producao sem nenhum sinal de erro no script. Por isso reconsultamos cada dashboard
+# recem-criado pelo uid e conferimos que nenhum datasource ficou vazio ou com o
+# literal antigo. Uids lidos direto dos JSONs versionados (campo "uid" de topo em
+# infra/grafana/dashboards/*.json) — nao adivinhados.
+verificar_datasources_resolvidos() {
+  local uid="$1" literais
+  literais=$(gc_curl GET "/api/dashboards/uid/${uid}" \
+    | jq -r '[.dashboard | .. | objects | select(has("uid") and has("type")) | .uid] | unique | .[]')
+
+  # Lista vazia NAO e "nada para reclamar" — e o proprio modo de falha que esta
+  # verificacao existe para pegar (resposta com schema inesperado, walk() que nao
+  # achou nenhum objeto de datasource). Uma verificacao que passa em silencio quando
+  # nao acha nada e uma verificacao que nunca falha.
+  if [ -z "$literais" ]; then
+    echo "ABORTADO: dashboard '${uid}' nao trouxe nenhum objeto com uid/type de datasource — resposta inesperada, o mesmo modo de falha silenciosa que esta verificacao existe para pegar" >&2
+    return 1
+  fi
+
+  while IFS= read -r u; do
+    case "$u" in
+      ""|prometheus|loki)
+        echo "ABORTADO: dashboard '${uid}' voltou com datasource nao resolvido (uid='${u}') — POST deu 200 mas o dashboard esta quebrado" >&2
+        return 1
+        ;;
+    esac
+  done <<< "$literais"
+}
+
+for uid in tesouro-direto-api host-node-exporter load-test-k6; do
+  verificar_datasources_resolvidos "$uid"
+done
+echo "dashboards conferidos: datasources resolvidos em tesouro-direto-api, host-node-exporter, load-test-k6"
