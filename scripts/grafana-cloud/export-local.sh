@@ -1,13 +1,39 @@
 #!/usr/bin/env bash
-# Exporta alerting do Grafana LOCAL no formato de provisioning, para virar fonte da
-# verdade em infra/grafana/cloud/. Rodar com um tunel SSH aberto para a VPS, usando a
-# chave dedicada (nao a default do usuario):
+# SCRIPT DE UMA VEZ SO — NAO RODA MAIS. Executado na fase 77.3 (2026-08-15) contra o
+# Grafana LOCAL da VPS para produzir infra/grafana/cloud/{rules,contactpoints,
+# policies}.yaml a partir do provisioning que rodava la. A fase 77.4 REMOVEU o
+# container `grafana` da VPS (docker-compose.yml) e o proprio provisioning local
+# (infra/grafana/provisioning/) — o alvo deste script nao existe mais, e ele nunca mais
+# vai completar (falharia em curl de conexao recusada, ou pior, contra QUALQUER outro
+# Grafana que por acaso esteja escutando em 127.0.0.1:3000). Mantido no repo so como
+# REGISTRO de como o export original foi feito (proveniencia de infra/grafana/cloud/),
+# nao como ferramenta operacional. A fonte da verdade do alerting/dashboards e agora
+# infra/grafana/cloud/, aplicada ao Grafana Cloud por scripts/grafana-cloud/apply-cloud.sh
+# — e' esse o script a rodar quando as regras precisarem mudar.
+#
+# Doc historica do que o script fazia quando ainda podia rodar: exportava o alerting do
+# Grafana LOCAL no formato de provisioning. Rodava com um tunel SSH aberto para a VPS,
+# usando a chave dedicada (nao a default do usuario):
 #   ssh -N -i ~/.ssh/id_ed25519_vps -L 3000:127.0.0.1:3000 root@157.230.148.98
 #
-# GRAFANA_URL ja inclui o sub-path /grafana: o compose sobe com
-# GF_SERVER_SERVE_FROM_SUB_PATH=true (docker-compose.yml), entao a API nao vive na raiz
-# do host — bater em http://127.0.0.1:3000/api/... sem o /grafana da 404.
+# GRAFANA_URL ja incluia o sub-path /grafana: o compose subia com
+# GF_SERVER_SERVE_FROM_SUB_PATH=true, entao a API nao vivia na raiz do host — bater em
+# http://127.0.0.1:3000/api/... sem o /grafana dava 404.
 set -euo pipefail
+
+# Guarda de fase morta: sem a variavel de escape abaixo, o script aborta aqui, ANTES de
+# qualquer curl. Sem isto, quem rodasse por engano receberia so um erro de conexao
+# recusada (ou, pior, uma resposta de um Grafana qualquer escutando na porta certa) sem
+# nenhuma pista de que o alvo local foi removido na 77.4.
+if [ "${EXPORT_LOCAL_I_KNOW_WHAT_IM_DOING:-}" != "1" ]; then
+  echo "ABORTADO: export-local.sh e' um script de UMA VEZ SO da fase 77.3, contra o Grafana" >&2
+  echo "LOCAL que a 77.4 removeu da VPS. Ele nao tem mais alvo e nunca mais deve rodar." >&2
+  echo "A fonte da verdade do alerting agora e' infra/grafana/cloud/, aplicada por" >&2
+  echo "scripts/grafana-cloud/apply-cloud.sh — use esse script." >&2
+  echo "Se voce sabe exatamente o que esta fazendo (ex.: reconstruir o historico contra um" >&2
+  echo "Grafana local temporario), defina EXPORT_LOCAL_I_KNOW_WHAT_IM_DOING=1 para prosseguir." >&2
+  exit 1
+fi
 
 # Ancora no root do repo, igual ao irmao apply-cloud.sh. Sem isto, OUT (relativo)
 # resolve contra o CWD de quem chama o script, nao contra o repo — rodado de
@@ -62,10 +88,11 @@ echo "regras exportadas: $(grep -c '^[[:space:]]*- uid:' "$OUT/rules.yaml")"
 yq -i '(.contactPoints[].receivers[] | select(.type == "telegram") | .settings.bottoken) = "${TELEGRAM_BOT_TOKEN}"' \
   "$OUT/contactpoints.yaml"
 
-# chatid tem de sobreviver como STRING LITERAL. O crash loop documentado em
-# infra/grafana/provisioning/alerting/contactpoints.yaml acontece quando o runtime de
-# alerting re-avalia esse campo e encontra algo que "parece numero" (inclusive um
-# numero YAML sem aspas, que e exatamente o que um export desavisado pode devolver).
+# chatid tem de sobreviver como STRING LITERAL. O crash loop documentado no comentário
+# original de infra/grafana/provisioning/alerting/contactpoints.yaml (removido na 77.4)
+# acontece quando o runtime de alerting re-avalia esse campo e encontra algo que "parece
+# numero" (inclusive um numero YAML sem aspas, que e exatamente o que um export desavisado
+# pode devolver).
 # Forcar tostring garante que o valor sai sempre entre aspas, nao importa como chegou.
 yq -i '(.contactPoints[].receivers[] | select(.type == "telegram") | .settings.chatid) |= (. | tostring)' \
   "$OUT/contactpoints.yaml"

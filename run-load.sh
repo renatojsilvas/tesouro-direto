@@ -72,7 +72,14 @@ if [ "$LOCAL" = "1" ]; then
     echo "K6_PROMETHEUS_RW_SERVER_URL não definida — usando default local (--local): $K6_PROMETHEUS_RW_SERVER_URL"
   fi
   echo "Subindo overlay do Prometheus com remote-write receiver habilitado..."
-  docker compose -f "$COMPOSE_FILE" -f "$LOAD_COMPOSE_FILE" up -d prometheus
+  # AVISO OPERACIONAL (77.4): se este script rodar a partir de /opt/tesouro-direto na
+  # propria VPS, `prometheus` e `k6` nascem sob o MESMO project name do compose de
+  # producao. O deploy faz `docker compose up -d --remove-orphans` SEM `--profile load`
+  # (.github/workflows/deploy.yml), e os dois viram orfaos: um push em main no meio do
+  # teste MATA o k6 em execucao. So o teste se perde (nada de producao), mas nao vale
+  # descobrir isso no meio de uma medicao — nao rode `--local` na VPS dentro de uma
+  # janela de deploy.
+  docker compose -f "$COMPOSE_FILE" -f "$LOAD_COMPOSE_FILE" --profile load up -d prometheus
 else
   if [ -z "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]; then
     echo "ERRO: defina K6_PROMETHEUS_RW_SERVER_URL explicitamente (sem default) quando não usar --local." >&2
@@ -104,4 +111,15 @@ fi
 echo "Executando $SCRIPT_ARG contra $TARGET_URL ..."
 k6 run -o experimental-prometheus-rw "${K6_ARGS[@]}" "$SCRIPT_PATH"
 
-echo "Dashboard Grafana: http://localhost:3000/grafana/d/load-test-k6"
+# Nao existe (e nao pode existir) dashboard do k6 no Grafana Cloud: as series k6_* sao
+# proibidas na nuvem (cardinalidade alta e transiente estouraria o teto de series
+# justamente durante o teste, perdendo as proprias metricas dele — ver infra/alloy/
+# README.md) e o `load-test-k6` que chegou a subir la na 77.3 foi removido por
+# convergencia (scripts/grafana-cloud/apply-cloud.sh). Os dados do k6 sempre vivem no
+# destino do remote-write, nunca na nuvem — aponte para lá, nao para um painel que
+# nunca tera dado.
+if [ "$LOCAL" = "1" ]; then
+  echo "Métricas do k6: Prometheus efêmero local em http://localhost:9090/prometheus/ (sobe só sob --profile load; sem Grafana neste modo — use a UI/API do próprio Prometheus)."
+else
+  echo "Métricas do k6: enviadas para $K6_PROMETHEUS_RW_SERVER_URL — consulte o Prometheus/Grafana desse destino diretamente; não existe dashboard do k6 no Grafana Cloud."
+fi

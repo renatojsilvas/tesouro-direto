@@ -1,12 +1,17 @@
 global:
   # 74.2: 15s -> 30s. Não fomos para 60s (próximo degrau da escada de
   # fallback, docs/PLANO.md 74.3) porque a regra de menor `for:` em
-  # infra/grafana/provisioning/alerting/rules.yaml que depende do
-  # datasource prometheus é `td-db-readiness-down` (for: 1m) — a 30s ainda
-  # sobram ~2 amostras dentro da janela de avaliação; a 60s sobraria só 1,
-  # arriscando perder a amostra por desalinhamento entre scrape e o
-  # `interval: 1m` do grupo de regras. As regras que usam rate()/increase()
-  # (5m/6h/15m/10m) têm folga de sobra nos dois casos.
+  # infra/grafana/cloud/rules.yaml (fonte da verdade das 18 regras desde a
+  # 77.3, aplicada ao Grafana Cloud por scripts/grafana-cloud/apply-cloud.sh)
+  # que depende do datasource prometheus é `td-db-readiness-down` (for: 1m)
+  # — a 30s ainda sobram ~2 amostras dentro da janela de avaliação; a 60s
+  # sobraria só 1, arriscando perder a amostra por desalinhamento entre
+  # scrape e o `interval: 1m` do grupo de regras. As regras que usam
+  # rate()/increase() (5m/6h/15m/10m) têm folga de sobra nos dois casos.
+  # Este arquivo, desde a 77.4, só é consumido pelo Prometheus EFÊMERO do
+  # teste de carga (profile "load"); o Alloy (infra/alloy/config.alloy), que
+  # empurra para o Grafana Cloud em produção, usa o mesmo scrape_interval de
+  # 30s pelo mesmo motivo, mas de forma independente deste arquivo.
   scrape_interval: 30s
 
 scrape_configs:
@@ -14,19 +19,3 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ['app:8080']
-
-  - job_name: 'node'
-    static_configs:
-      - targets: ['node-exporter:9100']
-
-  - job_name: 'prometheus'
-    # O serviço sobe com --web.external-url=/prometheus/ e SEM
-    # --web.route-prefix explícito — o Prometheus deriva o route-prefix do
-    # path do external-url, o que move TODAS as rotas internas, inclusive
-    # /metrics, para /prometheus/metrics. Confirmado empiricamente (não
-    # presumido): rodando prom/prometheus:v3.10.0 localmente com essa mesma
-    # flag, GET /metrics -> 404 e GET /prometheus/metrics -> 200; o log do
-    # processo também imprime "Router prefix ... prefix=/prometheus".
-    metrics_path: /prometheus/metrics
-    static_configs:
-      - targets: ['prometheus:9090']

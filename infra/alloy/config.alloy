@@ -21,17 +21,19 @@ prometheus.scrape "app" {
 	forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
-// Substitui o container node-exporter. Os NOMES de coletor são os mesmos de
-// docker-compose.yml:339-375 — inclusive o textfile, que sustenta 7 regras de alerta.
+// Substituiu o container `node-exporter` (77.1; o serviço foi removido do
+// docker-compose.yml na 77.4). Os NOMES de coletor são os mesmos que ele usava —
+// inclusive o textfile, que sustenta 7 regras de alerta.
 // Os SUB-FILTROS default do node-exporter embutido no Alloy v1.18.1 divergem dos do
-// prom/node-exporter:v1.12.1 usado hoje (lib vendored de versão diferente): o default do
-// Alloy para diskstats.device-exclude NÃO exclui zram, e o de filesystem.fs-types-exclude
-// NÃO exclui erofs. Por isso os dois blocos abaixo declaram os valores EFETIVOS lidos do
-// próprio node-exporter em produção (`docker logs tesouro-direto-node-exporter`, linhas
-// "Parsed flag --collector.diskstats.device-exclude"/"...filesystem.fs-types-exclude" —
-// são os defaults compilados dele, já que o compose não os sobrescreve), em vez de confiar
-// no default de biblioteca do Alloy. Inofensivo nesta VPS hoje (só vda/vdb, sem zram), mas
-// evita divergência silenciosa em outra máquina.
+// prom/node-exporter:v1.12.1 que rodava até a 77.4 (lib vendored de versão diferente):
+// o default do Alloy para diskstats.device-exclude NÃO exclui zram, e o de
+// filesystem.fs-types-exclude NÃO exclui erofs. Por isso os dois blocos abaixo declaram
+// os valores EFETIVOS lidos do próprio node-exporter quando ele ainda rodava em
+// produção (`docker logs tesouro-direto-node-exporter`, linhas "Parsed flag
+// --collector.diskstats.device-exclude"/"...filesystem.fs-types-exclude" — os defaults
+// compilados dele, já que o compose não os sobrescrevia), em vez de confiar no default
+// de biblioteca do Alloy. Inofensivo nesta VPS hoje (só vda/vdb, sem zram), mas evita
+// divergência silenciosa em outra máquina.
 prometheus.exporter.unix "host" {
 	procfs_path = "/host/proc"
 	sysfs_path  = "/host/sys"
@@ -107,12 +109,13 @@ loki.source.file "nginx" {
 }
 
 loki.process "nginx" {
-	// Formato combined log; ver infra/promtail/promtail-config.yml:20-21 (mesma decisão,
-	// grupos nomeados equivalentes — a sintaxe de regex do Alloy é RE2, a do Promtail
-	// também, só a forma de cada classe de caractere varia).
+	// Formato combined log; mesma decisão que o `promtail` usava
+	// (infra/promtail/promtail-config.yml, removido na 77.4) — grupos nomeados
+	// equivalentes; a sintaxe de regex do Alloy é RE2, a do Promtail também, só a forma
+	// de cada classe de caractere varia.
 	//
 	// Revisão adversarial da 77.2 (achados 3 e 4) — divergências de classe de caractere
-	// vs. promtail-config.yml:21, avaliadas uma a uma:
+	// vs. o que o promtail usava (arquivo removido na 77.4), avaliadas uma a uma:
 	//   - remote_addr ganhou `:` (`[\w\.:]+`, era `[\w\.]+`) DE PROPÓSITO: o combined log
 	//     format sempre começa pelo remote_addr, seja qual for a família; sem `:` uma
 	//     linha IPv6 falha a extração INTEIRA e perde status/method em silêncio.
@@ -155,7 +158,8 @@ loki.process "nginx" {
 		replace    = "{{ .Value | Hash \"" + sys.env("GC_IP_SALT") + "\" }}"
 	}
 
-	// Só status e method viram label — igual ao promtail (promtail-config.yml:22-24).
+	// Só status e method viram label — igual ao que o promtail fazia (arquivo removido
+	// na 77.4).
 	// Promover o IP a label seria cardinalidade aberta pelo usuário.
 	//
 	// Achado da revisão adversarial: o diff original trocou `[A-Z]+` (promtail) por
@@ -188,8 +192,8 @@ loki.source.file "kernel" {
 
 loki.process "kernel" {
 	// Descarta tudo que não é OOM ANTES do envio — 50 GB/mês é o teto do free tier
-	// (mesmo raciocínio de promtail-config.yml:41-52, duas formas de OOM: dentro de
-	// um cgroup de container e OOM global do host).
+	// (mesmo raciocínio que o promtail usava — arquivo removido na 77.4 —, duas formas
+	// de OOM: dentro de um cgroup de container e OOM global do host).
 	stage.match {
 		selector            = `{job="kernel"} !~ "Memory cgroup out of memory|Out of memory: Killed process"`
 		action              = "drop"
@@ -200,7 +204,7 @@ loki.process "kernel" {
 	// (ex.: "Aug 12 03:14:07"). Parseado, o ano viraria 0000 e o Loki rejeitaria a
 	// linha por estar fora da janela de aceitação ("too far behind") — a linha de OOM
 	// sumiria calada, o oposto do objetivo desta tarefa. Usa-se o horário de ingestão
-	// (mesma decisão de promtail-config.yml:53-58).
+	// (mesma decisão que o promtail usava — arquivo removido na 77.4).
 	forward_to = [loki.write.cloud.receiver]
 }
 

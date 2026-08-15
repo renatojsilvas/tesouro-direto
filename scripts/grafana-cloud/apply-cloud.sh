@@ -156,7 +156,19 @@ done
 # todos os paineis com HTTP 200 — dashboard salvo e quebrado, sem erro nenhum.
 # (Este endpoint e o de dashboards, /api/dashboards/db — nao e a API de provisioning,
 # entao o formato de arquivo do /export nao se aplica aqui; sempre funcionou.)
-for d in tesouro-direto host load-test; do
+# load-test NAO entra nesta lista. `load-test.json` le do Prometheus EFEMERO local
+# (docker-compose.load.yml, sobe so sob `--profile load` durante o teste de carga,
+# 127.0.0.1:9090). O backend SaaS do Grafana Cloud nao tem rota nenhuma para esse
+# Prometheus e nunca tera — nao e um problema de rede resolvivel por tunel SSH (um
+# tunel so da acesso a partir da MAQUINA de quem o abriu, nao a partir do backend da
+# nuvem). Subir esse dashboard aqui produz um painel PERMANENTEMENTE vazio, calado, com
+# HTTP 200 em cada etapa — exatamente o modo de falha que a tarefa 77 existe para
+# eliminar. Mandar as series `k6_*` para a nuvem para contornar isso esta PROIBIDO por
+# decisao registrada (cardinalidade alta e transiente; estouraria o teto de series do
+# free tier justamente durante o teste de carga, perdendo as proprias metricas do
+# teste — ver infra/alloy/README.md). NAO re-adicionar "load-test" a esta lista por
+# simetria com os outros dois: o dado dele nunca vai existir aqui.
+for d in tesouro-direto host; do
   jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
      'walk(if type=="object" and .uid=="prometheus" then .uid=$p
            elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
@@ -168,6 +180,30 @@ for d in tesouro-direto host load-test; do
         -H 'Content-Type: application/json' --data-binary @- \
         "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
 done
+
+# --- Convergencia: apaga da nuvem o load-test-k6 subido por engano na 77.3 -----------
+#
+# Antes desta fase o loop acima incluia "load-test" e ja rodou em producao (77.3) — o
+# dashboard existe hoje na nuvem, permanentemente vazio (ver comentario acima). uid lido
+# do proprio arquivo versionado (infra/grafana/dashboards/load-test.json, campo "uid" de
+# topo), nunca chumbado aqui. DELETE por uid e idempotente do lado do RECURSO (o
+# dashboard deixa de existir nas duas execucoes), mas nao do lado do HTTP: a 2a chamada
+# volta 404. `curl -sf` trataria isso como falha (exit != 0) e abortaria o script inteiro
+# sob `set -e` — por isso aqui capturamos so o codigo HTTP e tratamos 200 (apagou agora)
+# e 404 (ja nao existia) como os DOIS resultados de sucesso; qualquer outro codigo e erro
+# real.
+uid_dashboard_k6=$(jq -r '.uid' infra/grafana/dashboards/load-test.json)
+http_code_delete=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+  -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
+  "${GC_GRAFANA_URL}/api/dashboards/uid/${uid_dashboard_k6}")
+case "$http_code_delete" in
+  200) echo "dashboard '${uid_dashboard_k6}': apagado da nuvem (era o load-test-k6 vazio herdado da 77.3)" ;;
+  404) echo "dashboard '${uid_dashboard_k6}': ja nao existia na nuvem (convergido)" ;;
+  *)
+    echo "ABORTADO: DELETE do dashboard '${uid_dashboard_k6}' voltou HTTP ${http_code_delete} (esperado 200 ou 404)" >&2
+    exit 1
+    ;;
+esac
 
 # --- Verificacao final: regras --------------------------------------------------------
 #
@@ -233,7 +269,10 @@ verificar_datasources_resolvidos() {
   done <<< "$literais"
 }
 
-for uid in tesouro-direto-api host-node-exporter load-test-k6; do
+# load-test-k6 fica de fora desta lista: nao sobe mais para a nuvem (e foi apagado de
+# la, ver bloco de convergencia acima) — consulta-lo aqui devolveria 404 e abortaria
+# o script sob `set -e`.
+for uid in tesouro-direto-api host-node-exporter; do
   verificar_datasources_resolvidos "$uid"
 done
-echo "dashboards conferidos: datasources resolvidos em tesouro-direto-api, host-node-exporter, load-test-k6"
+echo "dashboards conferidos: datasources resolvidos em tesouro-direto-api, host-node-exporter"

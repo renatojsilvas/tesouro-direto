@@ -60,8 +60,6 @@ jobs:
         env:
           API_KEY: dummy
           ADMIN_EMAIL: dummy@example.com
-          GRAFANA_PASSWORD: dummy
-          TELEGRAM_BOT_TOKEN: dummy
           K6_PROMETHEUS_RW_SERVER_URL: http://dummy:9090/prometheus/api/v1/write
           # 77.0: docker-compose.yml ganhou o serviço `alloy` com ${GC_*:?} obrigatórios;
           # sem estas dummies as 3 validações abaixo falham a partir desta fase.
@@ -179,11 +177,9 @@ jobs:
             # PR -- senao a interpolacao do compose falha inteira (nenhum servico e
             # recriado, nem os que nao tem nada a ver com a variavel nova) antes mesmo do
             # `docker compose up -d` rodar. Ver scratchpad/medir-alloy.md secao 3.0/CHECKLIST.
-            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nGRAFANA_PASSWORD=%s\nGRAFANA_ROOT_URL=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGC_PROM_URL=%s\nGC_PROM_USER=%s\nGC_TOKEN=%s\nGC_LOKI_URL=%s\nGC_LOKI_USER=%s\nGC_IP_SALT=%s\n' \
+            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGC_PROM_URL=%s\nGC_PROM_USER=%s\nGC_TOKEN=%s\nGC_LOKI_URL=%s\nGC_LOKI_USER=%s\nGC_IP_SALT=%s\n' \
               '${{ secrets.DB_PASSWORD }}' \
               '${{ secrets.API_KEY }}' \
-              '${{ secrets.GRAFANA_PASSWORD }}' \
-              '${{ secrets.GRAFANA_ROOT_URL }}' \
               '${{ secrets.TELEGRAM_BOT_TOKEN }}' \
               '${{ secrets.ADMIN_EMAIL }}' \
               '${{ secrets.GOOGLE_CLIENT_ID }}' \
@@ -228,16 +224,25 @@ jobs:
             # COPY (codigo-fonte) a cada deploy, e as versoes de pacote sao fixas nos
             # .csproj, entao a invalidacao de cache do Docker e correta por construcao.
             docker compose build
-            docker compose up -d
-            # prometheus.yml, o provisioning do grafana e o promtail-config.yml sao
-            # bind-mounts: o compose nao recria esses containers so porque o CONTEUDO
-            # do arquivo mudou, entao scrape jobs novos (ex.: node), regras de alerta
-            # novas e pipelines de log novos nao carregariam sem um restart. Forcar a
-            # recriacao so desses tres relê a config a cada deploy.
-            # 74.6: promtail entrou nesta lista junto com o scrape do log de kernel --
-            # ele estava sujeito a MESMA armadilha desde sempre, sem ninguem notar
-            # porque o promtail-config.yml nunca tinha mudado depois do primeiro deploy.
-            docker compose up -d --force-recreate --no-deps prometheus grafana promtail
+            # ANCORA (77.4, achado da revisao adversarial): SEM --remove-orphans, o
+            # `docker compose up -d` deixa de pe qualquer container cujo servico
+            # SAIU do arquivo -- exatamente o caso de grafana/loki/promtail/
+            # node-exporter, removidos do docker-compose.yml nesta fase. O comando
+            # fecha com exit code 0 e so um `level=warning "Found orphan containers"`
+            # no stderr; como `script_stop: true` (ver ANCORA acima) so aborta em
+            # ERRO, nao em warning, o deploy fecharia VERDE com os 5 containers
+            # antigos ainda de pe e nenhum dos ~588 MB que sao o proposito inteiro da
+            # 77.4 seria liberado. A mesma logica cobre `prometheus`, que ganhou
+            # `profiles: ["load"]` nesta fase: qualquer `up -d` SEM `--profile load`
+            # (como este, o do dia a dia) o enxerga como orfao e o remove -- e isso e
+            # o comportamento DESEJADO em producao, ja que o Prometheus so deve
+            # existir durante um teste de carga explicito (`run-load.sh --local`),
+            # nunca fora dele.
+            docker compose up -d --remove-orphans
+            # Bind-mount de config nao e recriado por `up -d` quando o arquivo muda
+            # (feedback compose_bindmount_no_recreate). O alloy tem a mesma armadilha
+            # que prometheus/grafana/promtail tinham: config.alloy vem de bind-mount.
+            docker compose up -d --force-recreate --no-deps alloy
             echo "Waiting for app to be healthy..."
             # 74.4a: 60s -> 180s. Este e o mesmo deploy que a 74.3 impoe o
             # limite de ~0,18 vCPU ao `app`; startup de .NET com JIT residual

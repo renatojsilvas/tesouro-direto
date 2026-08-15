@@ -194,9 +194,10 @@ services:
     # 74.3 — mesma decisao do `app`: peso de CPU (pico medido 22,1%,
     # footprint.md §3.3, contra provisao original de 0,07 vCPU), teto de
     # memoria rigido. `memswap_limit` NAO fixado explicitamente aqui — só
-    # `app`/`db` (falha visível) e `grafana`/`loki` (permitido) tiveram
-    # decisão explícita no desvio aprovado; para `web` fica o default do
-    # Docker, verificado no `docker inspect` da entrega.
+    # `app`/`db` (falha visível) e `grafana`/`loki` (permitido; ambos
+    # removidos na 77.4) tiveram decisão explícita no desvio aprovado;
+    # para `web` fica o default do Docker, verificado no `docker inspect`
+    # da entrega.
     cpu_shares: 512
     deploy:
       resources:
@@ -206,87 +207,14 @@ services:
           pids: 128
 
   # Observabilidade
-  grafana:
-    image: grafana/grafana:12.4.1
-    container_name: tesouro-direto-grafana
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD é obrigatório no .env}
-      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana/}
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN é obrigatório no .env}
-      # 74.3: GOMEMLIMIT recalculado para ~80% do teto RIGIDO de memória
-      # desta fase (224M), substituindo o valor da 74.2 (167MiB), que era
-      # 80% de um teto provisório maior e hoje ultrapassaria o próprio
-      # limite do cgroup — sem isso o GC nunca dispararia antes do OOM
-      # killer. GOGC fica no default de propósito (GOMEMLIMIT + GOGC=off é
-      # espiral de GC sob 1 vCPU).
-      - GOMEMLIMIT=179MiB
-      - GF_ANALYTICS_REPORTING_ENABLED=false
-      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
-      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU (`cpu_shares`), não
-    # teto rígido — mesmo raciocínio do `app`/`db` (ver comentário lá).
-    # Memória com teto rígido. `memswap_limit` explicitamente PERMITIDO
-    # (decisão explícita, não omissão): o Grafana está entre os que mais
-    # têm cache a perder acima do limite (armadilha §4 do pedido) —
-    # preferir reclaim/swap a matar o processo que hospeda o alerting
-    # Grafana-managed (ver Risco da 74 no PLANO.md: Grafana morto cala o
-    # "app down" em silêncio).
-    cpu_shares: 128
-    memswap_limit: 448M
-    deploy:
-      resources:
-        limits:
-          cpus: "0.15"
-          memory: 224M
-          pids: 64
-
-  loki:
-    image: grafana/loki:3.6.7
-    container_name: tesouro-direto-loki
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3100:3100"
-    command: -config.file=/etc/loki/loki-config.yml
-    environment:
-      # 74.2: alvo DELIBERADAMENTE mais agressivo que os 80% de 266 MB
-      # (limite calculado em footprint.md §4). O tuning desta mesma fase
-      # (ingestão limitada + retenção 7d) ataca a causa do pico sob carga
-      # (rajada de log de acesso não mais absorvida sem teto), então o alvo
-      # usa o pico OCIOSO (104,4 MB, footprint.md §3.1) × 1,3 + margem, não
-      # o pico sob carga não-tunado. Precisa de re-medição para confirmar
-      # (gate da 74.2: "re-medição mostra queda").
-      # 74.3: recalculado para ~80% do teto RIGIDO desta fase (132M) — o
-      # valor da 74.2 (120MiB) já era menor que o novo teto e continuava
-      # válido, mas a 105MiB dá mais folga a um serviço com bastante page
-      # cache (footprint.md armadilha do mem.current, ver PLANO.md).
-      - GOMEMLIMIT=128MiB
-    volumes:
-      - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
-      - loki-data:/loki
-    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
-    # rígido. `memswap_limit` explicitamente PERMITIDO: o `loki` é o
-    # container com MAIS page cache acima do limite medido (204,9 MB de
-    # mem.current contra 132M de teto, ver relatório) — preferir reclaim
-    # de cache/swap a matar o processo por OOM num container cuja memória
-    # é majoritariamente cache descartável, não heap.
-    cpu_shares: 128
-    memswap_limit: 320M
-    deploy:
-      resources:
-        limits:
-          cpus: "0.15"
-          memory: 160M
-          pids: 64
-
   prometheus:
+    # 77.4 — sobe SÓ sob `--profile load`: o k6 faz remote-write para este
+    # Prometheus local (docker-compose.load.yml), e mandar as séries `k6_*`
+    # para a nuvem estouraria o teto de séries do plano justamente durante o
+    # teste de carga. Sem este serviço no base, o overlay `docker-compose.
+    # load.yml` define um `prometheus` sem `image` e o gate `docker compose
+    # config -q` do CI quebra ("service must define image or build").
+    profiles: ["load"]
     image: prom/prometheus:v3.10.0
     container_name: tesouro-direto-prometheus
     restart: unless-stopped
@@ -312,9 +240,10 @@ services:
       - prometheus-data:/prometheus
     # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
     # rígido. `memswap_limit` NÃO fixado explicitamente — só `app`/`db`
-    # (falha visível) e `grafana`/`loki` (permitido) tiveram decisão
-    # explícita no desvio aprovado; para `prometheus` fica o default do
-    # Docker, verificado no `docker inspect` da entrega.
+    # (falha visível) e `grafana`/`loki` (permitido; ambos removidos na
+    # 77.4) tiveram decisão explícita no desvio aprovado; para
+    # `prometheus` fica o default do Docker, verificado no `docker
+    # inspect` da entrega.
     cpu_shares: 64
     deploy:
       resources:
@@ -323,126 +252,18 @@ services:
           memory: 72M
           pids: 64
 
-  node-exporter:
-    image: prom/node-exporter:v1.12.1
-    container_name: tesouro-direto-node-exporter
-    restart: unless-stopped
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--path.rootfs=/rootfs'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-      # 74.2: só os coletores realmente consumidos por host.json + rules.yaml
-      # (re-verificado nesta fase, ver relatório) — cpu/meminfo/filesystem/
-      # diskstats/netdev cobrem os painéis e o alerta de disco; loadavg/stat/
-      # uname/time/os entram como baseline de saúde do próprio scrape (sem
-      # painel/alerta hoje, mas de custo desprezível e usados por
-      # convenção do node_exporter para diagnosticar o exporter em si).
-      # Esta lista é o insumo direto da 74.2b (vira `set_collectors` do
-      # `prometheus.exporter.unix` do Alloy).
-      - '--collector.disable-defaults'
-      - '--collector.cpu'
-      - '--collector.meminfo'
-      - '--collector.loadavg'
-      - '--collector.filesystem'
-      - '--collector.diskstats'
-      - '--collector.netdev'
-      # veth* de containers: verificado que este serviço NÃO usa
-      # `network_mode: host` nem `pid: host` (nenhum serviço deste compose
-      # usa) — /proc/net/dev é por-namespace-de-rede do processo que lê, e
-      # bind-montar o /proc do host não muda o namespace de rede de quem lê
-      # (`/host/proc/net/dev` é `/host/proc/self/net/dev`, "self" continua
-      # sendo o node-exporter na SUA própria rede em bridge). Consequência
-      # dupla, e a segunda é o achado real: (1) hoje ele NÃO enxerga os
-      # veth* de outros containers no host, então a explosão de séries por
-      # deploy citada não ocorre nesta configuração; (2) pelo mesmo motivo,
-      # ele também NÃO enxerga a interface física real da VPS — o painel
-      # "Network (bytes/s)" de host.json mede o tráfego do PRÓPRIO
-      # sidecar node-exporter (~zero), não o tráfego real do host. Isto é
-      # um achado pré-existente, não introduzido aqui, e não uma decisão
-      # de tuning — fica registrado para o dono decidir (precisaria de
-      # `network_mode: host`, troca de isolamento). O filtro abaixo é
-      # defensivo (protege se essa decisão mudar) e é o insumo pedido para
-      # a 74.2b (Alloy herda o mesmo risco se também ganhar host network).
-      - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$$'
-      - '--collector.stat'
-      - '--collector.uname'
-      - '--collector.time'
-      - '--collector.os'
-      # 74.6: cAdvisor rejeitado (60-120 MB de RSS contra ~42 MB de orçamento
-      # do bloco INFRA) — métricas por container vêm do textfile collector,
-      # alimentado por infra/host/container-metrics.sh via systemd timer no
-      # host (infra/host/td-container-metrics.{service,timer}), não por um
-      # segundo container. `--collector.textfile` precisa ser habilitado
-      # explicitamente porque a lista acima usa `--collector.disable-defaults`.
-      - '--collector.textfile'
-      - '--collector.textfile.directory=/host/textfile'
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-      - /var/lib/node_exporter/textfile:/host/textfile:ro
-    ports:
-      - "127.0.0.1:9100:9100"
-    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
-    # rígido. Sem GOMEMLIMIT porque o node-exporter nunca teve um (pico
-    # medido 8,4-10,1 MB, bem abaixo do teto — não há GC Go a governar
-    # aqui na prática). `memswap_limit` NÃO fixado explicitamente — mesmo
-    # raciocínio do `prometheus`.
-    cpu_shares: 64
-    deploy:
-      resources:
-        limits:
-          cpus: "0.05"
-          memory: 24M
-          pids: 64
-
-  promtail:
-    image: grafana/promtail:3.6.8
-    container_name: tesouro-direto-promtail
-    restart: unless-stopped
-    command: -config.file=/etc/promtail/promtail-config.yml
-    environment:
-      # 74.2: mesmo raciocínio do prometheus (footprint.md §5) — limite
-      # calculado (102 MB) é inflado pelo piso de +64 MB (pico real 37,5 MB;
-      # só ×1,3 daria 48,8 MB); uso 80% do valor sem o piso.
-      # 74.3: o teto RIGIDO desta fase (36M) ficou abaixo dos 40MiB
-      # calculados na 74.2 — recalculado para ~80% do novo teto.
-      - GOMEMLIMIT=28MiB
-    volumes:
-      - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
-      - /var/log/nginx:/var/log/nginx:ro
-      # 74.6: DIRETÓRIO, não `/var/log/kern.log:/var/log/host/kern.log:ro`.
-      # Bind-mount de arquivo fixa o inode; o logrotate troca o inode na
-      # rotação (rename+recria) e o promtail continuaria seguindo para
-      # sempre o arquivo ROTACIONADO, parando de ver log novo em silêncio.
-      # Montando o diretório, o path `/var/log/host/kern.log` sempre resolve
-      # para o inode atual. `infra/promtail/promtail-config.yml` aponta o
-      # scrape para `/var/log/host/kern.log` (editado em paralelo).
-      - /var/log:/var/log/host:ro
-      - promtail-positions:/tmp
-    depends_on:
-      - loki
-    # 74.3 — DESVIO APROVADO PELO DONO: peso de CPU, teto de memória
-    # rígido. `memswap_limit` NÃO fixado explicitamente — o desvio só
-    # decidiu isso caso a caso para `app`/`db`/`grafana`/`loki`; o
-    # `promtail` tem cache acima do teto tanto quanto o `loki` (77,5 MB
-    # medidos contra 36M de teto — ver relatório), mas o dono não incluiu
-    # este serviço na lista de swap permitido, então fica o default do
-    # Docker, verificado no `docker inspect` da entrega e reportado se a
-    # pressão de reclaim se mostrar um problema real.
-    cpu_shares: 128
-    deploy:
-      resources:
-        limits:
-          cpus: "0.15"
-          memory: 36M
-          pids: 64
-
-  # 77.0 — PORTÃO de medição: Alloy sobe AO LADO da stack acima, sem remover
-  # nada, para medir o pico real da não-descartável (td_container_memory_
-  # unreclaimable_bytes) em 24h antes de decidir se a tarefa 77 se paga
-  # (ver docs/superpowers/plans/2026-08-14-tarefa-77-*.md, Fase 77.0).
+  # Coletor único de observabilidade: reúne, num container só, o que até a
+  # 77.3 eram 5 serviços (`grafana`, `loki`, `prometheus`, `promtail`,
+  # `node-exporter` — 516 MB de teto somado) — scrape de métricas do app e
+  # do host, tail dos 4 fluxos de log (nginx, kernel, API, Web, com hash de
+  # IP) e remote_write/loki.write para o Grafana Cloud; alerting e
+  # dashboards vivem na nuvem (infra/grafana/cloud/, 77.3). Nasceu como
+  # PORTÃO de medição na 77.0 (subiu AO LADO da stack antiga, sem teto de
+  # memória, para medir o pico real da não-descartável antes de remover
+  # qualquer coisa) — o portão FECHOU em 15/08/2026 com 51,99 MB medidos
+  # pela métrica canônica td_container_memory_unreclaimable_bytes contra o
+  # limiar de 200 MB (ver docs/PLANO.md, Fase 77). A 77.4 removeu a stack
+  # antiga que ficava ao lado.
   alloy:
     image: grafana/alloy:v1.18.1
     container_name: tesouro-direto-alloy
@@ -466,28 +287,31 @@ services:
     volumes:
       - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy-data:/var/lib/alloy/data
-      # 77.1 — mesmos binds read-only do node-exporter (docker-compose.yml:377-380),
-      # que o prometheus.exporter.unix do config.alloy passa a ler.
+      # 77.1 — os mesmos binds read-only que o serviço `node-exporter`
+      # (removido na 77.4) usava, agora lidos pelo prometheus.exporter.unix
+      # do config.alloy.
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
       - /var/lib/node_exporter/textfile:/host/textfile:ro
-      # 77.2 — mesmos binds read-only que o promtail tinha (docker-compose.yml:410,418).
+      # 77.2 — mesmos binds read-only que o serviço `promtail` (removido na
+      # 77.4) tinha.
       - /var/log/nginx:/var/log/nginx:ro
       # DIRETÓRIO, não `/var/log/kern.log:/var/log/host/kern.log:ro`: bind de arquivo
       # fixa o inode e o logrotate troca o inode na rotação (rename+recria), o que faria
-      # o tail parar de ver log novo em silêncio (decisão original em
-      # docker-compose.yml:411-417, no serviço `promtail` que este substitui).
+      # o tail parar de ver log novo em silêncio (decisão original do serviço
+      # `promtail`, removido na 77.4, preservada aqui).
       - /var/log:/var/log/host:ro
-    # SEM deploy.resources.limits nesta fase: o objetivo é medir o pico REAL, não
-    # observar o container bater num teto que eu escolhi antes de saber o número.
+    # SEM deploy.resources.limits nesta fase: o pico real da não-descartável já foi
+    # medido (51,99 MB, portão fechado na 77.0) e a stack antiga que ficava ao lado já
+    # foi removida (77.4), mas o teto ainda depende do consumo real contra os limites
+    # do free tier do Grafana Cloud, que só entram em vigor em 17/08/2026 — é a 77.5 que
+    # fixa deploy.resources.limits sobre o número confirmado pós-17/08 (docs/PLANO.md,
+    # Fase 77).
 
 volumes:
   pgdata:
-  grafana-data:
-  loki-data:
   prometheus-data:
-  promtail-positions:
   alloy-data:
 
 networks:
