@@ -178,6 +178,21 @@ public sealed class ConditionalGetEndpointsTests(ApiTestFactory factory) : IAsyn
     }
 
     [Fact]
+    public async Task HeadTitulos_ThenGetWithIfNoneMatchFromHead_ShouldReturn304()
+    {
+        await SeedTituloAsync(new DateOnly(2029, 3, 1));
+
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head, "/v1/titulos");
+        var head = await _client.SendAsync(headRequest, CancellationToken.None);
+        var etagFromHead = head.Headers.ETag!.Tag;
+
+        using var conditionalRequest = ConditionalGet("/v1/titulos", etagFromHead);
+        var response = await _client.SendAsync(conditionalRequest, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotModified);
+    }
+
+    [Fact]
     public async Task GetTitulos_AfterInsertingNewPrecoForExistingTitulo_ShouldChangeEtagEvenThoughTituloListIsUnchanged()
     {
         var tituloId = await SeedTituloComPrecoAsync(new DateOnly(2029, 3, 1), new DateOnly(2024, 1, 2));
