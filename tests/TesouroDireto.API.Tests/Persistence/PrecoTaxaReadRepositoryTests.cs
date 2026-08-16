@@ -1,3 +1,4 @@
+using Dapper;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -171,5 +172,119 @@ public sealed class PrecoTaxaReadRepositoryTests : IAsyncLifetime
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("PrecoTaxa.NotFound");
+    }
+
+    [Fact]
+    public async Task GetByDataBaseAsync_WithMultipleTitulosOnDate_ShouldReturnOneRowPerTituloOrderedByCodigoAscending()
+    {
+        var dataBase = new DateOnly(2025, 6, 10);
+
+        var tituloSelic = Titulo.Create(
+            TipoTitulo.TesouroSelic,
+            DataVencimento.Create(new DateOnly(2030, 3, 1)).Value).Value;
+        var tituloEduca = Titulo.Create(
+            TipoTitulo.TesouroEduca,
+            DataVencimento.Create(new DateOnly(2033, 12, 15)).Value).Value;
+        var tituloPrefixado = Titulo.Create(
+            TipoTitulo.TesouroPrefixado,
+            DataVencimento.Create(new DateOnly(2028, 1, 1)).Value).Value;
+
+        // A ordem de inserção (Selic, Educa+, Prefixado) é deliberadamente diferente da ordem
+        // alfabética de codigo (educa, prefixado, selic), e todas as linhas compartilham a MESMA
+        // data_base. Como o SQL não ordena (de propósito), remover o .OrderBy(dto.Codigo) da
+        // projeção em PrecoTaxaReadRepository faz a resposta cair na ordem física/de inserção e
+        // este assert fica vermelho — não-vacuidade provada por mutação.
+        await _dbContext.Titulos.AddAsync(tituloSelic, CancellationToken.None);
+        await _dbContext.Titulos.AddAsync(tituloEduca, CancellationToken.None);
+        await _dbContext.Titulos.AddAsync(tituloPrefixado, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var precoSelic = PrecoTaxa.Create(
+            tituloSelic.Id, DataBase.Create(dataBase).Value,
+            Taxa.Create(13.00m).Value, Taxa.Create(13.10m).Value,
+            PrecoUnitario.Create(100.00m).Value, PrecoUnitario.Create(99.00m).Value, PrecoUnitario.Create(100.00m).Value).Value;
+        var precoEduca = PrecoTaxa.Create(
+            tituloEduca.Id, DataBase.Create(dataBase).Value,
+            Taxa.Create(9.00m).Value, Taxa.Create(9.20m).Value,
+            PrecoUnitario.Create(500.00m).Value, PrecoUnitario.Create(499.00m).Value, PrecoUnitario.Create(500.00m).Value).Value;
+        var precoPrefixado = PrecoTaxa.Create(
+            tituloPrefixado.Id, DataBase.Create(dataBase).Value,
+            Taxa.Create(11.00m).Value, Taxa.Create(11.20m).Value,
+            PrecoUnitario.Create(900.00m).Value, PrecoUnitario.Create(899.00m).Value, PrecoUnitario.Create(900.00m).Value).Value;
+
+        await _dbContext.PrecosTaxas.AddRangeAsync(new[] { precoSelic, precoEduca, precoPrefixado }, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetByDataBaseAsync(dataBase, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(3);
+
+        var codigoEsperadoEduca = TituloCodigo.From(TipoTitulo.TesouroEduca.Name, tituloEduca.DataVencimento.Value);
+        var codigoEsperadoPrefixado = TituloCodigo.From(TipoTitulo.TesouroPrefixado.Name, tituloPrefixado.DataVencimento.Value);
+        var codigoEsperadoSelic = TituloCodigo.From(TipoTitulo.TesouroSelic.Name, tituloSelic.DataVencimento.Value);
+
+        result.Value.Select(p => p.Codigo).Should().Equal(codigoEsperadoEduca, codigoEsperadoPrefixado, codigoEsperadoSelic);
+    }
+
+    [Fact]
+    public async Task GetByDataBaseAsync_WithNoPrecosOnDate_ShouldReturnSuccessWithEmptyList()
+    {
+        await SeedPrecos();
+
+        var result = await _readRepository.GetByDataBaseAsync(new DateOnly(2024, 3, 3), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetByDataBaseAsync_WithNullFields_ShouldReturnNullDecimalValues()
+    {
+        var dataBase = new DateOnly(2025, 2, 14);
+        var preco = PrecoTaxa.Create(
+            _titulo.Id, DataBase.Create(dataBase).Value,
+            null, null, null, null, null).Value;
+
+        await _dbContext.PrecosTaxas.AddAsync(preco, CancellationToken.None);
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await _readRepository.GetByDataBaseAsync(dataBase, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(1);
+        var dto = result.Value.Single();
+        dto.TaxaCompra.Should().BeNull();
+        dto.TaxaVenda.Should().BeNull();
+        dto.PuCompra.Should().BeNull();
+        dto.PuVenda.Should().BeNull();
+        dto.PuBase.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetByDataBaseAsync_QueryPlan_ShouldBeAbleToUseDataBaseIndex()
+    {
+        await SeedPrecos();
+
+        await using var connection = await _dataSource.OpenConnectionAsync(CancellationToken.None);
+        await connection.ExecuteAsync(new CommandDefinition("SET enable_seqscan = off;", cancellationToken: CancellationToken.None));
+
+        var planLines = (await connection.QueryAsync<string>(
+            new CommandDefinition(
+                """
+                EXPLAIN
+                SELECT t.tipo_titulo, t.data_vencimento, p.data_base, p.taxa_compra, p.taxa_venda,
+                       p.pu_compra, p.pu_venda, p.pu_base
+                FROM precos_taxas p
+                JOIN titulos t ON t.id = p.titulo_id
+                WHERE p.data_base = @DataBase
+                ORDER BY t.tipo_titulo, t.data_vencimento
+                """,
+                new { DataBase = new DateOnly(2024, 6, 15) },
+                cancellationToken: CancellationToken.None))).ToList();
+
+        var plan = string.Join(Environment.NewLine, planLines);
+        plan.Should().Contain("ix_precos_taxas_data_base");
     }
 }

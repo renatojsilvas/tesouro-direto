@@ -55,6 +55,7 @@ public static class DependencyInjection
 
             c.SchemaFilter<EnumSchemaFilter>();
             c.OperationFilter<PrecosPaginacaoOperationFilter>();
+            c.OperationFilter<PrecosPorDataOperationFilter>();
             c.OperationFilter<TributoLocationOperationFilter>();
         });
 

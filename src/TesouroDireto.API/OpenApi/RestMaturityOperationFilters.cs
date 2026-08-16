@@ -56,6 +56,42 @@ public sealed class PrecosPaginacaoOperationFilter : IOperationFilter
             .Any(metadata => metadata.EndpointName == endpointName);
 }
 
+public sealed class PrecosPorDataOperationFilter : IOperationFilter
+{
+    public void Apply(OpenApiOperation operation, OperationFilterContext context)
+    {
+        if (!PrecosPaginacaoOperationFilter.MatchesEndpointName(context, "GetPrecosPorData"))
+        {
+            return;
+        }
+
+        operation.Parameters.Add(new OpenApiParameter
+        {
+            Name = "dataBase",
+            In = ParameterLocation.Query,
+            Required = true,
+            Description = "Data do fechamento desejado (yyyy-MM-dd). Obrigatória.",
+            Schema = new OpenApiSchema { Type = "string", Format = "date" },
+        });
+
+        if (!operation.Responses.TryGetValue("200", out var okResponse))
+        {
+            return;
+        }
+
+        okResponse.Headers["ETag"] = new OpenApiHeader
+        {
+            Description = "Versão do conteúdo para requisições condicionais (If-None-Match).",
+            Schema = new OpenApiSchema { Type = "string" },
+        };
+        okResponse.Headers["X-Total-Count"] = new OpenApiHeader
+        {
+            Description = "Total de itens (títulos com preço nesta data).",
+            Schema = new OpenApiSchema { Type = "integer" },
+        };
+    }
+}
+
 public sealed class TributoLocationOperationFilter : IOperationFilter
 {
     public void Apply(OpenApiOperation operation, OperationFilterContext context)

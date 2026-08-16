@@ -6,4 +6,5 @@ public interface IPrecoTaxaReadRepository
 {
     Task<Result<IReadOnlyCollection<PrecoTaxaDto>>> GetByTituloIdAsync(Guid tituloId, DateOnly? dataInicio, DateOnly? dataFim, CancellationToken cancellationToken);
     Task<Result<PrecoTaxaDto>> GetLatestByTituloIdAsync(Guid tituloId, CancellationToken cancellationToken);
+    Task<Result<IReadOnlyList<PrecoTaxaDiaDto>>> GetByDataBaseAsync(DateOnly dataBase, CancellationToken cancellationToken);
 }

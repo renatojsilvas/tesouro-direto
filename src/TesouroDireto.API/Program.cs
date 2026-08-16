@@ -54,6 +54,7 @@ app.MapGet("/", () => "Hello World!").ExcludeFromDescription();
 var v1 = app.MapGroup("/v1");
 v1.MapImportacaoEndpoints();
 v1.MapTituloEndpoints();
+v1.MapPrecoEndpoints();
 v1.MapConfiguracaoEndpoints();
 v1.MapUsuarioEndpoints();
 v1.MapApiKeyEndpoints();
