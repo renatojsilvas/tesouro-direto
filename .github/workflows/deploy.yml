@@ -220,6 +220,23 @@ jobs:
             git reset --hard origin/main
             cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
             nginx -t && systemctl reload nginx
+            # ANCORA (80.2): /usr/local/bin/container-metrics.sh no host e um arquivo
+            # REGULAR, nao symlink -- o `reset --hard` acima so espelha o working tree
+            # do clone em /opt/tesouro-direto, nunca alcanca esse caminho fora do repo.
+            # Sem esta linha, todo fix commitado em infra/host/container-metrics.sh
+            # (como o desta mesma branch, 80.2) fica para sempre versionado e nunca
+            # aplicado -- exatamente o estado em que o repo esteve desde 12/08. Quem
+            # executa o script e o `td-container-metrics.timer` (systemd, dispara a
+            # cada 30s); como ele so invoca o binario a cada disparo, a versao nova
+            # entra sozinha no ciclo seguinte, sem `daemon-reload` nem restart. Por
+            # isso so o script e copiado aqui -- as unidades .service/.timer mudam
+            # raramente e copia-las exigiria daemon-reload + restart do timer a cada
+            # deploy (superficie de risco maior) por um ganho que so aparece na
+            # primeira instalacao; ficam no passo manual do infra/host/README.md.
+            # `chmod +x` explicito mesmo o modo do blob ja sendo 100755 no git (o `cp`
+            # preserva): barato, e imuniza contra o bit mudar no repo no futuro.
+            cp infra/host/container-metrics.sh /usr/local/bin/container-metrics.sh
+            chmod +x /usr/local/bin/container-metrics.sh
             # Cache de build habilitado: o reset --hard acima ja muda os inputs do
             # COPY (codigo-fonte) a cada deploy, e as versoes de pacote sao fixas nos
             # .csproj, entao a invalidacao de cache do Docker e correta por construcao.
