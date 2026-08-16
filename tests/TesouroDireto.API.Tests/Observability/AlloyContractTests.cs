@@ -83,32 +83,85 @@ public class AlloyContractTests
     }
 
     /// <summary>
-    /// job="node" não nasce de nenhum literal `job = "..."` — o `prometheus.exporter.unix`
-    /// rotula os alvos com um job próprio e é o `replacement = "node"` dentro do
-    /// `discovery.relabel` que força o nome do contrato. O rótulo do bloco
-    /// (`discovery.relabel "node"`, `prometheus.scrape "node"`) é só o nome do componente
-    /// Alloy, não determina o label da série — este teste deliberadamente NÃO reage a ele.
+    /// Extrai o CORPO (sem as chaves externas) de um bloco Alloy `tipo "nome" { ... }`,
+    /// contando chaves para achar o fechamento correto — não dá para usar `[^}]*` porque o
+    /// corpo do `discovery.relabel` tem uma `rule { ... }` aninhada, e `[^}]*` para no
+    /// primeiro `}` (o da `rule`), não no do bloco externo. Falha o teste (em vez de
+    /// devolver vazio ou null) se o bloco não existir — é esse fail-hard que pega a
+    /// mutação "apagar o bloco inteiro": sem ele, extrair de um arquivo mutilado devolveria
+    /// uma string vazia e as asserções que se seguem passariam vácuas.
     /// </summary>
-    [Fact]
-    public void ConfigAlloy_ForcaJobNodeViaRelabel()
+    private static string ExtrairBlocoBalanceado(string config, string tipo, string nome)
     {
-        var config = ConfigSemComentarios();
-        Assert.Matches(new Regex("replacement\\s*=\\s*\"node\""), config);
+        var abertura = new Regex(Regex.Escape(tipo) + "\\s+\"" + Regex.Escape(nome) + "\"\\s*\\{");
+        var match = abertura.Match(config);
+        Assert.True(match.Success, $"bloco `{tipo} \"{nome}\"` não encontrado em config.alloy");
+
+        var pos = match.Index + match.Length;
+        var depth = 1;
+        var i = pos;
+        for (; i < config.Length && depth > 0; i++)
+        {
+            if (config[i] == '{') depth++;
+            else if (config[i] == '}') depth--;
+        }
+
+        Assert.True(depth == 0, $"bloco `{tipo} \"{nome}\"` sem chave de fechamento balanceada");
+        return config.Substring(pos, i - 1 - pos);
     }
 
     /// <summary>
-    /// job="alloy" (80.1 — auto-observação) segue a mesma técnica de job="node": não nasce
-    /// de um literal `job = "..."` no target, e sim do `replacement = "alloy"` dentro do
-    /// `discovery.relabel "alloy"`. Não entra em
-    /// TodoJobUsadoNasRegras_NasceNaPosicaoQueODefineNoConfigAlloy porque nenhuma regra de
-    /// rules.yaml filtra por ele ainda — se a 80.2 criar uma, aquele teste falha alto
-    /// pedindo a entrada no mapa, que é o comportamento certo.
+    /// job="node" e job="alloy" (80.1) são forçados pela mesma técnica: o alvo não nasce
+    /// com um `job` customizável, então um `discovery.relabel "&lt;job&gt;"` sobrescreve o
+    /// label antes de um `prometheus.scrape "&lt;job&gt;"` consumir `discovery.relabel.&lt;job&gt;.output`.
+    ///
+    /// Achado da revisão adversarial da 80.1: checar só `replacement = "&lt;job&gt;"` solto no
+    /// arquivo é vácuo em três elos da cadeia — provado por mutação, todos deixavam os 12
+    /// testes verdes:
+    ///   (a) apagar o `prometheus.scrape "alloy"` inteiro — o `discovery.relabel` fica
+    ///       órfão, nada coleta o alvo;
+    ///   (b) trocar `targets = discovery.relabel.alloy.output` por
+    ///       `discovery.relabel.node.output` — o scrape relê os alvos do OUTRO job;
+    ///   (c) trocar `__address__ = "127.0.0.1:12345"` por uma porta errada — scrape aponta
+    ///       para lugar nenhum.
+    /// O mesmo buraco existia (não pego) no bloco `node` desde a 77.1: apagar
+    /// `prometheus.scrape "node"` inteiro também deixava tudo verde.
+    ///
+    /// Por isso este teste ancora a CADEIA, não o literal solto:
+    /// 1. extrai o corpo do `discovery.relabel "&lt;job&gt;"` por contagem de chaves (não por
+    ///    `[^}]*` — ver `ExtrairBlocoBalanceado`) e confere, DENTRO desse corpo, que existe
+    ///    uma fonte de alvos (`targetsSourcePattern`, que também prova o elo 3 do achado —
+    ///    para "alloy" é o `__address__` do próprio processo; para "node" é
+    ///    `prometheus.exporter.unix.host.targets`) e uma `rule` que sobrescreve
+    ///    `target_label = "job"` com `replacement = "&lt;job&gt;"`;
+    /// 2. extrai o corpo do `prometheus.scrape "&lt;job&gt;"` do mesmo jeito e confere que
+    ///    `targets` aponta exatamente para `discovery.relabel.&lt;job&gt;.output` — nunca para
+    ///    o output de outro job.
+    /// Se qualquer um dos dois blocos não existir, `ExtrairBlocoBalanceado` falha alto (não
+    /// devolve vazio) — é isso que pega a mutação (a)/(d) (apagar o `prometheus.scrape`
+    /// inteiro) em vez de deixá-la passar vácua.
+    ///
+    /// job="alloy" não entra em TodoJobUsadoNasRegras_NasceNaPosicaoQueODefineNoConfigAlloy
+    /// porque nenhuma regra de rules.yaml filtra por ele ainda — se a 80.2 criar uma, aquele
+    /// teste falha alto pedindo a entrada no mapa, que é o comportamento certo.
     /// </summary>
-    [Fact]
-    public void ConfigAlloy_ForcaJobAlloyViaRelabel()
+    [Theory]
+    [InlineData("node", "targets\\s*=\\s*prometheus\\.exporter\\.unix\\.host\\.targets")]
+    [InlineData("alloy", "targets\\s*=\\s*\\[\\{__address__\\s*=\\s*\"127\\.0\\.0\\.1:12345\"\\}\\]")]
+    public void ConfigAlloy_ForcaJobViaRelabel_CadeiaCompleta(string job, string targetsSourcePattern)
     {
         var config = ConfigSemComentarios();
-        Assert.Matches(new Regex("replacement\\s*=\\s*\"alloy\""), config);
+
+        var relabelBody = ExtrairBlocoBalanceado(config, "discovery.relabel", job);
+        Assert.Matches(new Regex(targetsSourcePattern), relabelBody);
+        Assert.Matches(
+            new Regex("target_label\\s*=\\s*\"job\"[\\s\\S]*?replacement\\s*=\\s*\"" + Regex.Escape(job) + "\""),
+            relabelBody);
+
+        var scrapeBody = ExtrairBlocoBalanceado(config, "prometheus.scrape", job);
+        Assert.Matches(
+            new Regex("targets\\s*=\\s*discovery\\.relabel\\." + Regex.Escape(job) + "\\.output"),
+            scrapeBody);
     }
 
     /// <summary>
