@@ -218,12 +218,10 @@ jobs:
             # anterior e derrubaria o boot.
             git fetch origin main
             git reset --hard origin/main
-            cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
-            nginx -t && systemctl reload nginx
             # ANCORA (80.2): /usr/local/bin/container-metrics.sh no host e um arquivo
             # REGULAR, nao symlink -- o `reset --hard` acima so espelha o working tree
             # do clone em /opt/tesouro-direto, nunca alcanca esse caminho fora do repo.
-            # Sem esta linha, todo fix commitado em infra/host/container-metrics.sh
+            # Sem este bloco, todo fix commitado em infra/host/container-metrics.sh
             # (como o desta mesma branch, 80.2) fica para sempre versionado e nunca
             # aplicado -- exatamente o estado em que o repo esteve desde 12/08. Quem
             # executa o script e o `td-container-metrics.timer` (systemd, dispara a
@@ -233,10 +231,24 @@ jobs:
             # raramente e copia-las exigiria daemon-reload + restart do timer a cada
             # deploy (superficie de risco maior) por um ganho que so aparece na
             # primeira instalacao; ficam no passo manual do infra/host/README.md.
-            # `chmod +x` explicito mesmo o modo do blob ja sendo 100755 no git (o `cp`
-            # preserva): barato, e imuniza contra o bit mudar no repo no futuro.
-            cp infra/host/container-metrics.sh /usr/local/bin/container-metrics.sh
-            chmod +x /usr/local/bin/container-metrics.sh
+            # Posicionado ANTES do bloco do nginx (falhar cedo, mesma logica das
+            # outras ANCORAS deste arquivo): nao depende do nginx em nada, entao nao
+            # ha motivo para rodar depois do reload e arriscar um deploy pela metade
+            # se este passo falhar.
+            # `cp` direto sobre o destino NAO e seguro aqui: `cp` trunca e reescreve
+            # o inode existente in-place (nao unlink+recria), e o timer dispara a
+            # cada 30s -- se o bash estiver lendo o arquivo no instante do `cp`
+            # (o script pode levar ate ~25s se `docker ps`/`inspect` travarem), pode
+            # ler conteudo truncado e executar um comando corrompido. Achado pela
+            # revisao adversarial da 80.2. Copiar para um temporario no MESMO
+            # diretorio (mesmo filesystem) e `mv -f` por cima e atomico (`rename(2)`):
+            # quem ja abriu o inode velho termina de ler ele inteiro; quem abrir
+            # depois pega o novo, sem janela de leitura parcial.
+            cp infra/host/container-metrics.sh /usr/local/bin/container-metrics.sh.new
+            chmod +x /usr/local/bin/container-metrics.sh.new
+            mv -f /usr/local/bin/container-metrics.sh.new /usr/local/bin/container-metrics.sh
+            cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
+            nginx -t && systemctl reload nginx
             # Cache de build habilitado: o reset --hard acima ja muda os inputs do
             # COPY (codigo-fonte) a cada deploy, e as versoes de pacote sao fixas nos
             # .csproj, entao a invalidacao de cache do Docker e correta por construcao.

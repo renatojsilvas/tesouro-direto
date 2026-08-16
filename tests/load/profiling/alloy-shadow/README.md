@@ -3,10 +3,9 @@
 ## O que é
 
 Artefatos que rodam na VPS de produção, em `/opt/alloy-shadow`, para medir o
-pico real de memória "não-descartável" (anon+shmem+kernel de `memory.stat`,
-a fórmula canônica de `infra/host/container-metrics.sh`) do Grafana Alloy
-**antes** de decidir a tarefa 77 (migração de observabilidade para o Grafana
-Cloud). É a fase 77.0 do plano.
+pico real de memória "não-descartável" (anon+shmem+kernel de `memory.stat`)
+do Grafana Alloy **antes** de decidir a tarefa 77 (migração de observabilidade
+para o Grafana Cloud). É a fase 77.0 do plano.
 
 **Correção de fórmula (revisão adversarial do portão 77.0, 2026-08-15):**
 até essa data, `fp-alloy-guard.sh` usava `anon+shmem+slab`, copiada por
@@ -14,10 +13,19 @@ engano de `/root/fp-gate76.sh` — fórmula que soma `slab` em dobro, pois no
 cgroup v2 `slab` já está dentro de `kernel`. As amostras de
 `/var/tmp/fp-alloy.csv` anteriores a essa correção usam a fórmula antiga e
 por isso **subcontam a não-descartável em ~2%**; o CSV tem uma linha
-marcadora (`# CORRECAO-FORMULA ...`) no ponto exato da troca. A fórmula
-canônica é a de `infra/host/container-metrics.sh` (`anon+shmem+kernel`),
-não a de `fp-gate76.sh` — que não foi corrigido porque a janela de 24h do
-gate da tarefa 76 já tinha fechado quando o defeito foi achado.
+marcadora (`# CORRECAO-FORMULA ...`) no ponto exato da troca. Até a 80.2,
+`anon+shmem+kernel` era a fórmula canônica de `infra/host/container-metrics.sh`.
+
+**Divergência proposital desde a 80.2 (revisão adversarial da 80.2,
+2026-08-16):** `infra/host/container-metrics.sh` passou a usar
+`anon+shmem+(kernel−slab_reclaimable)` — mais precisa, pois `slab_reclaimable`
+volta ao sistema sob pressão sem OOM. Este andaime (`fp-alloy-guard.sh`) **não**
+acompanha essa mudança: continua em `anon+shmem+kernel`, de propósito, para
+preservar a comparabilidade com as medições históricas já registradas no
+PLANO (74.x, 76, 77.x) e no `/var/tmp/fp-alloy.csv` desta fase. `anon+shmem+kernel`
+deixou de ser "a fórmula canônica do projeto" na 80.2 — é a fórmula histórica
+deste andaime, mantida por esse motivo. A fonte de verdade para produção é
+sempre `infra/host/container-metrics.sh`.
 
 Esta pasta versiona uma cópia fiel (hash idêntico ao arquivo em produção) de:
 
@@ -25,8 +33,8 @@ Esta pasta versiona uma cópia fiel (hash idêntico ao arquivo em produção) de
   sem `deploy.resources.limits`/`mem_limit`, exatamente para não mascarar o
   pico real.
 - `fp-alloy-guard.sh` — roda via cron a cada 5 min, calcula a não-descartável
-  do container `tesouro-direto-alloy` com a fórmula canônica de
-  `infra/host/container-metrics.sh` (`anon+shmem+kernel`) e grava em
+  do container `tesouro-direto-alloy` com a fórmula histórica deste andaime
+  (`anon+shmem+kernel`, ver nota de divergência acima) e grava em
   `/var/tmp/fp-alloy.csv`. Tem um corte de segurança em 500 MB (que só evita
   OOM do host — não é o teto de decisão da 77.0, que é avaliado à parte na
   tabela de decisão do runbook, olhando o CSV).

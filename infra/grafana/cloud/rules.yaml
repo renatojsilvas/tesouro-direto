@@ -422,7 +422,7 @@ groups:
         execErrState: Alerting
         for: 5m
         annotations:
-          summary: Memória não-descartável (anon+shmem+kernel) de um container acima de 85% do limite configurado por mais de 5m
+          summary: Memória não-descartável (anon+shmem+(kernel-slab_reclaimable)) de um container acima de 85% do limite configurado por mais de 5m
         labels:
           severity: warning
         isPaused: false
@@ -460,7 +460,7 @@ groups:
         execErrState: Alerting
         for: 2m
         annotations:
-          summary: Memória não-descartável (anon+shmem+kernel) de um container acima de 95% do limite configurado por mais de 2m — risco iminente de OOM kill
+          summary: Memória não-descartável (anon+shmem+(kernel-slab_reclaimable)) de um container acima de 95% do limite configurado por mais de 2m — risco iminente de OOM kill
         labels:
           severity: critical
         isPaused: false

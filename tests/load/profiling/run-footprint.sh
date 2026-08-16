@@ -788,6 +788,17 @@ stats_nao_descartavel() {
   # (a diferença de ~13 KB são alocações kernel menores não detalhadas), com
   # slab=1893896 = slab_reclaimable+slab_unreclaimable. `slab` continua na
   # tabela como coluna própria, por ser útil de ver isolada.
+  #
+  # DIVERGÊNCIA PROPOSITAL (revisão adversarial da 80.2, 2026-08-16): desde
+  # essa fase, `infra/host/container-metrics.sh` usa
+  # anon+shmem+(kernel-slab_reclaimable) em produção — mais preciso, pois
+  # slab_reclaimable volta ao sistema sob pressão sem OOM. Esta função NÃO
+  # acompanha a mudança: fica em anon+shmem+kernel de propósito, para manter
+  # comparabilidade com todas as medições históricas já registradas no PLANO
+  # (74.x, 76, 77.x), feitas com essa fórmula. anon+shmem+kernel deixou de
+  # ser "a fórmula canônica do projeto" na 80.2 — é a fórmula histórica deste
+  # script de profiling. Fonte de verdade para produção:
+  # infra/host/container-metrics.sh.
   local nome="$1"
   local tmp
   tmp="$TMP_DIR/nd_$RANDOM.txt"
