@@ -232,13 +232,25 @@ jobs:
             # no stderr; como `script_stop: true` (ver ANCORA acima) so aborta em
             # ERRO, nao em warning, o deploy fecharia VERDE com os 5 containers
             # antigos ainda de pe e nenhum dos ~588 MB que sao o proposito inteiro da
-            # 77.4 seria liberado. A mesma logica cobre `prometheus`, que ganhou
-            # `profiles: ["load"]` nesta fase: qualquer `up -d` SEM `--profile load`
-            # (como este, o do dia a dia) o enxerga como orfao e o remove -- e isso e
-            # o comportamento DESEJADO em producao, ja que o Prometheus so deve
-            # existir durante um teste de carga explicito (`run-load.sh --local`),
-            # nunca fora dele.
+            # 77.4 seria liberado.
             docker compose up -d --remove-orphans
+            # CORRECAO do primeiro deploy da 77.4: a versao anterior deste comentario
+            # afirmava que `--remove-orphans` tambem recolheria o `prometheus`, que
+            # ganhou `profiles: ["load"]` na mesma fase. FALSO, e refutado pelo deploy
+            # real: os 4 servicos que SAIRAM do arquivo foram varridos, e o
+            # `tesouro-direto-prometheus` continuou de pe. Servico desabilitado por
+            # profile nao e orfao -- ele SEGUE definido no projeto, so nao esta ativo,
+            # entao o sweep nao o alcanca. Reproduzido em sandbox: dar `profiles:` a um
+            # servico com container rodando e depois `up -d --remove-orphans` deixa o
+            # container intacto, sem warning nenhum.
+            #
+            # Sem a linha abaixo isso nao seria um problema so de transicao: todo
+            # `run-load.sh --local` rodado na VPS sobe o Prometheus efemero e o deixa
+            # para tras (72 MB) depois do teste, e nenhum deploy o recolheria.
+            # `rm -sf` com o profile explicito para e remove; e idempotente quando ele
+            # nao existe ("No stopped containers", exit 0), o que importa sob
+            # `script_stop: true`. O volume `prometheus-data` nao e tocado.
+            docker compose --profile load rm -sf prometheus
             # Bind-mount de config nao e recriado por `up -d` quando o arquivo muda
             # (feedback compose_bindmount_no_recreate). O alloy tem a mesma armadilha
             # que prometheus/grafana/promtail tinham: config.alloy vem de bind-mount.

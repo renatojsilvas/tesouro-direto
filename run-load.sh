@@ -74,11 +74,14 @@ if [ "$LOCAL" = "1" ]; then
   echo "Subindo overlay do Prometheus com remote-write receiver habilitado..."
   # AVISO OPERACIONAL (77.4): se este script rodar a partir de /opt/tesouro-direto na
   # propria VPS, `prometheus` e `k6` nascem sob o MESMO project name do compose de
-  # producao. O deploy faz `docker compose up -d --remove-orphans` SEM `--profile load`
-  # (.github/workflows/deploy.yml), e os dois viram orfaos: um push em main no meio do
-  # teste MATA o k6 em execucao. So o teste se perde (nada de producao), mas nao vale
-  # descobrir isso no meio de uma medicao — nao rode `--local` na VPS dentro de uma
-  # janela de deploy.
+  # producao, e um push em main no meio do teste MATA os dois — por caminhos
+  # diferentes, o que importa saber ao depurar: o `k6` nem existe no compose que o
+  # deploy usa (so no overlay `load`), entao cai no `--remove-orphans`; o `prometheus`
+  # existe, so esta desabilitado por profile, entao NAO e orfao — quem o recolhe e o
+  # `docker compose --profile load rm -sf prometheus` logo depois
+  # (.github/workflows/deploy.yml). So o teste se perde (nada de producao), mas nao
+  # vale descobrir isso no meio de uma medicao — nao rode `--local` na VPS dentro de
+  # uma janela de deploy.
   docker compose -f "$COMPOSE_FILE" -f "$LOAD_COMPOSE_FILE" --profile load up -d prometheus
 else
   if [ -z "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]; then
