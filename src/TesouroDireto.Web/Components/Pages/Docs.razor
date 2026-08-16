@@ -24,6 +24,7 @@
         <a href="#ep-get-preco-atual-codigo" class="docs-nav-sub">GET /titulos/{codigo}/preco-atual</a>
         <a href="#ep-get-precos-nome" class="docs-nav-sub">GET /titulos/precos</a>
         <a href="#ep-get-precos-codigo" class="docs-nav-sub">GET /titulos/{codigo}/precos</a>
+        <a href="#ep-get-precos" class="docs-nav-sub">GET /precos</a>
         <a href="#ep-post-simulador" class="docs-nav-sub">POST /simulador</a>
         <a href="#ep-post-simulador-cenarios" class="docs-nav-sub">POST /simulador/cenarios</a>
         <a href="#ep-get-tributos" class="docs-nav-sub">GET /configuracoes/tributos</a>
@@ -296,6 +297,59 @@
 ]</code></pre>
             </div>
 
+            <div id="ep-get-precos" class="endpoint-block">
+                <h3>GET /precos</h3>
+                <p>
+                    Retorna o preço e a taxa de <strong>todos</strong> os títulos numa única data, em
+                    1 requisição — o corte transversal dos endpoints de <code>/titulos/...</code> acima,
+                    para quem precisa do fechamento do dia inteiro sem consultar título por título.
+                </p>
+                <p class="endpoint-path"><span class="endpoint-method endpoint-method-get">GET</span> <code>/precos</code></p>
+                <table class="params-table">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>dataBase</code></td><td>query · date (yyyy-MM-dd)</td><td>Sim</td><td>Data do fechamento. Único parâmetro aceito — não há intervalo, filtro por indexador nem paginação.</td></tr>
+                    </tbody>
+                </table>
+                <ExemploCodigo CurlCodigo="@precosPorDataCurl" CSharpCodigo="@precosPorDataCSharp" JsCodigo="@precosPorDataJs" />
+                <p class="text-muted">
+                    A resposta é um array cru (sem <code>_links</code>) ordenado por <code>codigo</code>
+                    crescente, cada item com o mesmo formato de preço dos endpoints acima acrescido de
+                    <code>codigo</code>. O cabeçalho <code>X-Total-Count</code> sempre acompanha a resposta.
+                </p>
+                <div class="alert alert-info">
+                    Em dia sem pregão (fim de semana, feriado ou importação ainda não executada) a API
+                    responde <code>200</code> com lista vazia <code>[]</code> e <code>X-Total-Count: 0</code>
+                    — nunca <code>404</code>. É assim que você distingue "dia sem pregão" de "requisição
+                    inválida".
+                </div>
+                <p class="text-muted">
+                    <code>400</code> se <code>dataBase</code> estiver ausente ou fora do formato
+                    <code>yyyy-MM-dd</code> (<code>PrecoTaxa.DataBaseInvalida</code>) ou for uma data
+                    futura (<code>PrecoTaxa.DataBaseFutura</code>).
+                </p>
+                <pre class="docs-json"><code>[
+  {
+    "codigo": "tesouro-selic-2029-03-01",
+    "dataBase": "2026-06-30",
+    "taxaCompra": 11.90,
+    "taxaVenda": 12.00,
+    "puCompra": 978.14,
+    "puVenda": 973.02,
+    "puBase": 975.55
+  },
+  {
+    "codigo": "tesouro-ipca-mais-2035-05-15",
+    "dataBase": "2026-06-30",
+    "taxaCompra": 5.85,
+    "taxaVenda": 5.95,
+    "puCompra": 3210.44,
+    "puVenda": 3195.10,
+    "puBase": 3202.77
+  }
+]</code></pre>
+            </div>
+
             <div id="ep-post-simulador" class="endpoint-block">
                 <h3>POST /simulador</h3>
                 <p>
@@ -524,6 +578,18 @@
         "const precos = await (await fetch(",
         "  `${base}/titulos/tesouro-selic-2029-03-01/precos?dataInicio=2026-01-01&dataFim=2026-06-30&page=1&pageSize=50`,",
         "  { headers })).json();");
+
+    private string precosPorDataCurl => Linhas(
+        "curl -H \"X-Api-Key: SUA_CHAVE\" \\",
+        $"  \"{baseUrl}/precos?dataBase=2026-06-30\"");
+
+    private string precosPorDataCSharp => ClienteCSharp + Linhas(
+        "var precos = await client.GetFromJsonAsync<List<PrecoTaxaDiaDto>>(",
+        "    \"precos?dataBase=2026-06-30\");");
+
+    private string precosPorDataJs => ClienteJs + Linhas(
+        "const precos = await (await fetch(",
+        "  `${base}/precos?dataBase=2026-06-30`, { headers })).json();");
 
     private string simularCurl => Linhas(
         "curl -X POST -H \"X-Api-Key: SUA_CHAVE\" -H \"Content-Type: application/json\" \\",

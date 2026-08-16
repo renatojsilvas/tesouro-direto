@@ -191,6 +191,29 @@ public class DocsTests : TestContext
     }
 
     [Fact]
+    public void Render_DocumentaGetPrecos_ComoCorteTransversalDosTitulosPorData()
+    {
+        var cut = RenderDocs();
+
+        var bloco = cut.Find("#ep-get-precos");
+        bloco.QuerySelector("h3")!.TextContent.Should().Be("GET /precos");
+        bloco.QuerySelector(".endpoint-path")!.TextContent.Should().Contain("/precos");
+
+        var linhasParams = bloco.QuerySelectorAll("table.params-table tbody tr");
+        linhasParams.Should().HaveCount(1);
+        linhasParams[0].TextContent.Should().Contain("dataBase");
+        linhasParams[0].TextContent.Should().Contain("Sim");
+
+        bloco.TextContent.Should().Contain("X-Total-Count");
+        bloco.TextContent.Should().Contain("200");
+        bloco.TextContent.Should().Contain("[]");
+        bloco.TextContent.Should().Contain("PrecoTaxa.DataBaseInvalida");
+        bloco.TextContent.Should().Contain("PrecoTaxa.DataBaseFutura");
+
+        cut.Find("[data-testid=docs-nav] a[href='#ep-get-precos']").TextContent.Should().Be("GET /precos");
+    }
+
+    [Fact]
     public void Render_DuasInstanciasDeExemploCodigo_TemAriaControlsDiferentesApontandoParaIdsExistentes()
     {
         var cut = Render(builder =>
