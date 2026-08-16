@@ -695,3 +695,117 @@ groups:
         labels:
           severity: critical
         isPaused: false
+      - uid: td-cloud-free-tier-series-proximo
+        title: Grafana Cloud - series ativas proximas do teto do free tier
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_USAGE__
+            model:
+              expr: max(grafanacloud_instance_active_series)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 8000
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 15m
+        annotations:
+          summary: Series ativas do Grafana Cloud (grafanacloud_instance_active_series) acima de 8000 (80% do teto de 10000 do free tier valido a partir de 17/08/2026) por mais de 15m — reagir antes do estouro, nao depois
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: td-cloud-overage
+        title: Grafana Cloud - overage de metricas ou logs
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_USAGE__
+            model:
+              expr: sum(grafanacloud_instance_overage) + sum(grafanacloud_logs_instance_overage)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Grafana Cloud reportou overage (grafanacloud_instance_overage ou grafanacloud_logs_instance_overage acima de zero) — a ingestao ja passou do incluido no plano
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: td-cloud-log-projecao-mensal
+        title: Grafana Cloud - projecao mensal de logs proxima do teto do free tier
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_USAGE__
+            model:
+              expr: sum(grafanacloud_logs_instance_bytes_received_per_second) * 2592000 / (1024*1024*1024)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 40
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 15m
+        annotations:
+          summary: Vazao atual de logs (grafanacloud_logs_instance_bytes_received_per_second) projetada para 30 dias ultrapassa 40 GB (80% do teto de 50 GB/mes do free tier valido a partir de 17/08/2026) por mais de 15m
+        labels:
+          severity: warning
+        isPaused: false

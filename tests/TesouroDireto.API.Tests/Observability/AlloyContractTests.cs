@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace TesouroDireto.API.Tests.Observability;
 
 /// <summary>
-/// As 18 regras de alerta filtram por nomes de `job` e de métrica que vivem fora do C#
+/// As 21 regras de alerta filtram por nomes de `job` e de métrica que vivem fora do C#
 /// (config.alloy, container-metrics.sh). Nada na suíte protegia esses nomes — a tarefa 77
 /// descobriu que renomear um `job` deixa alertas mudos em silêncio. Estes testes falham
 /// se alguém mexer num nome sem mexer nas regras.
@@ -97,7 +97,7 @@ public class AlloyContractTests
     }
 
     /// <summary>
-    /// Passo 9 da 77.3 — trava os jobs que as 18 regras de `infra/grafana/cloud/rules.yaml`
+    /// Passo 9 da 77.3 — trava os jobs que as 21 regras de `infra/grafana/cloud/rules.yaml`
     /// consomem contra as posições que os DEFINEM em config.alloy. O teste do PLANO, copiado
     /// literalmente, nasceria vácuo pela terceira vez: fazia `config.Contains($"\"{job}\"")`,
     /// o mesmo `Contains` solto que as revisões adversariais da 77.1 e da 77.2 já condenaram

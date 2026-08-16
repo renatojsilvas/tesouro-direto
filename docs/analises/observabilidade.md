@@ -1,5 +1,12 @@
 # Análise — Observabilidade
 
+> **Retrato datado de 2026-07-18, superado pela tarefa 77.** Este levantamento descreve a stack
+> local de então (`grafana`+`loki`+`prometheus`+`promtail`+`node-exporter`). Desde a tarefa 77 essa
+> stack saiu do ar (77.4) e foi substituída por um único container `alloy`, que faz scrape/tail
+> local e remote-write/loki-write para o Grafana Cloud (free tier); alerting e dashboards agora
+> vivem na nuvem. Para o estado atual, ver [`infra/alloy/README.md`](../../infra/alloy/README.md).
+> O corpo abaixo **não foi reescrito** — é registro histórico.
+
 > Levantamento **somente-leitura** do estado atual (logs, métricas técnicas, métricas de negócio, alertas, healthchecks), guiado por [`docs/MAPA.md`](../MAPA.md) §4.
 > Evidência com `arquivo:linha`. Nada foi alterado.
 

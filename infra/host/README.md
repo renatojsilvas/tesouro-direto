@@ -96,7 +96,7 @@ Remove só entradas de cache de build não usadas há mais de 30 dias, preservan
 
 ### O quê
 
-`infra/host/container-metrics.sh` lê os arquivos de cgroup v2 de cada container em execução no host (`memory.current`, `memory.stat`, `memory.max`, `memory.peak`, `cpu.stat`, `memory.events`) mais o `RestartCount` do `docker inspect`, e escreve um arquivo `.prom` em `/var/lib/node_exporter/textfile/container_resources.prom`. O node-exporter, com `--collector.textfile` habilitado (`docker-compose.yml`, serviço `node-exporter`), serve esse arquivo como se fossem métricas suas próprias. Um systemd timer (`td-container-metrics.timer`) roda o script a cada 30s no host, casando com o `scrape_interval` do Prometheus (`prometheus.yml:10`).
+`infra/host/container-metrics.sh` lê os arquivos de cgroup v2 de cada container em execução no host (`memory.current`, `memory.stat`, `memory.max`, `memory.peak`, `cpu.stat`, `memory.events`) mais o `RestartCount` do `docker inspect`, e escreve um arquivo `.prom` em `/var/lib/node_exporter/textfile/container_resources.prom`. Desde a tarefa 77 quem lê esse arquivo é o **Grafana Alloy** (container `tesouro-direto-alloy`), não mais o node-exporter (removido do `docker-compose.yml` na 77.4): o componente `prometheus.exporter.unix "host"` de `infra/alloy/config.alloy` habilita o coletor `textfile` apontando para `/host/textfile` — bind read-only de `/var/lib/node_exporter/textfile` (o diretório manteve o nome legado; `infra/alloy/config.alloy:44,62-64`, `docker-compose.yml:296`) —, e serve esse arquivo como se fossem métricas suas próprias. Um systemd timer (`td-container-metrics.timer`) roda o script a cada 30s no host, casando com o `scrape_interval` de 30s do job `node` que raspa essas métricas (`infra/alloy/config.alloy:80`).
 
 Métricas emitidas, com label `container="<nome>"`:
 
@@ -113,6 +113,8 @@ Métricas emitidas, com label `container="<nome>"`:
 | `td_container_restarts_total` | counter | atravessa o restart |
 | `td_container_up` | gauge | |
 
+> As duas medições a seguir (`node-exporter`/`promtail`, "oito containers") são registro datado da 74.3, quando a stack local ainda incluía `grafana`/`loki`/`prometheus`/`promtail`/`node-exporter` — essa stack saiu do ar na 77.4. Preservadas como estavam; não representam a topologia atual.
+
 **Por que os alertas de memória NÃO usam `working_set`.** `working_set` (`memory.current − inactive_file`) é a definição do cAdvisor e inclui `active_file` — page cache **reclamável**, que o kernel joga fora sob pressão sem matar ninguém. Os tetos da 74.3 foram dimensionados a partir do **não-descartável** (`anon + shmem + kernel`), então alertar sobre `working_set` mediria uma coisa diferente da que o teto governa. Medido na VPS: `node-exporter` a 78% de `working_set` contra **45%** de não-descartável, `promtail` a 70% contra **42%** — um alerta de 85% sobre `working_set` acusaria risco de OOM onde só há cache.
 
 `td_container_memory_reclaim_events_total` é o campo `max` de `memory.events`: quantas vezes uma alocação bateu no teto e forçou reclaim. Foi ele que acusou os 9131 eventos do `grafana` mal dimensionado na 74.3, e com os tetos corrigidos a linha de base medida é **zero nos oito containers** — o que dispensa limiar chutado.
@@ -121,7 +123,7 @@ Cobre TODOS os containers em execução no host — não só os do `docker-compo
 
 ### Por quê (e por que não cAdvisor)
 
-`docs/PLANO.md` (74.6) decidiu cAdvisor pela medição, e a medição o rejeitou: ele dá exatamente as métricas certas, mas custa **60-120 MB de RSS** contra um orçamento de **~42 MB** no bloco INFRA compartilhada — 15-25% do bloco gasto só para monitorar o próprio bloco. A alternativa de custo quase zero é o textfile collector do node-exporter: o mesmo binário que já roda no bloco, alimentado por um script simples de host via systemd timer, sem container novo, sem sidecar, sem explosão de séries realimentando a memória do Prometheus.
+`docs/PLANO.md` (74.6) decidiu cAdvisor pela medição, e a medição o rejeitou: ele dá exatamente as métricas certas, mas custa **60-120 MB de RSS** contra um orçamento de **~42 MB** no bloco INFRA compartilhada — 15-25% do bloco gasto só para monitorar o próprio bloco. A alternativa de custo quase zero era o textfile collector do node-exporter: à época (74.6) o mesmo binário já rodava no bloco, alimentado por um script simples de host via systemd timer, sem container novo, sem sidecar, sem explosão de séries realimentando a memória do Prometheus. Desde a tarefa 77 quem lê o textfile é o Alloy — que já roda no bloco por outros motivos (scrape da API e do host, tail de log, ver `infra/alloy/README.md`) —, então o mesmo raciocínio de custo marginal zero se aplica a ele: nenhum container novo, nenhum sidecar.
 
 O preço é dado mais grosso (leitura de cgroup direta, não a agregação fina do cAdvisor) e uma instalação manual de host — o mesmo trade-off já aceito para `daemon.json` e o swapfile acima.
 
@@ -140,10 +142,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now td-container-metrics.timer
 ```
 
-O `docker compose up -d` seguinte (ou um `up -d node-exporter` isolado) precisa recriar o `node-exporter` para pegar o novo `--collector.textfile` e o mount de `/var/lib/node_exporter/textfile` — um `docker-compose.yml` mudo (sem tocar `src/`) não recria containers por si só (ver `feedback_deploy_docs_nao_recria`), então force manualmente se não houver deploy de código no mesmo commit:
+Diferente da instalação original (74.6, quando o leitor era o `node-exporter`), o bind mount de `/var/lib/node_exporter/textfile` já está embutido na definição do serviço `alloy` desde a tarefa 77.1 (`docker-compose.yml:296`) — não é algo que se acrescenta agora. Numa VPS nova, o `docker compose up -d` que sobe a stack inteira já cria o `alloy` com esse bind mount ativo; numa VPS onde o `alloy` já está de pé, o mount já existe e não é preciso recriar o container — os arquivos `.prom` passam a aparecer dentro dele assim que o timer grava o primeiro (bind mount é live). Se por algum motivo o `alloy` não estiver rodando:
 
 ```bash
-docker compose up -d --force-recreate node-exporter
+docker compose up -d alloy
 ```
 
 ### Como verificar
@@ -151,11 +153,18 @@ docker compose up -d --force-recreate node-exporter
 ```bash
 sudo systemctl status td-container-metrics.service
 systemctl list-timers td-container-metrics.timer
-
-curl -s localhost:9100/metrics | grep td_container_
 ```
 
-A ausência prolongada de atualização do arquivo (timer parado, script falhando) fica visível pela métrica padrão `node_textfile_mtime_seconds` do próprio node-exporter — é ela quem sustenta um alerta de obsolescência, não uma métrica nova deste script.
+Isso confirma que o **host** está gerando o `.prom`. Para confirmar que o **Alloy** está lendo e enviando, não há mais um endpoint local equivalente ao antigo `curl localhost:9100/metrics` — o Alloy não expõe as métricas do `prometheus.exporter.unix` num endpoint HTTP local para curl direto; só a UI (saúde de componente) e o destino final (Grafana Cloud) são observáveis de fora:
+
+- UI local do próprio Alloy, mostra saúde do componente `prometheus.exporter.unix.host`: `http://127.0.0.1:12345` (`infra/alloy/README.md:79-80`).
+- Prova de que as séries chegaram, no Explore do Grafana Cloud:
+  ```promql
+  count by (job, container) (td_container_memory_unreclaimable_bytes)
+  ```
+  Esperado: `job="node"` e uma linha por container do host (procedimento documentado em `docs/superpowers/plans/2026-08-14-tarefa-77-observabilidade-grafana-cloud.md:473-477`).
+
+A ausência prolongada de atualização do arquivo (timer parado, script falhando) fica visível pela métrica padrão `node_textfile_mtime_seconds` do coletor `textfile` embutido no Alloy (o mesmo coletor `node_exporter` vendorizado que ele reaproveita — ver comentário em `infra/alloy/config.alloy:24-36`) — é ela quem sustenta um alerta de obsolescência, não uma métrica nova deste script.
 
 ### ⚠️ Instalar o timer na MESMA janela do deploy
 
@@ -163,7 +172,7 @@ A regra `td-metricas-container-obsoletas` é o dead-man's switch de todo este me
 
 Consequência prática: entre o deploy do código e a instalação manual do timer, o Telegram recebe um alerta *"Métricas de container obsoletas"*. **Isso é esperado, não é defeito** — é o dead-man funcionando. Ele resolve sozinho no primeiro ciclo do timer (até 30s depois do `systemctl enable --now`). Fazer as duas coisas na mesma janela evita o ruído.
 
-O diretório em si não é problema: o Docker **cria** o caminho do bind mount se ele não existir (verificado na VPS), então o `node-exporter` sobe normalmente com o diretório vazio — ele só não exporta nenhuma série `td_container_*` até o primeiro `.prom` aparecer.
+O diretório em si não é problema: o Docker **cria** o caminho do bind mount se ele não existir (verificado na VPS, era o comportamento do `node-exporter` e vale igual para o `alloy`, mesmo mecanismo de bind mount), então o `alloy` sobe normalmente com o diretório vazio — ele só não exporta nenhuma série `td_container_*` até o primeiro `.prom` aparecer.
 
 ### Como reverter
 
@@ -175,4 +184,10 @@ sudo rm -rf /var/lib/node_exporter/textfile
 sudo rm /usr/local/bin/container-metrics.sh
 ```
 
-Depois, remover `--collector.textfile`/`--collector.textfile.directory` e o mount de `/var/lib/node_exporter/textfile` do serviço `node-exporter` em `docker-compose.yml` e recriar o container (`docker compose up -d --force-recreate node-exporter`) — sem isso ele fica com um coletor apontando para um diretório que não existe mais (inofensivo, mas sujo).
+Depois, remover o coletor `textfile` (`"textfile"` de `set_collectors` e o bloco `textfile { directory = "/host/textfile" }`) de `infra/alloy/config.alloy` (`infra/alloy/config.alloy:44,62-64`) e a linha de bind mount de `/var/lib/node_exporter/textfile` do serviço `alloy` em `docker-compose.yml` (`docker-compose.yml:296`), e recriar o container. Como `config.alloy` é lido via bind-mount, um `up -d` sozinho **não** recria — é preciso forçar (`infra/alloy/README.md:76-77`):
+
+```bash
+docker compose up -d --force-recreate --no-deps alloy
+```
+
+Sem isso ele fica com um coletor apontando para um diretório que não existe mais (inofensivo, mas sujo).

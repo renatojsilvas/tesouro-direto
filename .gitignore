@@ -15,6 +15,5 @@ playwright-report/
 Thumbs.db
 .env
 pgdata/
-grafana-data/
 .sonarqube/
 scratchpad/

@@ -2,19 +2,17 @@
 
 ## Setup Inicial
 
+O projeto já vem pronto no repo (solution, projetos, Dockerfile, `docker-compose.yml`, CI/CD) — não existe mais um script de bootstrap para rodar. `setup.sh` é o script ORIGINAL, congelado como registro histórico de como o projeto nasceu; rodá-lo hoje sobrescreveria o `docker-compose.yml` real por uma versão incompleta (sem `web`, sem `alloy`) e por isso ele aborta sozinho a menos que você defina explicitamente uma variável de escape.
+
+Siga a seção **"Setup local"** do [`README.md`](README.md) para configurar o `.env` e subir a stack:
+
 ```bash
-# 1. Rodar o setup (cria solution, projetos, pacotes, Dockerfile, docker-compose, CI/CD, .gitignore)
-chmod +x setup.sh
-./setup.sh
-
-# 2. Subir a infra (db + observabilidade — docker-compose.yml foi criado pelo setup.sh)
-docker compose up -d
-
-# 3. Abrir o Claude Code
+cp .env.example .env   # preencher as variáveis obrigatórias
+docker compose up -d --build
 claude
 ```
 
-Grafana disponivel em: http://localhost:3000 (admin/admin)
+Métricas, logs e alertas não ficam mais na maquina local: o Alloy faz relay para o Grafana Cloud (ver README.md).
 
 ## Como Usar
 
@@ -78,9 +76,9 @@ Se a feature for grande, o pipeline decompoe. Se tiver duvida, ele pergunta.
 
 O projeto ja vem com:
 - **Dockerfile** multi-stage (build + runtime)
-- **docker-compose.yml** com app + PostgreSQL + Grafana + Loki + Prometheus + SonarQube
+- **docker-compose.yml** com `app` (API), `web` (Blazor), `db` (PostgreSQL) e `alloy` (agente de observabilidade), mais `prometheus` sob `profiles: ["load"]` só para teste de carga local
 - **GitHub Actions** (`deploy.yml`) que roda testes, SonarQube scan e faz deploy via SSH
-- **Serilog** com logs estruturados → Grafana/Loki
+- **Serilog** com logs estruturados → Alloy (`http://alloy:3100`) → Grafana Cloud
 - **Correlation ID** em todas as requisicoes
 - **SonarQube** analise estatica local e no CI
 

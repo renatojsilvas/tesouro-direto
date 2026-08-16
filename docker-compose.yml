@@ -302,12 +302,29 @@ services:
       # o tail parar de ver log novo em silêncio (decisão original do serviço
       # `promtail`, removido na 77.4, preservada aqui).
       - /var/log:/var/log/host:ro
-    # SEM deploy.resources.limits nesta fase: o pico real da não-descartável já foi
-    # medido (51,99 MB, portão fechado na 77.0) e a stack antiga que ficava ao lado já
-    # foi removida (77.4), mas o teto ainda depende do consumo real contra os limites
-    # do free tier do Grafana Cloud, que só entram em vigor em 17/08/2026 — é a 77.5 que
-    # fixa deploy.resources.limits sobre o número confirmado pós-17/08 (docs/PLANO.md,
-    # Fase 77).
+    # Teto INTERINO fixado na 77.5, deliberadamente folgado (~3× o medido).
+    #
+    # Medido em produção com o Alloy já fazendo TODO o trabalho (métricas de host da
+    # 77.1 + os 4 fluxos de log da 77.2): não-descartável de 62,34 MB, pico de 65,4 MB
+    # na janela do gate. Note que isso é MAIOR que os 51,99 MB do portão da 77.0 — lá
+    # o Alloy só fazia o scrape da API, então os dois números não são comparáveis; o
+    # que vale é que 62 MB continua muito abaixo do limiar de decisão do portão.
+    #
+    # Por que 3× e não o aperto usual: o consumo do Alloy sob ingestão REJEITADA nunca
+    # foi observado. Os limites do free tier do Grafana Cloud só entram em vigor em
+    # 17/08/2026 (até lá a stack roda sob limites de trial: 310k séries, não 10k), e
+    # quando a nuvem começar a rejeitar, o remote_write bufferiza e retenta — é
+    # exatamente aí que a memória pode subir. Um teto apertado transformaria rejeição
+    # de ingestão em OOM do coletor, que é a falha pior: perderíamos a observabilidade
+    # justamente no momento em que ela avisaria do problema.
+    #
+    # A regra `td-cloud-overage` (77.5) alerta sobre esse cenário, e as regras
+    # `td-container-*` alertam se a não-descartável passar de 85%/95% deste teto.
+    # Reavaliar após 17/08 com dado sob o regime real do free tier.
+    deploy:
+      resources:
+        limits:
+          memory: 192M
 
 volumes:
   pgdata:

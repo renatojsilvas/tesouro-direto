@@ -181,16 +181,22 @@ em vez de eventualmente `429`, e o teste não valida nada.
 
 ## 5. Onde ver as métricas
 
-Durante o run (streaming via remote-write, não só ao final): dashboard **"Load Test (k6)"**
-(uid `load-test-k6`), auto-provisionado —
-
-```
-http://localhost:3000/grafana/d/load-test-k6
-```
+Desde a tarefa 77 não há mais Grafana local, e o dashboard **"Load Test (k6)"** (uid `load-test-k6`,
+`infra/grafana/dashboards/load-test.json`) não vive no Grafana Cloud — e não pode: ele lê do
+**Prometheus efêmero local** que só sobe sob `--profile load` (`docker-compose.yml`, serviço
+`prometheus`, publicado em `127.0.0.1:9090/prometheus/`), e o backend SaaS do Grafana Cloud não tem
+(nem terá) rota para o `127.0.0.1` de quem roda o teste; `scripts/grafana-cloud/apply-cloud.sh`
+remove o `load-test-k6` da nuvem de forma idempotente caso ele apareça lá por engano
+(`infra/alloy/README.md:52-66`). Sem Grafana local para renderizar o dashboard, o caminho real é
+consultar o Prometheus efêmero diretamente: `run-load.sh` imprime, ao final do run, o destino real
+dos dados e lembra que não há Grafana neste modo — `http://localhost:9090/prometheus/` em `--local`
+(use a UI/API do próprio Prometheus), ou o `K6_PROMETHEUS_RW_SERVER_URL` explícito no outro modo
+(`run-load.sh:122-127`).
 
 Painéis: VUs, requisições/s, latência p95/p99, taxa de erro HTTP, taxa de 304 (ETag sob carga,
 só aparece rodando `titulos.js`), circuitos SignalR concorrentes (Blazor), e CPU/memória do
-host via node-exporter.
+host (métricas `node_*`, hoje coletadas pelo Alloy — ver `infra/alloy/config.alloy`, substituiu o
+`node-exporter` na 77.1).
 
 ## 6. Caveats do cenário Blazor (`site/circuits.js`)
 
@@ -293,10 +299,15 @@ escalar horizontalmente) destravaria mais capacidade real.
 o app voltar a saturar (p95 na casa dos segundos) **antes** de bater no teto da borda.
 
 **Limitação de método:** o "joelho" exato (em qual nº de VUs a latência estoura) exigiria a série
-temporal no Grafana, que **não** ficou disponível ao vivo em prod — o Prometheus de prod está sem
-`--web.enable-remote-write-receiver`, e o `--web.external-url=/prometheus/` impede o receiver mesmo
-se ligado (Prometheus 3.13.2). Para o joelho granular, rodar em um ambiente com o receiver
-habilitado (overlay `docker-compose.load.yml`) e ler o dashboard `load-test-k6` durante o run.
+temporal do k6 em tempo real, que **não** ficou disponível ao vivo contra prod — não por faltar uma
+flag num Prometheus de prod (essa topologia não existe mais desde a 77.4: hoje não há nenhum
+Prometheus always-on em produção, e mandar as métricas `k6_*` para o Grafana Cloud é proibido por
+cardinalidade alta e transitória, ver `infra/alloy/README.md:61-63`), mas porque medir o joelho ao
+vivo exige apontar o k6 para um Prometheus que receba remote-write, e não há um assim em produção
+por desenho. Para o joelho granular, rodar com `--local` (overlay `docker-compose.load.yml`, sobe o
+Prometheus efêmero só sob `--profile load`) e consultar a UI do próprio Prometheus em
+`http://localhost:9090/prometheus/` durante o run — não há mais dashboard Grafana automático (ver
+seção 5).
 
 O que **foi** validado estruturalmente:
 - `k6 inspect` processa os 6 scripts com sucesso quando as variáveis obrigatórias são passadas
@@ -439,7 +450,10 @@ medidor, não o servidor — é a prova direta do vício de método descrito aci
 throttling do CFS. As colunas de throttling são **delta dentro da janela do run** (último menos
 primeiro), não o valor lido do cgroup: `cpu.stat` acumula desde o boot do container, e reportar o
 absoluto superestimaria tudo em uma ordem de grandeza — a coluna "desde o boot" está ao lado só
-para deixar a diferença visível:
+para deixar a diferença visível. Nota: as linhas `grafana`/`loki`/`prometheus`/`promtail`/
+`node-exporter` abaixo são registro datado da 74.5 — essa stack local saiu do ar na 77.4, hoje
+substituída por um único container `alloy` que só faz scrape/tail e remote-write/loki-write para o
+Grafana Cloud (ver `infra/alloy/README.md`). Números preservados como estavam:
 
 | container | pico | % do teto | eventos (delta) | throttled no run | (desde o boot) |
 |---|---|---|---|---|---|

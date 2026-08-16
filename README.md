@@ -18,7 +18,7 @@ API e front para consultar **títulos do Tesouro Direto**, seus **preços/taxas*
 
 ## Arquitetura
 
-Dois pontos de entrada — **API Minimal** (`TesouroDireto.API`) e **Blazor Server** (`TesouroDireto.Web`), que consome a API por HTTP. Ingestão por **jobs Quartz** de fontes públicas. Stack de **observabilidade** própria (logs + métricas + alertas).
+Dois pontos de entrada — **API Minimal** (`TesouroDireto.API`) e **Blazor Server** (`TesouroDireto.Web`), que consome a API por HTTP. Ingestão por **jobs Quartz** de fontes públicas. **Observabilidade** via um único agente **Grafana Alloy** local (scrape de métricas, tail de logs) que reenvia (`remote_write`/`loki.write`) para o **Grafana Cloud** (free tier); métricas, logs, dashboards e alerting (Grafana-managed) vivem na nuvem, não na VPS.
 
 ```mermaid
 flowchart TB
@@ -32,14 +32,7 @@ flowchart TB
         web["web — Blazor Server :5275"]
         app["app — API Minimal :5000"]
         db[("db — PostgreSQL 16 :5432")]
-
-        subgraph obs["Observabilidade"]
-            prometheus["prometheus :9090"]
-            loki["loki :3100"]
-            promtail["promtail"]
-            grafana["grafana :3000"]
-            nodeexporter["node-exporter :9100"]
-        end
+        alloy["alloy :12345<br/>scrape + tail + relay<br/>(hash de IP antes do envio)"]
     end
 
     subgraph ext["Fontes externas (jobs Quartz + on-demand)"]
@@ -48,12 +41,18 @@ flowchart TB
         bcb["BCB Focus<br/>(OData, cache 6h + lkg 7d)"]
     end
 
+    subgraph cloud["Grafana Cloud (free tier, retenção 14 dias)"]
+        gcprom[("Prometheus")]
+        gcloki[("Loki")]
+        gcalert{{"Alerting (21 regras, Grafana-managed)"}}
+    end
+
     telegram([Telegram])
 
     browser -->|HTTP| nginx
     nginx -->|"/"| web
     nginx -->|"/api/"| app
-    nginx -.->|"/grafana/ /prometheus/ /api/swagger — só localhost (túnel SSH)"| grafana
+    nginx -.->|"/api/swagger, /api/metrics — só localhost (túnel SSH)"| app
     web -->|HTTP + X-Api-Key| app
     app --> db
     app -->|EF Core write / Dapper read| db
@@ -61,16 +60,18 @@ flowchart TB
     app --> anbima
     app --> bcb
 
-    prometheus -->|scrape /metrics| app
-    prometheus -->|scrape| nodeexporter
-    promtail -->|logs nginx| loki
-    app -->|Serilog| loki
-    grafana --> prometheus
-    grafana --> loki
-    grafana -->|alertas| telegram
+    alloy -->|scrape /metrics| app
+    app -->|Serilog| alloy
+    web -->|Serilog| alloy
+    host -.->|"tail nginx access/error + kern.log"| alloy
+    alloy -->|remote_write| gcprom
+    alloy -->|loki.write| gcloki
+    gcprom --> gcalert
+    gcloki --> gcalert
+    gcalert -->|alertas| telegram
 ```
 
-**Serviços do `docker-compose.yml`:** `app`, `db`, `web`, `grafana`, `loki`, `prometheus`, `node-exporter`, `promtail`. O **nginx roda no host** (não é serviço do compose) — sua config vem de [`infra/nginx/tesouro-direto.conf`](infra/nginx/tesouro-direto.conf) e é copiada para o nginx do sistema no deploy. Todas as portas do compose ficam ligadas a `127.0.0.1` (só a borda nginx é pública).
+**Serviços do `docker-compose.yml`:** `app`, `db`, `web`, `alloy` — sempre ativos. `prometheus` só sobe sob `--profile load` (`docker-compose.yml:210-217`), exclusivamente para o k6 fazer `remote_write` **local** durante teste de carga — as métricas `k6_*` nunca vão para a nuvem (cardinalidade alta e transiente); em repouso este serviço não roda e não custa memória. O **nginx roda no host** (não é serviço do compose) — sua config vem de [`infra/nginx/tesouro-direto.conf`](infra/nginx/tesouro-direto.conf) e é copiada para o nginx do sistema no deploy. Todas as portas do compose ficam ligadas a `127.0.0.1` (só a borda nginx é pública).
 
 ### Camadas do código (`src/`)
 
@@ -176,12 +177,20 @@ O `docker-compose.yml` **falha o boot** se as variáveis obrigatórias estiverem
 | Variável | Obrigatória | Observação |
 |----------|:-----------:|------------|
 | `API_KEY` | sim | Chave compartilhada entre API e Web (`X-Api-Key`). |
-| `GRAFANA_PASSWORD` | sim | Senha do admin do Grafana. |
-| `TELEGRAM_BOT_TOKEN` | sim | Token do bot para entrega de alertas (placeholder serve localmente). |
+| `ADMIN_EMAIL` | sim | E-mail do usuário que recebe papel Admin aprovado automaticamente no boot. |
+| `GC_PROM_URL` | sim | URL de `remote_write` do Prometheus do Grafana Cloud (página "Details" da stack). |
+| `GC_PROM_USER` | sim | Username/Instance ID numérico do Prometheus do Grafana Cloud. |
+| `GC_TOKEN` | sim | Access Policy Token com escopos `metrics:write` e `logs:write`. |
+| `GC_LOKI_URL` | sim | URL de push do Loki do Grafana Cloud. |
+| `GC_LOKI_USER` | sim | Username/Instance ID numérico do Loki do Grafana Cloud. |
+| `GC_IP_SALT` | sim | Salt (gere com `openssl rand -hex 32`) do hash do IP de cliente nos logs de nginx, aplicado pelo Alloy **antes** do envio ao Grafana Cloud — exigência de LGPD (transferência internacional de dado pessoal, Res. CD/ANPD 19/2024). |
+| `TELEGRAM_BOT_TOKEN` | não* | *Não é exigida pelo `docker compose` — a 77.4 removeu o serviço `grafana`, que era quem a exigia no boot. Ainda é exigida por `scripts/grafana-cloud/apply-cloud.sh`, que provisiona a entrega de alerta a partir do Grafana Cloud (placeholder serve localmente). |
 | `DB_PASSWORD` | não | Senha do Postgres (default `app123`). |
-| `GRAFANA_ROOT_URL` | não | URL raiz do Grafana (tem default). |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | não | Credenciais de login OAuth Google (default vazio; `docker-compose.yml:166-167`). |
 
-> Nunca faça commit do `.env` — ele está no `.gitignore`. Este README **não** contém valores, só nomes.
+> As 8 primeiras variáveis são `${VAR:?}` no `docker-compose.yml`: faltar **qualquer uma** delas falha a interpolação do arquivo inteiro (o `docker compose up` nem chega a subir um container). `GRAFANA_PASSWORD` e `GRAFANA_ROOT_URL` de versões anteriores deste README **não existem mais** — a 77.4 removeu o serviço `grafana` do compose.
+>
+> Nunca faça commit do `.env` — ele está no `.gitignore`. Este README **não** contém valores, só nomes. Fonte de verdade: [`.env.example`](.env.example).
 
 ### 2. Subir a stack
 
@@ -193,7 +202,7 @@ Na inicialização a API roda as **migrations** e o **seed idempotente** (tribut
 
 - API — `http://localhost:5000` (Swagger em `http://localhost:5000/swagger`)
 - Web (Blazor) — `http://localhost:5275`
-- Grafana — `http://localhost:3000` · Prometheus — `http://localhost:9090`
+- Alloy (debug) — `http://localhost:12345`: UI do agente (status dos componentes de scrape/tail); métricas e logs em si não têm UI local, vão direto para o Grafana Cloud.
 
 Verifique a saúde:
 
@@ -232,34 +241,35 @@ cd tests/TesouroDireto.E2E.Tests && npm ci && npx playwright install --with-deps
 
 1. **test** — `dotnet restore/build/test` com cobertura, seguido do **gate de cobertura** (`scripts/coverage-gate.py`, piso de linha em **80%**) e, se houver token, scan do SonarQube. `pull_request` roda só o `test`.
 2. **e2e** — sobe `docker-compose.e2e.yml`, aguarda saúde, semeia `seed.sql` e roda os specs Playwright.
-3. **deploy** — via SSH no VPS: escreve o `.env`, `git fetch` + `reset --hard origin/main`, copia a config do nginx e recarrega, `docker compose build --no-cache && up -d` (com `--force-recreate` de Prometheus/Grafana, cujas configs são bind-mounts), aguarda `/health/ready` e limpa imagens órfãs.
+3. **deploy** — via SSH no VPS: escreve o `.env` com os secrets (inclusive as 6 `GC_*`), `git fetch` + `reset --hard origin/main`, copia a config do nginx e recarrega, `docker compose build` (sem `--no-cache`, removido na 74.0) e `up -d --remove-orphans`, `docker compose --profile load rm -sf prometheus` (`--remove-orphans` não recolhe serviço sob `profiles:`, então o `prometheus` do teste de carga é removido à parte) e `up -d --force-recreate --no-deps alloy` (a config do Alloy vem de bind-mount, que `up -d` sozinho não recria), aguarda `/health/ready` e limpa imagens órfãs (`.github/workflows/deploy.yml:226,236,253,257`).
 
 **Secrets do GitHub necessários** (nomes apenas — valores nos *Settings → Secrets* do repositório):
 
-`API_KEY`, `DB_PASSWORD`, `GRAFANA_PASSWORD`, `GRAFANA_ROOT_URL`, `TELEGRAM_BOT_TOKEN`, `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `SONAR_TOKEN`, `SONAR_HOST_URL`.
+`API_KEY`, `DB_PASSWORD`, `ADMIN_EMAIL`, `TELEGRAM_BOT_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GC_PROM_URL`, `GC_PROM_USER`, `GC_TOKEN`, `GC_LOKI_URL`, `GC_LOKI_USER`, `GC_IP_SALT`, `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `SONAR_TOKEN`, `SONAR_HOST_URL`.
 
 ### Acesso às ferramentas de operação (túnel SSH)
 
-Grafana, Prometheus e o Swagger em produção só respondem a `127.0.0.1` no nginx (`allow 127.0.0.1; deny all`). O acesso é por túnel SSH — por exemplo:
+O Swagger e o endpoint `/metrics` da API em produção só respondem a `127.0.0.1` no nginx (`allow 127.0.0.1; deny all`, `infra/nginx/tesouro-direto.conf:75-91`). Não existe mais Grafana nem Prometheus locais para tunelar — métricas, logs, dashboards e alerting vivem no Grafana Cloud (ver [Dashboards e alertas](#dashboards-e-alertas) abaixo). O acesso operacional que ainda exige túnel SSH:
 
 ```bash
 ssh -L 3080:localhost:3080 SEU_USUARIO@SEU_HOST
 # depois, no navegador local:
-#   Grafana    → http://localhost:3080/grafana/
-#   Prometheus → http://localhost:3080/prometheus/
-#   Swagger    → http://localhost:3080/api/swagger
+#   Swagger  → http://localhost:3080/api/swagger
+#   Métricas → http://localhost:3080/api/metrics
 ```
+
+A UI de debug do Alloy (`127.0.0.1:12345` no host) não passa pelo nginx; para inspecioná-la, tunele a porta direto (`ssh -L 12345:localhost:12345 SEU_USUARIO@SEU_HOST`).
 
 ### Dashboards e alertas
 
-Provisionados em `infra/grafana/`:
+Provisionados no **Grafana Cloud** (free tier, retenção de 14 dias) por `scripts/grafana-cloud/apply-cloud.sh`, que lê `infra/grafana/dashboards/` e `infra/grafana/cloud/` e aplica por API de forma idempotente (reconverge o que mudou e apaga da nuvem o que saiu da fonte).
 
-- **Dashboards** — `tesouro-direto.json` (métricas de app e negócio: frescor do último preço, latência, erros, simulações) e `host.json` (CPU/memória/disco/rede via node-exporter).
-- **Alertas** (10 regras em `infra/grafana/provisioning/alerting/`, destino **Telegram**): dado velho (frescor > 48h útil), app down, DB/readiness down, taxa de erro 5xx alta, latência p95 alta, falha de import, simulador degradado (BCB indisponível), simulador com taxa de falhas alta, disco raiz acima de 85% e rate limit anômalo (429 na borda).
+- **Dashboards** — `tesouro-direto.json` (métricas de app e negócio: frescor do último preço, latência, erros, simulações) e `host.json` (CPU/memória/disco/rede coletados pelo `prometheus.exporter.unix` do Alloy). Existe um terceiro, `load-test.json`, que **não** sobe para a nuvem por desenho: lê o Prometheus efêmero do teste de carga (`--profile load`), que o backend SaaS não alcança; o `apply-cloud.sh` o remove da nuvem por convergência se alguém o subir manualmente.
+- **Alertas** — 21 regras Grafana-managed (`infra/grafana/cloud/rules.yaml`, com `contactpoints.yaml`/`policies.yaml`), destino **Telegram**: dado velho (frescor > 48h útil), app down, DB/readiness down, taxa de erro 5xx alta, latência p95 alta, falha de import, simulador degradado (BCB indisponível), simulador com taxa de falhas alta, disco raiz acima de 85%, rate limit anômalo (429 na borda), memória de container acima de 85%/95% do limite, reclaim de memória sustentado, throttling de CPU sustentado, container reiniciou, OOM kill (métrica de container), métricas de container obsoletas (timer do host parado), OOM detectado no log de kernel, séries ativas do Grafana Cloud próximas do teto do free tier, overage de métricas ou logs do Grafana Cloud e projeção mensal de logs próxima do teto do free tier. Por avaliar na nuvem (fora da VPS), ausência de dado também dispara `NoData` → Telegram — um dead-man's switch que a stack antiga, hospedada na própria VPS, não tinha (se a VPS caía, o alerting calava junto). As 3 últimas (77.5) monitoram a saúde da própria ingestão do Grafana Cloud: se ela passar a ser rejeitada (free tier estourado), todos os outros 18 alertas ficam mudos sem aviso — isso precisa ser alerta, não dashboard que ninguém olha vazio.
 
 ### Rotina de manutenção
 
-Teto de log nos três acumuladores para o disco não encher: Docker (`infra/host/daemon.json`, rotação do log-driver), nginx (logrotate do pacote) e Loki (retention de 30 dias). O alerta "disco raiz acima de 85%" cobre a borda restante.
+Teto de log nos dois acumuladores locais que restam para o disco não encher: Docker (`infra/host/daemon.json`, rotação do log-driver) e nginx (logrotate do pacote). Havia um terceiro acumulador local — o Loki desta stack, com retention de 30 dias reduzida a 7 dias na 74.2 — removido na 77.4; os logs hoje são reenviados pelo Alloy ao Loki do Grafana Cloud (retenção de 14 dias, free tier), fora do disco da VPS. O alerta "disco raiz acima de 85%" cobre a borda restante.
 
 ---
 
