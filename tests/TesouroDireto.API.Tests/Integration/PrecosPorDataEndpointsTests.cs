@@ -248,12 +248,8 @@ public sealed class PrecosPorDataEndpointsTests(ApiTestFactory factory) : IAsync
 
     // Critério 6a: HEAD devolve os mesmos headers do GET (X-Total-Count, ETag,
     // Cache-Control) mas corpo vazio — herdado de MapReadGet/SuppressHeadBodyFilter.
-    // RESSALVA: ETag é diferente entre HEAD e GET (ConditionalGetFilter.cs:66 inclui
-    // request.Method no hash) — comportamento pré-existente global registrado como
-    // follow-up no PLANO. O teste fixa esse comportamento de propósito; quando
-    // corrigido, este assert mudará de NotBe para Be.
     [Fact]
-    public async Task HeadPrecos_ShouldReturn200WithSameHeadersAsGetButEmptyBody_ExceptEtagWhichHashesTheMethod()
+    public async Task HeadPrecos_ShouldReturn200WithSameHeadersAsGetButEmptyBody()
     {
         var dataBase = new DateOnly(2024, 3, 5);
         var tituloId = await SeedTituloAsync(TipoTitulo.TesouroSelic, new DateOnly(2029, 3, 1));
@@ -275,12 +271,9 @@ public sealed class PrecosPorDataEndpointsTests(ApiTestFactory factory) : IAsync
         headTotal!.Single().Should().Be("1");
 
         head.Headers.ETag.Should().NotBeNull();
-        // Comportamento PRÉ-EXISTENTE e global: ConditionalGetFilter.cs:66 inclui request.Method
-        // no hash, então HEAD e GET produzem ETags diferentes em toda rota de leitura do repo.
-        // Corrigir isso mudaria o ETag de rotas existentes — fora do escopo da tarefa 78 (aditiva),
-        // registrado como follow-up no PLANO. Este assert fixa o comportamento de hoje de propósito:
-        // quando o follow-up remover o método do hash, ele fica vermelho e deve virar Be(...).
-        head.Headers.ETag!.Tag.Should().NotBe(get.Headers.ETag!.Tag);
+        // O método não entra no hash (ConditionalGetFilter.ComputeETag) — HEAD e GET
+        // da mesma rota/query compartilham o mesmo ETag, como exige RFC 9110 §9.3.2.
+        head.Headers.ETag!.Tag.Should().Be(get.Headers.ETag!.Tag);
 
         head.Headers.CacheControl.Should().NotBeNull();
         head.Headers.CacheControl!.Public.Should().BeTrue();

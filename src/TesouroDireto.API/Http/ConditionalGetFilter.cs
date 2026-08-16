@@ -63,7 +63,10 @@ public sealed class ConditionalGetFilter : IEndpointFilter
             .OrderBy(parameter => parameter.Key, StringComparer.Ordinal)
             .Select(parameter => $"{parameter.Key}={parameter.Value}"));
 
-        var raw = $"{version}|{request.Method}|{request.Path}|{canonicalQuery}";
+        // O método NÃO entra no hash: RFC 9110 §9.3.2 exige que HEAD devolva
+        // os mesmos headers do GET, então HEAD e GET da mesma rota/query
+        // precisam compartilhar o mesmo ETag.
+        var raw = $"{version}|{request.Path}|{canonicalQuery}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         var hex = Convert.ToHexString(hash)[..16].ToLowerInvariant();
 

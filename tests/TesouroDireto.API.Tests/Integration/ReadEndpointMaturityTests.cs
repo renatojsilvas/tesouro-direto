@@ -54,6 +54,21 @@ public sealed class ReadEndpointMaturityTests(ApiTestFactory factory) : IAsyncLi
     }
 
     [Fact]
+    public async Task HeadTitulos_ShouldReturnSameEtagAsGet()
+    {
+        await SeedTituloAsync();
+
+        var get = await _client.GetAsync("/v1/titulos", CancellationToken.None);
+
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head, "/v1/titulos");
+        var head = await _client.SendAsync(headRequest, CancellationToken.None);
+
+        get.Headers.ETag.Should().NotBeNull();
+        head.Headers.ETag.Should().NotBeNull();
+        head.Headers.ETag!.Tag.Should().Be(get.Headers.ETag!.Tag);
+    }
+
+    [Fact]
     public async Task OptionsTitulos_ShouldReturn204WithAllowHeader()
     {
         using var request = new HttpRequestMessage(HttpMethod.Options, "/v1/titulos");
