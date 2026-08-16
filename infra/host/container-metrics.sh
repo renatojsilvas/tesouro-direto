@@ -19,10 +19,15 @@ set -euo pipefail
 # é diagnóstico — comparável ao número do cAdvisor, útil em painel — mas
 # inclui active_file (page cache RECLAMÁVEL, o kernel joga fora sob pressão
 # sem matar ninguém). `td_container_memory_unreclaimable_bytes`
-# (anon + shmem + kernel, memory.stat) é quem REGE os alertas de memória:
-# os tetos da 74.3 foram dimensionados a partir do não-descartável, não do
-# working_set — medido na VPS, alertar sobre working_set acusaria risco de
-# OOM no node-exporter/promtail por causa de cache, não de pressão real.
+# (anon + shmem + (kernel - slab_reclaimable), memory.stat) é quem REGE os
+# alertas de memória: os tetos da 74.3 foram dimensionados a partir do
+# não-descartável, não do working_set — medido na VPS, alertar sobre
+# working_set acusaria risco de OOM no node-exporter/promtail por causa de
+# cache, não de pressão real. `kernel` inclui `slab`, que por sua vez inclui
+# `slab_reclaimable` (dentry/inode cache) — memória que o kernel encolhe sob
+# pressão ANTES de cogitar OOM, a mesma natureza do `active_file` acima
+# (correção 80.2: contar slab_reclaimable do lado não-descartável inflava o
+# número que rege os alertas de 85%/95% e que dimensionou os tetos da 74.3).
 
 CGROUP_ROOT="${CGROUP_ROOT:-/sys/fs/cgroup}"
 TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
@@ -146,26 +151,52 @@ for i in "${!CUR_NAMES[@]}"; do
     M_WORKING+=("td_container_memory_working_set_bytes{container=\"${label}\"} ${working_set}")
   fi
 
-  # não-descartável = anon + shmem + kernel (memory.stat). É o que rege os
-  # alertas de memória (rules.yaml): working_set acima inclui active_file
-  # (page cache RECLAMÁVEL sob pressão, o kernel joga fora sem matar
-  # ninguém), e os tetos da 74.3 foram dimensionados a partir do que NÃO
-  # pode ser descartado. Medido na VPS (74.6): node-exporter e promtail
+  # não-descartável = anon + shmem + (kernel - slab_reclaimable), memory.stat.
+  # É o que rege os alertas de memória (rules.yaml): working_set acima inclui
+  # active_file (page cache RECLAMÁVEL sob pressão, o kernel joga fora sem
+  # matar ninguém), e os tetos da 74.3 foram dimensionados a partir do que
+  # NÃO pode ser descartado. Medido na VPS (74.6): node-exporter e promtail
   # ficavam em 78%/70% do teto por working_set contra 45%/42% real por
   # não-descartável — o alerta de 85% acusaria risco de OOM por causa de
   # cache, não de pressão real.
   #
+  # Correção 80.2: `kernel` já inclui `slab_reclaimable` (dentry/inode
+  # cache) — mesma natureza do `active_file` acima: o kernel o encolhe sob
+  # pressão ANTES de cogitar OOM. Contá-lo do lado não-descartável inflava o
+  # número que rege os alertas de 85%/95% e que dimensionou os tetos da
+  # 74.3. Impacto medido na VPS em 2026-08-16: app 117,0→115,7 MB (-1,1%,
+  # 46%→45% do teto), web 80,4→79,9 MB (-0,6%, 50%→50%), db 43,2→42,8 MB
+  # (-0,9%, 34%→33%), alloy 67,8→66,1 MB (-2,4%, 35%→34%) — nenhum container
+  # muda de faixa de alerta, todos os deltas são para baixo e abaixo de
+  # 2,5%. Isto NÃO é a causa do vazamento de ~0,4 MB/h do Alloy em regime —
+  # a tarefa 80.2 segue aberta para isso.
+  #
   # NÃO somar `slab` a este total: no cgroup v2 `slab` já está DENTRO de
   # `kernel` (verificado na tarefa 74.1, tests/load/profiling/run-footprint.sh,
-  # função stats_nao_descartavel) — somar os dois conta slab em dobro.
+  # função stats_nao_descartavel) — somar os dois conta slab em dobro. A
+  # SUBTRAÇÃO de `slab_reclaimable` logo abaixo é uma operação diferente:
+  # não soma nada de novo, só retira do `kernel` já contado a fatia que é
+  # reclamável — o mesmo tipo de diferença que já separa `active_file` de
+  # `inactive_file` no cálculo do working_set acima.
   #
-  # Se qualquer um dos três campos faltar, omite a série inteira: ausência
-  # de dado não é zero (mesma regra de read_kv acima).
-  mem_anon="" mem_shmem="" mem_kernel=""
+  # Se anon, shmem ou kernel faltarem, omite a série inteira: ausência de
+  # dado não é zero (mesma regra de read_kv acima). `slab_reclaimable` tem
+  # tratamento diferente — ver comentário na leitura do campo, abaixo.
+  mem_anon="" mem_shmem="" mem_kernel="" mem_slab_reclaimable=""
   if mem_anon=$(read_kv "$cpath/memory.stat" anon) \
      && mem_shmem=$(read_kv "$cpath/memory.stat" shmem) \
      && mem_kernel=$(read_kv "$cpath/memory.stat" kernel); then
-    unreclaimable=$(( mem_anon + mem_shmem + mem_kernel ))
+    # `slab_reclaimable` pode faltar (cgroup v1, kernel antigo sem esse
+    # campo em memory.stat). Ao contrário dos três campos acima, a ausência
+    # AQUI não segue "ausência não é zero": omitir a série INTEIRA por causa
+    # de um único campo secundário é PIOR do que cair para a fórmula antiga
+    # — as 5 regras `td-container-*` e o dead-man
+    # (`td-metricas-container-obsoletas`, `noDataState: Alerting`) ficariam
+    # sem dado nenhum. Fallback para 0 equivale a "nada a descontar", ou
+    # seja, exatamente `anon + shmem + kernel` — continua emitindo, nunca
+    # omite por causa deste campo.
+    mem_slab_reclaimable=$(read_kv "$cpath/memory.stat" slab_reclaimable) || mem_slab_reclaimable=0
+    unreclaimable=$(( mem_anon + mem_shmem + (mem_kernel - mem_slab_reclaimable) ))
     M_UNRECLAIMABLE+=("td_container_memory_unreclaimable_bytes{container=\"${label}\"} ${unreclaimable}")
   fi
 
@@ -251,7 +282,7 @@ trap 'rm -f "$TMP_FILE"' EXIT
     "memoria quente do container: memory.current - inactive_file (memory.stat), bytes. DIAGNOSTICO (comparavel ao numero do cAdvisor) — nao rege alerta, ver td_container_memory_unreclaimable_bytes." \
     "${M_WORKING[@]+"${M_WORKING[@]}"}"
   emit_block td_container_memory_unreclaimable_bytes gauge \
-    "memoria nao-descartavel do container: anon + shmem + kernel (memory.stat), bytes. Rege os alertas de memoria (rules.yaml) — os tetos da 74.3 foram dimensionados a partir deste numero, nao do working_set (que inclui page cache reclamavel)." \
+    "memoria nao-descartavel do container: anon + shmem + (kernel - slab_reclaimable) (memory.stat), bytes. Rege os alertas de memoria (rules.yaml) — os tetos da 74.3 foram dimensionados a partir deste numero, nao do working_set (que inclui page cache reclamavel). slab_reclaimable e dentry/inode cache que o kernel encolhe sob pressao antes de cogitar OOM; se ausente (cgroup v1/kernel antigo), o campo cai para 0 (formula anon+shmem+kernel) em vez de omitir a serie." \
     "${M_UNRECLAIMABLE[@]+"${M_UNRECLAIMABLE[@]}"}"
   emit_block td_container_memory_limit_bytes gauge \
     "teto de memoria do container (memory.max), bytes. Ausente quando o container nao tem limite (memory.max=max)." \
