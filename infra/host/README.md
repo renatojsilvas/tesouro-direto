@@ -115,7 +115,7 @@ Métricas emitidas, com label `container="<nome>"`:
 
 > As duas medições a seguir (`node-exporter`/`promtail`, "oito containers") são registro datado da 74.3, quando a stack local ainda incluía `grafana`/`loki`/`prometheus`/`promtail`/`node-exporter` — essa stack saiu do ar na 77.4. Preservadas como estavam; não representam a topologia atual.
 
-**Por que os alertas de memória NÃO usam `working_set`.** `working_set` (`memory.current − inactive_file`) é a definição do cAdvisor e inclui `active_file` — page cache **reclamável**, que o kernel joga fora sob pressão sem matar ninguém. Os tetos da 74.3 foram dimensionados a partir do **não-descartável** (`anon + shmem + kernel`), então alertar sobre `working_set` mediria uma coisa diferente da que o teto governa. Medido na VPS: `node-exporter` a 78% de `working_set` contra **45%** de não-descartável, `promtail` a 70% contra **42%** — um alerta de 85% sobre `working_set` acusaria risco de OOM onde só há cache.
+**Por que os alertas de memória NÃO usam `working_set`.** `working_set` (`memory.current − inactive_file`) é a definição do cAdvisor e inclui `active_file` — page cache **reclamável**, que o kernel joga fora sob pressão sem matar ninguém. Os tetos da 74.3 foram dimensionados a partir do **não-descartável** (`anon + shmem + (kernel − slab_reclaimable)` desde a 80.2; antes, `anon + shmem + kernel`), então alertar sobre `working_set` mediria uma coisa diferente da que o teto governa. Medido na VPS: `node-exporter` a 78% de `working_set` contra **45%** de não-descartável, `promtail` a 70% contra **42%** — um alerta de 85% sobre `working_set` acusaria risco de OOM onde só há cache.
 
 `td_container_memory_reclaim_events_total` é o campo `max` de `memory.events`: quantas vezes uma alocação bateu no teto e forçou reclaim. Foi ele que acusou os 9131 eventos do `grafana` mal dimensionado na 74.3, e com os tetos corrigidos a linha de base medida é **zero nos oito containers** — o que dispensa limiar chutado.
 
@@ -129,10 +129,9 @@ O preço é dado mais grosso (leitura de cgroup direta, não a agregação fina 
 
 ### Instalação manual na VPS
 
-```bash
-sudo cp infra/host/container-metrics.sh /usr/local/bin/container-metrics.sh
-sudo chmod +x /usr/local/bin/container-metrics.sh
+**Desde a 80.2, a cópia do script para `/usr/local/bin/container-metrics.sh` é automática a cada deploy** (`.github/workflows/deploy.yml`, passo "Deploy via SSH", ANCORA 80.2) — antes disso o arquivo no host era regular (não symlink) e o `git reset --hard` do deploy nunca o alcançava; qualquer fix commitado em `infra/host/container-metrics.sh` ficava só no repo. `chmod +x` também roda a cada deploy. O que **continua** manual (só na primeira instalação, ou se as unidades systemd mudarem) são as unidades `.service`/`.timer` — copiá-las a cada deploy exigiria `daemon-reload` + restart do timer, superfície de risco julgada desnecessária frente ao ganho (elas mudam raramente):
 
+```bash
 sudo cp infra/host/td-container-metrics.service /etc/systemd/system/
 sudo cp infra/host/td-container-metrics.timer /etc/systemd/system/
 
@@ -141,6 +140,8 @@ sudo mkdir -p /var/lib/node_exporter/textfile
 sudo systemctl daemon-reload
 sudo systemctl enable --now td-container-metrics.timer
 ```
+
+Se só o *script* mudou (não as unidades), nenhuma ação manual é necessária: o deploy já copia a versão nova, e o timer a pega sozinho no disparo seguinte (até 30s depois), sem `daemon-reload` nem restart — ele só reinvoca o binário a cada disparo.
 
 Diferente da instalação original (74.6, quando o leitor era o `node-exporter`), o bind mount de `/var/lib/node_exporter/textfile` já está embutido na definição do serviço `alloy` desde a tarefa 77.1 (`docker-compose.yml:296`) — não é algo que se acrescenta agora. Numa VPS nova, o `docker compose up -d` que sobe a stack inteira já cria o `alloy` com esse bind mount ativo; numa VPS onde o `alloy` já está de pé, o mount já existe e não é preciso recriar o container — os arquivos `.prom` passam a aparecer dentro dele assim que o timer grava o primeiro (bind mount é live). Se por algum motivo o `alloy` não estiver rodando:
 

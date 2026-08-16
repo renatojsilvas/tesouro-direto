@@ -3,16 +3,26 @@
 #
 # CORRECAO (revisao adversarial do portao 77.0, 2026-08-15): a formula da
 # nao-descartavel usada por este script ERA anon+shmem+slab, copiada de
-# /root/fp-gate76.sh. Essa formula esta ERRADA. A metrica canonica do
-# projeto, `td_container_memory_unreclaimable_bytes`, e emitida por
-# `infra/host/container-metrics.sh` como anon+shmem+kernel — e esse script
-# tem um comentario explicito avisando que `slab` NAO deve ser somado, pois
-# no cgroup v2 `slab` ja esta DENTRO de `kernel` (verificado na 74.1,
-# tests/load/profiling/run-footprint.sh, funcao stats_nao_descartavel):
-# somar os dois conta slab em dobro. NAO reverta isto para `slab` — a fonte
-# de verdade e infra/host/container-metrics.sh, nao fp-gate76.sh (que
-# carrega o mesmo defeito e NAO foi corrigido, porque a janela de 24h do
-# gate da tarefa 76 ja tinha fechado quando o defeito foi achado).
+# /root/fp-gate76.sh. Essa formula esta ERRADA. Corrigida aqui para
+# anon+shmem+kernel — e esse script tem um comentario explicito avisando que
+# `slab` NAO deve ser somado, pois no cgroup v2 `slab` ja esta DENTRO de
+# `kernel` (verificado na 74.1, tests/load/profiling/run-footprint.sh, funcao
+# stats_nao_descartavel): somar os dois conta slab em dobro. NAO reverta isto
+# para `slab` — a fonte de verdade e infra/host/container-metrics.sh, nao
+# fp-gate76.sh (que carrega o mesmo defeito e NAO foi corrigido, porque a
+# janela de 24h do gate da tarefa 76 ja tinha fechado quando o defeito foi
+# achado).
+#
+# DIVERGENCIA PROPOSITAL (revisao adversarial da 80.2, 2026-08-16): a partir
+# dessa fase, `infra/host/container-metrics.sh` passou a usar
+# anon+shmem+(kernel-slab_reclaimable) — mais precisa, pois slab_reclaimable
+# volta ao sistema sob pressao sem OOM. ESTE script (e run-footprint.sh)
+# NAO acompanham essa mudanca de proposito: mudar a formula quebraria a
+# comparabilidade com todas as medicoes historicas ja registradas no PLANO
+# (74.x, 76, 77.x), feitas com anon+shmem+kernel. anon+shmem+kernel NAO e
+# mais "a formula canonica do projeto" (isso mudou na 80.2) — e sim a formula
+# historica deste andaime de medicao, mantida deliberadamente por esse
+# motivo. Fonte de verdade para producao: infra/host/container-metrics.sh.
 #
 # Corte de seguranca em 500 MB, NAO o teto de decisao (350 MB) da 77.0:
 # o teto de decisao fica na tabela de decisao do runbook da 77 e e' avaliado
@@ -44,8 +54,10 @@ CG="/sys/fs/cgroup$REL"
 
 CUR=$(cat "$CG/memory.current" 2>/dev/null || echo 0)
 MAX=$(cat "$CG/memory.max" 2>/dev/null || echo 0)
-# nao-descartavel = anon + shmem + kernel (memory.stat), formula canonica de
-# infra/host/container-metrics.sh — NAO somar `slab` (ja incluido em `kernel`).
+# nao-descartavel = anon + shmem + kernel (memory.stat) — NAO somar `slab`
+# (ja incluido em `kernel`). Formula historica deste andaime (ver nota de
+# divergencia proposital no topo do arquivo); desde a 80.2,
+# infra/host/container-metrics.sh usa anon+shmem+(kernel-slab_reclaimable).
 AN=$(awk '/^anon /{print $2}' "$CG/memory.stat" 2>/dev/null || echo 0)
 SH=$(awk '/^shmem /{print $2}' "$CG/memory.stat" 2>/dev/null || echo 0)
 KE=$(awk '/^kernel /{print $2}' "$CG/memory.stat" 2>/dev/null || echo 0)
