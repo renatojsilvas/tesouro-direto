@@ -1283,6 +1283,37 @@ No x64 a variável **funciona** — zera as regiões e o `shmem` — mas a memó
 
 ---
 
+## Onda de observabilidade do coletor (2026-08-16) — o Alloy passa a se enxergar
+
+> A 77 trocou quatro containers por um coletor único e mediu tudo, menos ele mesmo. A 80 fecha esse buraco e usa o que ele revelar para diagnosticar o crescimento de memória que a 77.5 deixou registrado como pergunta aberta.
+
+### 80. Vazamento de memória do Alloy — auto-observação e diagnóstico 🟡
+> A 77.5 deixou o Alloy com teto de 192M e uma pergunta aberta. A resposta chegou medida: **o Alloy vaza 0,376 MB/h** (mínimos quadrados sobre 40 amostras em 197 min, 16/08). Não é aquecimento — o número se repete em duas janelas independentes, com **processos diferentes**: **0,39 MB/h por 12 h** antes do restart (62,1 → 67,0 MB) e **0,376 MB/h** depois do deploy da 77.5 (59,4 → 60,6 MB). Reinicia com o processo, logo não é estado persistido. **Não é urgente e não é incidente:** o teto contém (o pior caso é o container morrer, reiniciar e alertar), `memory.current` está em **34,8% do teto** e o alerta de 85% (163,2 MB) cai em **~11 dias**. É tarefa de diagnóstico, não de apagar incêndio — e ela existe agora porque daqui a onze dias o alerta toca e alguém vai precisar deste levantamento pronto.
+
+- **O diagnóstico está bloqueado por um buraco de observabilidade, e é isso que a fase 1 abre.** O Alloy **não coleta a si mesmo**: `count by (job)` na nuvem devolve só `node` e `tesouro-direto-api`, e não existe **nenhuma** série `go_memstats_*`, `alloy_*`, `prometheus_remote_storage_*` ou `loki_*`. Ele expõe **551 linhas de métrica** em `127.0.0.1:12345/metrics` (confirmado por `curl` na VPS), e ninguém as lê. Consequência prática: sabe-se *que* cresce e não se sabe *o quê* cresce; cada olhada é uma sessão SSH manual cujo resultado não fica registrado para comparar com a próxima.
+- **O que a medição manual já eliminou** (feito na 77.5, não repetir): a composição do cgroup é `anon 57,5 MB · kernel 3,0 · shmem 0,0 · file 6,3` — a não-descartável de 60,5 MB é **quase toda `anon`**, e `heap_inuse` do Go está em 44,6 MB (`heap_sys` 67,2, `heap_idle` 14,3, 108 goroutines). O WAL em disco tem **2,1 MB**. Logo: **não é WAL, não é shmem, não é slab/kernel, não é page cache. É heap do Go.** Resta descobrir qual componente aloca — candidatos, por ordem de suspeita: o `loki.source.api` que recebe do Serilog (API e Web), o `loki.source.file` que segue nginx + `kern.log`, o `stage.replace` do hash SHA3-256 de IP (aloca por linha), a fila em memória do `remote_write`, e o cache de séries/labels do scrape.
+- **Armadilha nº 1, que já custou duas conclusões erradas: janela curta mente.** Estimando a MESMA curva, a inclinação saiu **0,12 MB/h com 55 min**, **0,28 com 70 min**, **0,36 com 132 min** e **0,376 com 197 min** — cada janela curta subestimou, e as duas primeiras produziram o relato de que "parecia aquecimento", que era falso. O ruído da medição é de ±0,3 MB; para separar 0,1 de 0,4 MB/h são necessárias **≥ 3 h** de série. Nenhum critério de aceite desta tarefa pode ser julgado com menos que isso — e o erro é sempre para baixo, o que faz a janela curta parecer boa notícia.
+- **Armadilha nº 2: `process_resident_memory_bytes` mente por outro motivo.** Ele marca **240 MB**, acima do teto de 192M, e não indica problema nenhum: conta páginas de arquivo mapeadas (o binário do Alloy é grande) que **não são cobradas do cgroup**. O cgroup — que é quem o teto enforce — vê `memory.current` de **70,2 MB**, com `memory.events` zerado em `low/high/max/oom/oom_kill`. Quem investigar vai tropeçar nisso; a métrica que rege continua sendo a não-descartável ([[metrica_certa_e_a_nao_descartavel]], [[nao_descartavel_formula_canonica]]).
+- **Armadilha nº 3: restart zera a janela.** Toda medição precisa ser ancorada no `State.StartedAt` do container. Comparar pontos de antes e depois de um restart mistura dois processos e produz inclinação sem sentido — foi o que quase aconteceu na 77.5, quando o teste do critério 6 e o deploy reiniciaram o Alloy dentro da janela de observação.
+
+#### 80.1. Ligar a auto-observação do Alloy 🟢
+> Barato, reversível e útil independentemente do vazamento — hoje o coletor é o único componente da stack que não é observado.
+
+- **Escopo:** acrescentar ao `infra/alloy/config.alloy` um `prometheus.scrape` do próprio `127.0.0.1:12345/metrics`, com `discovery.relabel` fixando `job="alloy"` — mesma técnica que a 77.1 usou para forçar `job="node"` no `prometheus.exporter.unix`, pelo mesmo motivo (o alvo se rotularia sozinho e a identidade de série é contrato). Reusar o `prometheus.remote_write` existente.
+- **Risco real, e é de cardinalidade, não de memória:** 551 linhas de métrica devem virar algo entre **300 e 500 séries**. Há folga (**576 de 10k** em uso hoje), mas estourar o free tier **rejeita ingestão** — e ingestão rejeitada cala *todo* o alerting, que é exatamente o modo de falha que a 77.5 criou as 3 regras `td-cloud-*` para vigiar. Medir depois de ligar, não estimar antes: `count({__name__=~".+"})` antes e depois, com o delta registrado. Se passar de ~1500 séries, podar por `metric_relabel_configs` — `go_memstats_*` e as do componente suspeito são o que importa; histogramas inteiros do Go não são.
+- **Regra do projeto que vale aqui:** `alloy fmt` local em toda fase que edita a config (não só na VPS), e `docker compose config -q` verde nas 3 combinações.
+- **Verificação:** (1) `count by (job)` na nuvem devolvendo `alloy` **com dado**, além de `node` e `tesouro-direto-api` — e `go_memstats_heap_inuse_bytes{job="alloy"}` retornando valor, que é a prova de que a série *certa* chegou e não só de que o scrape existe; (2) delta de séries ativas medido e abaixo do teto com folga; (3) o `AlloyContractTests` continua verde. **Nota sobre esse teste:** o mapa de jobs dele é **fechado por construção** — se a 80.2 criar alerta que filtre por `job="alloy"`, ele vai **falhar alto pedindo decisão humana**, e isso é o teste funcionando. Acrescentar a entrada no mapa; **não** relaxar o assert ([[teste_contrato_nasce_vacuo]]).
+
+#### 80.2. Diagnóstico e correção 🟡 — depende da 80.1
+> Só faz sentido com ≥ 3 h de série da 80.1 no ar. Sem dado, vira chute com aparência de análise.
+
+- **Escopo:** correlacionar a curva da não-descartável com as métricas internas para achar o componente que aloca; a partir daí, decidir entre configuração (limite de fila/buffer no `loki.write` ou `remote_write`), mudança de pipeline (o `stage.replace` do hash), ou upgrade/report upstream se for defeito do Alloy `v1.18.1`.
+- **Verificação:** a correção só é aceita com **≥ 3 h** de série nova mostrando inclinação abaixo de 0,10 MB/h — o mesmo limiar que separou "regime" de "vazamento" na medição original. **Critério que distingue de fato:** medir a inclinação *antes* e *depois* na mesma janela de duração, ancorada no `StartedAt`; um restart sozinho zera o número e faria qualquer mudança parecer eficaz ([[criterio_aceite_nao_distingue_desenhos]]).
+- **Fora de escopo:** trocar o Alloy por outro coletor, mexer em `scrape_interval`, e qualquer coisa que aumente a cardinalidade enviada à nuvem além do que a 80.1 medir.
+- **Risco:** baixo. Nada em `src/`; o pior caso é ficar sem diagnóstico conclusivo e conviver com um restart quinzenal do coletor, que o teto já torna seguro.
+
+---
+
 ## Dependências entre tarefas
 
 - **8 (testes de integração)** dá rede de segurança para **4, 7, 15, 16** — fazer antes ou junto.
