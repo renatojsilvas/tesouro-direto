@@ -131,11 +131,11 @@ nginx -t && systemctl reload nginx
 
 ## Checklist de consumidores
 
-- [muda] Secret `GRAFANA_ROOT_URL` no GitHub → `https://dadosdotesourodireto.com.br/grafana/`. O dono do repositório atualiza o secret. Nota: `/grafana/` continua `allow 127.0.0.1; deny all` (acesso só via túnel SSH); o `Host` header enviado pelo túnel pode não bater com o domínio do cert — não bloqueia o acesso via túnel, é só um detalhe de nome a observar.
+- [obsoleto] Secret `GRAFANA_ROOT_URL` no GitHub → não existe mais. A tarefa 77 removeu o Grafana local (e o secret `GRAFANA_ROOT_URL`/`GRAFANA_PASSWORD` junto); não há mais rota `/grafana/` no nginx, nem Grafana rodando na VPS para apontar um root URL.
 - [NÃO muda] `ApiSettings__BaseUrl` do Web = `http://app:8080` — é rede interna do compose, não passa pelo nginx do host.
 - [NÃO muda] Healthcheck do deploy (`curl localhost:5000/health/ready`) — bypassa o nginx.
 - [NÃO muda] E2E (`run-e2e.sh` usa `localhost:5000` e `localhost:5275`) — bypassa o nginx.
-- [pode mudar] Túneis SSH para `/grafana/`/`/prometheus/`: se o alvo do túnel era `:3080`, segue funcionando sem alteração (a porta `3080` foi mantida). Para usar `443` em vez de `3080`, o comando de túnel precisa apontar a porta-alvo para `443`.
+- [obsoleto] Túneis SSH para `/grafana/`/`/prometheus/`: as duas rotas saíram de `infra/nginx/tesouro-direto.conf` na tarefa 77 (não há mais Grafana nem Prometheus locais para tunelar até — Grafana e alerting vivem no Grafana Cloud, e o Prometheus local só sobe efêmero sob `--profile load` para teste de carga). Um túnel para essas rotas hoje bate em 404.
 
 ## Follow-ups (não fazer agora, só registrar)
 

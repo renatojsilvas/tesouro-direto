@@ -67,6 +67,30 @@ gc_datasource_uid() {
   echo "$candidatos"
 }
 
+# Resolve o uid do datasource META de uso/billing — 'grafanacloud-usage' — que
+# gc_datasource_uid EXCLUI deliberadamente (ver comentario acima: ele existe
+# justamente para nao deixar esse datasource vazar para as regras que leem as
+# metricas de negocio/infra da propria stack). As regras td-cloud-* precisam dele
+# de proposito: e o UNICO lugar onde vivem active_series/overage/limits da conta.
+#
+# Mesma estrategia de resolucao por uid CANONICO das outras funcoes deste arquivo
+# (nunca por posicao/`.[0]`): confirma que 'grafanacloud-usage' existe na lista de
+# datasources antes de devolve-lo, em vez de assumir. Se o nome canonico mudar em
+# outra stack, aborta em vez de adivinhar — o mesmo principio de
+# gc_datasource_uid, so que para um uid especifico em vez de um tipo.
+gc_datasource_uid_usage() {
+  local canonico="grafanacloud-usage" lista achado
+
+  lista=$(gc_curl GET /api/datasources)
+  achado=$(echo "$lista" | jq -r --arg u "$canonico" 'map(select(.uid == $u)) | .[0].uid // empty')
+
+  if [ -z "$achado" ]; then
+    echo "gc_datasource_uid_usage: datasource '$canonico' nao encontrado na stack" >&2
+    return 1
+  fi
+  echo "$achado"
+}
+
 # Cria a pasta se nao existir; devolve o uid nos dois casos (idempotente).
 gc_folder_uid() {
   local titulo="$1" existente

@@ -1,4 +1,24 @@
 #!/bin/bash
+# SCRIPT APOSENTADO — NAO RODA MAIS DO JEITO QUE ESTA. Este e' o script de bootstrap
+# ORIGINAL do projeto, congelado num estado pre-tarefa-74: ele escreve um
+# docker-compose.yml do zero por heredoc (so app + db + sonarqube, sem web nem alloy nem
+# nada da topologia atual — o heredoc nem tem mais grafana/loki/prometheus, ja removidos
+# antes deste comentario) e SOBRESCREVERIA o docker-compose.yml real do repo por essa
+# versao incompleta. A fonte da verdade da topologia e' o docker-compose.yml do repo —
+# nao este script, que fica so como registro historico de como o projeto nasceu.
+#
+# Guarda de aposentadoria: sem a variavel de escape abaixo, o script aborta aqui, ANTES
+# de qualquer escrita em disco.
+if [ "${SETUP_SH_I_KNOW_WHAT_IM_DOING:-}" != "1" ]; then
+  echo "ABORTADO: setup.sh e' o bootstrap ORIGINAL do projeto, congelado pre-tarefa-74." >&2
+  echo "Rodar ele hoje SOBRESCREVE o docker-compose.yml real por um incompleto: sem os" >&2
+  echo "servicos web e alloy, so app + db (+ sonarqube), com Serilog gravando so no" >&2
+  echo "console (sem relay para o Alloy/Grafana Cloud). A fonte da verdade da topologia e'" >&2
+  echo "o docker-compose.yml do repo, nao este script." >&2
+  echo "Se voce sabe exatamente o que esta fazendo, defina SETUP_SH_I_KNOW_WHAT_IM_DOING=1" >&2
+  echo "para prosseguir mesmo assim." >&2
+  exit 1
+fi
 
 PROJECT_NAME="TesouroDireto"
 ROOT_DIR=$(pwd)
@@ -26,7 +46,6 @@ services:
     environment:
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=app123
       - ASPNETCORE_ENVIRONMENT=Production
-      - Serilog__WriteTo__1__Args__uri=http://loki:3100
     depends_on:
       db:
         condition: service_healthy
@@ -48,31 +67,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Observabilidade
-  grafana:
-    image: grafana/grafana:latest
-    container_name: tesouro-direto-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana-data:/var/lib/grafana
-
-  loki:
-    image: grafana/loki:latest
-    container_name: tesouro-direto-loki
-    ports:
-      - "3100:3100"
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: tesouro-direto-prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-
   # Analise estatica
   sonarqube:
     image: sonarqube:lts-community
@@ -86,19 +80,7 @@ services:
 
 volumes:
   pgdata:
-  grafana-data:
   sonar-data:
-EOF
-
-cat > prometheus.yml << 'EOF'
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'tesouro-direto-api'
-    metrics_path: /metrics
-    static_configs:
-      - targets: ['app:8080']
 EOF
 
 cat > sonar-project.properties << 'EOF'
@@ -230,7 +212,6 @@ playwright-report/
 .DS_Store
 Thumbs.db
 pgdata/
-grafana-data/
 .sonarqube/
 EOF
 
@@ -343,8 +324,7 @@ cat > src/$PROJECT_NAME.API/appsettings.json << EOF
   "Serilog": {
     "MinimumLevel": { "Default": "Information" },
     "WriteTo": [
-      { "Name": "Console" },
-      { "Name": "GrafanaLoki", "Args": { "uri": "http://localhost:3100" } }
+      { "Name": "Console" }
     ],
     "Enrich": ["FromLogContext", "WithCorrelationId"]
   },
@@ -364,6 +344,5 @@ if [ $ERRORS -gt 0 ]; then echo "⚠️  Setup concluido com $ERRORS erro(s)."; 
 echo "1. docker compose up -d"
 echo "2. claude"
 echo "3. /pipeline foundation Configurar Result, Error e classes base do dominio"
-echo "Grafana: http://localhost:3000 (admin/admin)"
 echo "SonarQube: http://localhost:9000 (admin/admin)"
 echo "================================================"

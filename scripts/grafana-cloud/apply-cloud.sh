@@ -22,9 +22,11 @@ source scripts/grafana-cloud/lib.sh
 
 DS_PROM=$(gc_datasource_uid prometheus)
 DS_LOKI=$(gc_datasource_uid loki)
+DS_USAGE=$(gc_datasource_uid_usage)
 [ -n "$DS_PROM" ] || { echo "datasource prometheus nao encontrado na nuvem" >&2; exit 1; }
 [ -n "$DS_LOKI" ] || { echo "datasource loki nao encontrado na nuvem" >&2; exit 1; }
-echo "datasources: prom=$DS_PROM loki=$DS_LOKI"
+[ -n "$DS_USAGE" ] || { echo "datasource grafanacloud-usage nao encontrado na nuvem" >&2; exit 1; }
+echo "datasources: prom=$DS_PROM loki=$DS_LOKI usage=$DS_USAGE"
 
 FOLDER_UID=$(gc_folder_uid TesouroDireto)
 echo "folder TesouroDireto: $FOLDER_UID"
@@ -33,6 +35,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 sed -e "s/__DS_PROM__/${DS_PROM}/g" \
     -e "s/__DS_LOKI__/${DS_LOKI}/g" \
+    -e "s/__DS_USAGE__/${DS_USAGE}/g" \
     infra/grafana/cloud/rules.yaml > "$TMP/rules.yaml"
 
 # Rede de seguranca: o export-local.sh normaliza o bottoken (real ou '[REDACTED]',
@@ -207,27 +210,32 @@ esac
 
 # --- Verificacao final: regras --------------------------------------------------------
 #
-# HTTP 200/202 em cada PUT acima nao prova que as 18 regras existem nem que os
-# datasources resolveram — confere de volta contra a API de leitura.
+# HTTP 200/202 em cada PUT acima nao prova que as 21 regras existem nem que os
+# datasources resolveram — confere de volta contra a API de leitura. (18 originais +
+# 3 da tarefa 77.5: td-cloud-free-tier-series-proximo, td-cloud-overage,
+# td-cloud-log-projecao-mensal, lendo o datasource 'grafanacloud-usage'.)
 echo "conferindo regras aplicadas:"
 regras_nuvem=$(gc_curl GET /api/v1/provisioning/alert-rules)
 qtd_nuvem=$(echo "$regras_nuvem" | jq 'length')
 echo "$qtd_nuvem"
-if [ "$qtd_nuvem" -ne 18 ]; then
-  echo "ABORTADO: a nuvem tem ${qtd_nuvem} regras de alerta, esperado 18" >&2
+if [ "$qtd_nuvem" -ne 21 ]; then
+  echo "ABORTADO: a nuvem tem ${qtd_nuvem} regras de alerta, esperado 21" >&2
   exit 1
 fi
 
 # __expr__ e o pseudo-datasource do no de threshold (condition C de toda regra) —
-# NAO e um datasource real e aparece em todas as 18 regras; nao e erro. So
-# 'prometheus'/'loki' (uid de casa que nao existe na nuvem) e uid vazio sao erro.
-# Medido ao vivo: distribuicao real e {__expr__: 18, grafanacloud-prom: 16,
-# grafanacloud-logs: 2} no nivel data[], e {grafanacloud-logs: 2} no aninhado
-# model.datasource.uid (so as 2 regras Loki tem essa posicao — mesma assimetria do
-# export-local.sh).
+# NAO e um datasource real e aparece em todas as 21 regras; nao e erro. So
+# 'prometheus'/'loki' (uid de casa que nao existe na nuvem), uid vazio, e qualquer
+# placeholder __DS_*__ remanescente (sed que falhou silenciosamente) sao erro.
+# Medido ao vivo antes da tarefa 77.5: distribuicao era {__expr__: 18,
+# grafanacloud-prom: 16, grafanacloud-logs: 2} no nivel data[], e
+# {grafanacloud-logs: 2} no aninhado model.datasource.uid (so as 2 regras Loki tem
+# essa posicao — mesma assimetria do export-local.sh). As 3 regras td-cloud-* somam
+# __expr__: +3 e grafanacloud-usage: 3 (sem posicao aninhada — mesmo padrao das
+# regras Prometheus existentes, que so tem model.datasource.uid nas regras Loki).
 uids_ruins=$(echo "$regras_nuvem" | jq -r '
   [.[].data[] | (.datasourceUid, (.model.datasource.uid? // empty))]
-  | map(select(. == "" or . == "prometheus" or . == "loki"))
+  | map(select(. == "" or . == "prometheus" or . == "loki" or (test("^__DS_.*__$"))))
   | unique | .[]')
 if [ -n "$uids_ruins" ]; then
   echo "ABORTADO: uid de datasource nao resolvido nas regras da nuvem: $(echo "$uids_ruins" | tr '\n' ' ')" >&2
