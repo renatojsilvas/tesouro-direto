@@ -97,6 +97,21 @@ public class AlloyContractTests
     }
 
     /// <summary>
+    /// job="alloy" (80.1 — auto-observação) segue a mesma técnica de job="node": não nasce
+    /// de um literal `job = "..."` no target, e sim do `replacement = "alloy"` dentro do
+    /// `discovery.relabel "alloy"`. Não entra em
+    /// TodoJobUsadoNasRegras_NasceNaPosicaoQueODefineNoConfigAlloy porque nenhuma regra de
+    /// rules.yaml filtra por ele ainda — se a 80.2 criar uma, aquele teste falha alto
+    /// pedindo a entrada no mapa, que é o comportamento certo.
+    /// </summary>
+    [Fact]
+    public void ConfigAlloy_ForcaJobAlloyViaRelabel()
+    {
+        var config = ConfigSemComentarios();
+        Assert.Matches(new Regex("replacement\\s*=\\s*\"alloy\""), config);
+    }
+
+    /// <summary>
     /// Passo 9 da 77.3 — trava os jobs que as 21 regras de `infra/grafana/cloud/rules.yaml`
     /// consomem contra as posições que os DEFINEM em config.alloy. O teste do PLANO, copiado
     /// literalmente, nasceria vácuo pela terceira vez: fazia `config.Contains($"\"{job}\"")`,

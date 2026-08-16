@@ -81,6 +81,38 @@ prometheus.scrape "node" {
 	forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
+// 80.1 — auto-observação do Alloy: até aqui ele coletava para os outros dois
+// jobs mas não expunha as próprias métricas de processo (goroutines, uso de
+// memória do runtime, filas de remote_write etc.) para a nuvem.
+// job="alloy" é contrato como "tesouro-direto-api" e "node" acima: se a 80.2
+// vier a escrever uma regra de alerta filtrando por ele, é este nome que ela
+// vai casar. A técnica do discovery.relabel para FORÇAR o `job` (em vez de
+// declará-lo direto no target) é a mesma que a 77.1 usou para "node" (linhas
+// 67-82) e pelo mesmo motivo: o endpoint próprio do Alloy não nasce com um
+// job customizável no target, então o relabel é quem define o label real da
+// série — âncora sintática que o teste de contrato usa.
+// 127.0.0.1:12345, não "alloy:12345" nem "localhost": o scrape roda DENTRO do
+// processo Alloy, que sobe com `--server.http.listen-addr=0.0.0.0:12345`
+// (docker-compose.yml) — o próprio processo é o alvo.
+// Cardinalidade medida em 2026-08-16 17:36 UTC (antes desta mudança, via
+// `count({__name__=~".+"})` na API de query do Grafana Cloud): a nuvem tinha
+// 675 séries ativas; o endpoint /metrics do Alloy expõe 551 séries.
+discovery.relabel "alloy" {
+	targets = [{__address__ = "127.0.0.1:12345"}]
+
+	rule {
+		target_label = "job"
+		replacement  = "alloy"
+	}
+}
+
+prometheus.scrape "alloy" {
+	targets         = discovery.relabel.alloy.output
+	metrics_path    = "/metrics"
+	scrape_interval = "30s"
+	forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
 // 77.2 — substitui loki + promtail. Quatro fluxos: nginx e kernel por tail
 // (como o promtail fazia), API e Web via push HTTP (o loki.source.api abaixo),
 // porque o sink Serilog.Sinks.Grafana.Loki não tem parâmetro de credencial
