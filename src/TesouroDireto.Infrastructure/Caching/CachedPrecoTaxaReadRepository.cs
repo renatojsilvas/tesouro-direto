@@ -35,6 +35,13 @@ public sealed class CachedPrecoTaxaReadRepository(
             () => inner.GetLatestByTituloIdAsync(tituloId, cancellationToken));
     }
 
+    public Task<Result<IReadOnlyList<PrecoTaxaDiaDto>>> GetByDataBaseAsync(
+        DateOnly dataBase,
+        CancellationToken cancellationToken)
+    {
+        return inner.GetByDataBaseAsync(dataBase, cancellationToken);
+    }
+
     private TimeSpan GetTtl() =>
         configuration.GetValue<TimeSpan?>("Caching:PrecosTaxas") ?? DefaultTtl;
 }

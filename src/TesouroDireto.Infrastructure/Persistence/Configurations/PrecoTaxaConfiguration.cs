@@ -75,5 +75,8 @@ public sealed class PrecoTaxaConfiguration : IEntityTypeConfiguration<PrecoTaxa>
         builder.HasIndex(p => new { p.TituloId, p.DataBase })
             .IsUnique()
             .HasDatabaseName("ix_precos_taxas_titulo_data");
+
+        builder.HasIndex(p => p.DataBase)
+            .HasDatabaseName("ix_precos_taxas_data_base");
     }
 }
