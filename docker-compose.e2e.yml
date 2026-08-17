@@ -22,12 +22,23 @@ services:
     container_name: tesouro-direto-e2e-db
     environment:
       POSTGRES_DB: tesouro_direto_e2e
+      # 79-A.1: bootstrap do initdb continua `app` DE PROPÓSITO — a
+      # aplicação ainda conecta com essa credencial nesta fase (linha 60,
+      # não tocada); a troca para `postgres` entra só na 79-A.2. Diferente
+      # da produção, o `db` do e2e NÃO tem volume de pgdata (é efêmero):
+      # o initdb SEMPRE roda aqui, então o hook de provisionamento da
+      # td_app (abaixo) sempre é exercitado, mesmo nesta fase.
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app123
+      # 79-A.1: e2e usa valores fixos, sem .env — mesmo padrão do resto
+      # deste arquivo (ex.: POSTGRES_PASSWORD acima).
+      TD_APP_PASSWORD: app123
     ports:
       - "5433:5432"
     volumes:
       - ./tests/TesouroDireto.E2E.Tests/seed.sql:/seed.sql:ro
+      - ./infra/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - ./infra/postgres/sql:/opt/td/sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d tesouro_direto_e2e"]
       interval: 3s

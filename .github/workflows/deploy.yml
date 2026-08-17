@@ -70,6 +70,16 @@ jobs:
           GC_LOKI_URL: http://dummy
           GC_LOKI_USER: "1"
           GC_IP_SALT: dummy
+          # 79-A.1: docker-compose.yml ganhou ${TD_APP_PASSWORD:?} no servico `db`
+          # (e na connection string do `app`, a partir da 79-A.2). Este bloco env:
+          # e a UNICA fonte das obrigatorias aqui -- o runner nao tem `.env` (nao e
+          # versionado). Sem esta dummy, os 3 `config -q` abaixo falham, o job
+          # `test` reprova, e como `e2e` depende de `test` e `deploy` depende de
+          # `e2e`, a branch inteira nunca chega a deployar. Nota de armadilha: o
+          # bug NAO aparece em teste local, porque `docker compose` le o `.env` do
+          # diretorio automaticamente e ele mascara a variavel faltante -- para
+          # reproduzir a condicao do CI use `--env-file /dev/null`.
+          TD_APP_PASSWORD: dummy
         run: |
           set -e
           docker compose -f docker-compose.yml config -q
@@ -173,12 +183,14 @@ jobs:
             mkdir -p /opt/tesouro-direto
             # ANCORA: este .env e reescrito POR COMPLETO a cada deploy (nao e um merge
             # com o que ja existe na VPS). Qualquer ${VAR:?...} novo que entre no
-            # docker-compose.yml (ex.: GC_* na 77.0) TEM que entrar neste printf no MESMO
-            # PR -- senao a interpolacao do compose falha inteira (nenhum servico e
-            # recriado, nem os que nao tem nada a ver com a variavel nova) antes mesmo do
-            # `docker compose up -d` rodar. Ver scratchpad/medir-alloy.md secao 3.0/CHECKLIST.
-            printf 'DB_PASSWORD=%s\nAPI_KEY=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGC_PROM_URL=%s\nGC_PROM_USER=%s\nGC_TOKEN=%s\nGC_LOKI_URL=%s\nGC_LOKI_USER=%s\nGC_IP_SALT=%s\n' \
+            # docker-compose.yml (ex.: GC_* na 77.0, TD_APP_PASSWORD na 79-A.2) TEM que
+            # entrar neste printf no MESMO PR -- senao a interpolacao do compose falha
+            # inteira (nenhum servico e recriado, nem os que nao tem nada a ver com a
+            # variavel nova) antes mesmo do `docker compose up -d` rodar. Ver
+            # scratchpad/medir-alloy.md secao 3.0/CHECKLIST.
+            printf 'DB_PASSWORD=%s\nTD_APP_PASSWORD=%s\nAPI_KEY=%s\nTELEGRAM_BOT_TOKEN=%s\nADMIN_EMAIL=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nGC_PROM_URL=%s\nGC_PROM_USER=%s\nGC_TOKEN=%s\nGC_LOKI_URL=%s\nGC_LOKI_USER=%s\nGC_IP_SALT=%s\n' \
               '${{ secrets.DB_PASSWORD }}' \
+              '${{ secrets.TD_APP_PASSWORD }}' \
               '${{ secrets.API_KEY }}' \
               '${{ secrets.TELEGRAM_BOT_TOKEN }}' \
               '${{ secrets.ADMIN_EMAIL }}' \

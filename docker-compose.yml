@@ -62,8 +62,22 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: tesouro_direto
+      # 79-A.1: bootstrap do initdb continua `app` DE PROPÓSITO — a
+      # aplicação ainda conecta com essa credencial nesta fase (linha 9,
+      # não tocada). A troca do bootstrap para `postgres` entra na 79-A.2,
+      # junto com a troca da connection string da aplicação para `td_app`.
+      # Mesmo depois de trocar, em volume `pgdata` já inicializado a troca
+      # não tem efeito nenhum — o cluster de produção segue com `app` como
+      # bootstrap até a promoção manual da 79-A.3 (achado 3 do PLANO).
       POSTGRES_USER: app
+      # Continua a senha da role `app` (a única que a aplicação usa nesta
+      # fase). Na 79-A.2, quando o bootstrap virar `postgres`, esta
+      # variável passa a valer só para a role admin.
       POSTGRES_PASSWORD: ${DB_PASSWORD:-app123}
+      # 79-A.1: senha da role td_app, consumida por
+      # infra/postgres/initdb/01-provision-td-app.sh (caminho de ambiente
+      # NOVO). Fail-fast: sem valor no .env, o compose recusa subir.
+      TD_APP_PASSWORD: ${TD_APP_PASSWORD:?TD_APP_PASSWORD é obrigatório no .env (senha da role td_app da aplicação)}
     # command: SUBSTITUÍDO, não mesclado, por qualquer overlay que também
     # defina `command:` para este serviço (docker-compose.profiling.yml
     # repete integralmente esta lista + as flags de pg_stat_statements —
@@ -124,10 +138,22 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # 79-A.1: hook de provisionamento da role td_app (ambiente NOVO) + o
+      # SQL canônico que ele invoca, montado num caminho separado de
+      # propósito — ver infra/postgres/initdb/01-provision-td-app.sh.
+      # Bind-mount: exige `--force-recreate` no deploy para o container
+      # enxergar mudança (regra registrada do projeto).
+      - ./infra/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - ./infra/postgres/sql:/opt/td/sql:ro
     # 74.4a: interval 5s->15s pelo mesmo motivo do `app` (74.3 traz
     # `db` -> 0,10 vCPU; `pg_isready` a cada 5s tambem come quota de um
     # processo que ja e pequeno). `pg_isready` e barato e nao espera
     # nenhum outro serviço, entao start_period fica como esta.
+    # 79-A.1: continua `-U app` (acompanha o bootstrap acima, que não muda
+    # nesta fase). `pg_isready` não autentica de fato — PQping devolve OK
+    # mesmo com falha de auth — então este healthcheck nunca dependeu do
+    # REVOKE nem da existência da role td_app, só de o servidor aceitar
+    # conexões.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d tesouro_direto"]
       interval: 15s
