@@ -72,3 +72,50 @@ SELECT rolname, rolsuper, rolcanlogin FROM pg_roles WHERE rolname = 'td_app';
 ```
 
 `rolsuper` deve ser `f`.
+
+## 79-A.3 — aposentar a role legada
+
+Última etapa da 79-A: depois que a aplicação já conecta como `td_app` (pós
+79-A.2) e não há mais nenhum uso da credencial `app`, `app` pode ser
+aposentada. **Esta é a ÚNICA fase destrutiva da 79-A e não tem rollback
+automático.** Não existe `pg_dump`/`pg_restore` neste repositório (grep
+zero) nem passo de backup no pipeline de deploy (`.github/workflows/deploy.yml`)
+— por isso, fazer um dump manual antes de rodar este script é
+**pré-requisito**, não zelo:
+
+```bash
+docker exec -e PGPASSWORD='<senha-do-admin>' tesouro-direto-db \
+  pg_dump -U <admin> -d tesouro_direto -Fc -f /tmp/tesouro_direto.dump
+docker cp tesouro-direto-db:/tmp/tesouro_direto.dump ./tesouro_direto-$(date +%Y%m%d).dump
+```
+
+`infra/postgres/sql/retire-legacy-app-role.sql` é o script (idempotente).
+Em cluster legado, `app` ainda é o admin na hora de rodar isto — o comando
+usa `-U app` de propósito:
+
+```bash
+docker exec -e PGPASSWORD='<senha admin>' tesouro-direto-db \
+  psql -v ON_ERROR_STOP=1 \
+  -U app -d tesouro_direto \
+  -f /opt/td/sql/retire-legacy-app-role.sql
+```
+
+O script também cria/converge a role `postgres` (usando `POSTGRES_PASSWORD`
+do ambiente do container) antes de transferir a ownership do database para
+ela — ver o cabeçalho do arquivo para o porquê de `REASSIGN OWNED`,
+`NOSUPERUSER` e `DROP ROLE app` não funcionarem contra a role de bootstrap.
+
+**Estado final esperado:**
+
+- **Cluster legado** (o que importa em produção): a role `app` continua
+  existindo — é a role de bootstrap do cluster (OID 10), *pinned*, o
+  Postgres não permite removê-la — mas fica `SUPERUSER` (obrigatório pelo
+  Postgres) e `NOLOGIN` (aplicado por este script), sem nenhum objeto
+  próprio em `public`, e o database passa a pertencer a `postgres`.
+  Conectar como `app` dá `FATAL: role "app" is not permitted to log in`.
+  Remover `app` literalmente exigiria criar um cluster novo (bootstrapado
+  como `postgres`) e migrar os dados por dump/restore — fora do limite
+  desta tarefa, porque move dados.
+- **Ambiente novo** (volume provisionado depois da 79-A, já bootstrapado
+  como `postgres`): a role `app` nunca existiu — o script é um no-op que
+  só emite um `NOTICE`.
