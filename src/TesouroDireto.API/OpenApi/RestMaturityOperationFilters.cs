@@ -4,6 +4,49 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace TesouroDireto.API.OpenApi;
 
+internal static class OperationFilterExtensions
+{
+    /// <summary>
+    /// O ApiExplorer já descobre sozinho parâmetros de query ligados a argumentos do handler
+    /// (ex.: page, pageSize, dataBase), então esses filtros existem só para enriquecer a
+    /// descrição/schema/obrigatoriedade — nunca para adicionar uma segunda entrada duplicada.
+    /// O Add só acontece como fallback defensivo, caso o ApiExplorer algum dia deixe de descobrir.
+    /// </summary>
+    public static void UpsertQueryParameter(
+        this OpenApiOperation operation,
+        string name,
+        string description,
+        string type,
+        string? format = null,
+        bool? required = null)
+    {
+        var existing = operation.Parameters.FirstOrDefault(
+            p => p.In == ParameterLocation.Query && p.Name == name);
+
+        if (existing is null)
+        {
+            existing = new OpenApiParameter { Name = name, In = ParameterLocation.Query };
+            operation.Parameters.Add(existing);
+        }
+
+        existing.Description = description;
+
+        // Enriquecer, não substituir: o schema do ApiExplorer já traz format (int32 em page/pageSize),
+        // que se perderia num Schema novo. Só sobrescreve o format quem informa um.
+        existing.Schema ??= new OpenApiSchema();
+        existing.Schema.Type = type;
+        if (format is not null)
+        {
+            existing.Schema.Format = format;
+        }
+
+        if (required.HasValue)
+        {
+            existing.Required = required.Value;
+        }
+    }
+}
+
 public sealed class PrecosPaginacaoOperationFilter : IOperationFilter
 {
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
@@ -13,20 +56,14 @@ public sealed class PrecosPaginacaoOperationFilter : IOperationFilter
             return;
         }
 
-        operation.Parameters.Add(new OpenApiParameter
-        {
-            Name = "page",
-            In = ParameterLocation.Query,
-            Description = "Página (1-based). Sem esse parâmetro, retorna a coleção inteira como hoje.",
-            Schema = new OpenApiSchema { Type = "integer" },
-        });
-        operation.Parameters.Add(new OpenApiParameter
-        {
-            Name = "pageSize",
-            In = ParameterLocation.Query,
-            Description = "Tamanho da página (1 a 500, default 100, só considerado quando page é informado).",
-            Schema = new OpenApiSchema { Type = "integer" },
-        });
+        operation.UpsertQueryParameter(
+            "page",
+            "Página (1-based). Sem esse parâmetro, retorna a coleção inteira como hoje.",
+            "integer");
+        operation.UpsertQueryParameter(
+            "pageSize",
+            "Tamanho da página (1 a 500, default 100, só considerado quando page é informado).",
+            "integer");
 
         if (!operation.Responses.TryGetValue("200", out var okResponse))
         {
@@ -65,14 +102,12 @@ public sealed class PrecosPorDataOperationFilter : IOperationFilter
             return;
         }
 
-        operation.Parameters.Add(new OpenApiParameter
-        {
-            Name = "dataBase",
-            In = ParameterLocation.Query,
-            Required = true,
-            Description = "Data do fechamento desejado (yyyy-MM-dd). Obrigatória.",
-            Schema = new OpenApiSchema { Type = "string", Format = "date" },
-        });
+        operation.UpsertQueryParameter(
+            "dataBase",
+            "Data do fechamento desejado (yyyy-MM-dd). Obrigatória.",
+            "string",
+            format: "date",
+            required: true);
 
         if (!operation.Responses.TryGetValue("200", out var okResponse))
         {

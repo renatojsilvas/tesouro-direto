@@ -167,6 +167,65 @@ public sealed class SwaggerEndpointTests
                 $"_links deveria estar documentado no schema de TituloResource.\n{tituloResourceSchema}");
         }
 
+        [Theory]
+        [InlineData("/v1/precos")]
+        [InlineData("/v1/titulos/{codigo}/precos")]
+        public async Task GetSwaggerJson_ShouldNotDocumentQueryParameterTwice(string path)
+        {
+            var response = await _client.GetAsync("/swagger/v1/swagger.json", CancellationToken.None);
+            var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var getOperation = root.GetProperty("paths").GetProperty(path).GetProperty("get");
+
+            var duplicatedNames = getOperation.GetProperty("parameters").EnumerateArray()
+                .Where(p => p.GetProperty("in").GetString() == "query")
+                .GroupBy(p => p.GetProperty("name").GetString())
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToList();
+
+            duplicatedNames.Should().BeEmpty(
+                $"o(s) parâmetro(s) de query {string.Join(", ", duplicatedNames)} aparece(m) mais de uma vez em " +
+                $"{path} — o operation filter deveria enriquecer o parâmetro que o ApiExplorer já descobriu, " +
+                $"não adicionar uma entrada duplicada.\n{body}");
+        }
+
+        [Fact]
+        public async Task GetSwaggerJson_ShouldEnrichExistingQueryParametersWithoutDuplicating()
+        {
+            var response = await _client.GetAsync("/swagger/v1/swagger.json", CancellationToken.None);
+            var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var paths = root.GetProperty("paths");
+
+            var precosGet = paths.GetProperty("/v1/precos").GetProperty("get");
+            var dataBaseParam = precosGet.GetProperty("parameters").EnumerateArray()
+                .Single(p => p.GetProperty("name").GetString() == "dataBase");
+            dataBaseParam.GetProperty("required").GetBoolean().Should().BeTrue(
+                $"dataBase deveria continuar obrigatório após o enriquecimento.\n{body}");
+            dataBaseParam.GetProperty("schema").GetProperty("format").GetString().Should().Be("date",
+                $"dataBase deveria continuar documentado com format=date.\n{body}");
+
+            var precosPorCodigoGet = paths.GetProperty("/v1/titulos/{codigo}/precos").GetProperty("get");
+            var queryParams = precosPorCodigoGet.GetProperty("parameters").EnumerateArray()
+                .Where(p => p.GetProperty("in").GetString() == "query")
+                .ToList();
+
+            var pageParam = queryParams.Single(p => p.GetProperty("name").GetString() == "page");
+            pageParam.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace(
+                $"page deveria continuar com descrição após o enriquecimento.\n{body}");
+            pageParam.GetProperty("schema").GetProperty("format").GetString().Should().Be("int32",
+                $"o enriquecimento não pode descartar o format que o ApiExplorer já tinha inferido.\n{body}");
+
+            var pageSizeParam = queryParams.Single(p => p.GetProperty("name").GetString() == "pageSize");
+            pageSizeParam.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace(
+                $"pageSize deveria continuar com descrição após o enriquecimento.\n{body}");
+        }
+
         public sealed class SwaggerDevFactory : WebApplicationFactory<Program>
         {
             protected override void ConfigureWebHost(IWebHostBuilder builder)
