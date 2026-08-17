@@ -119,3 +119,59 @@ ela — ver o cabeçalho do arquivo para o porquê de `REASSIGN OWNED`,
 - **Ambiente novo** (volume provisionado depois da 79-A, já bootstrapado
   como `postgres`): a role `app` nunca existiu — o script é um no-op que
   só emite um `NOTICE`.
+
+## Rollout em produção (VPS) — dois deploys com um passo manual entre eles
+
+O `pgdata` da VPS **já está inicializado com bootstrap `app`**. Consequências que
+governam a ordem: `POSTGRES_USER: postgres` é inerte lá, o hook do initdb **não
+roda**, e o SQL só chega ao container pelo bind-mount — que só existe depois de
+um deploy. Por isso a 79-A.1 precisa ir a produção **sozinha**.
+
+**0. Antes de qualquer merge**
+
+1. Cadastrar o secret `TD_APP_PASSWORD` no GitHub. Sem ele a interpolação do
+   compose falha por inteiro e nenhum serviço é recriado.
+2. Dump manual (não existe passo de backup no `deploy.yml`):
+
+```bash
+docker exec tesouro-direto-db pg_dump -U app -d tesouro_direto -Fc \
+  > /root/td-pre79a-$(date +%F).dump
+```
+
+**1. Deploy A — só a 79-A.1.** Entram os bind-mounts e a variável; a aplicação
+continua conectando como `app`, sem mudança de comportamento. O `db` é recriado
+(a definição do serviço mudou). Conferir: `docker exec tesouro-direto-db ls /opt/td/sql`.
+
+**2. Passo manual — provisionar `td_app`** (o initdb não faz isso aqui):
+
+```bash
+docker exec -e TD_APP_PASSWORD='<secret>' -e PGPASSWORD='<DB_PASSWORD atual>' \
+  tesouro-direto-db psql -v ON_ERROR_STOP=1 -U app -d tesouro_direto \
+  -f /opt/td/sql/td-app-role.sql
+```
+
+Só avance se: `rolsuper` de `td_app` = `f`, `datacl` sem `c` para PUBLIC, tabelas
+de `public` com dono `td_app`, e uma conexão como `td_app` funcionando. É aqui
+que se evita o modo de falha "a aplicação sobe e quebra na primeira escrita".
+
+**3. Deploy B — 79-A.2 e 79-A.3.** A aplicação passa a conectar como `td_app`.
+Conferir em `pg_stat_activity` que `usename = td_app`.
+
+**4. Passo manual — aposentar a role legada** (destrutivo, só depois de soak):
+
+```bash
+docker exec -e PGPASSWORD='<DB_PASSWORD>' tesouro-direto-db \
+  psql -v ON_ERROR_STOP=1 -U app -d tesouro_direto \
+  -f /opt/td/sql/retire-legacy-app-role.sql
+```
+
+Cria a role admin `postgres` (que **não existe** na VPS hoje), passa a ownership
+do database e aplica `NOLOGIN` em `app`.
+
+**Rollback.** Antes do passo 4, reverter o commit da 79-A.2 basta — `app` ainda
+loga. Depois do passo 4, é preciso `ALTER ROLE app LOGIN` como `postgres` antes
+de reverter.
+
+**Duas pegadinhas.** `DB_PASSWORD` passa a significar a senha do **admin** (o
+valor não muda). E `tests/load/profiling/run-profile.sh` assume
+`DB_ADMIN_USER=postgres`: **antes** do passo 4, rodá-lo com `DB_ADMIN_USER=app`.
