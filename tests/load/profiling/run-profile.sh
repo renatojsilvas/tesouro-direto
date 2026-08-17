@@ -39,8 +39,16 @@ OUT_DIR="$REPO_ROOT/scratchpad"
 
 DB_CONTAINER="tesouro-direto-db"
 APP_CONTAINER="tesouro-direto-app"
-DB_USER="app"
+# 79-A.2: `CREATE EXTENSION pg_stat_statements` e `pg_stat_statements_reset()`
+# exigem SUPERUSER -- `td_app` e NOSUPERUSER (infra/postgres/sql/td-app-role.sql)
+# e nao pode rodar nenhum dos dois. O profiling passa a usar a role admin.
+# `DB_ADMIN_USER` e sobrescritivel por env porque num cluster legado
+# (pre-79-A.3, volume `pgdata` ja inicializado antes desta fase) o admin
+# ainda se chama `app` -- ver achado 3 do PLANO.
+DB_ADMIN_USER="${DB_ADMIN_USER:-postgres}"
 DB_NAME="tesouro_direto"
+# Senha da role admin (postgres/app, conforme DB_ADMIN_USER acima) -- nunca da
+# aplicacao, que conecta como td_app.
 DB_PASSWORD_VALUE="${DB_PASSWORD:-app123}"
 
 SAMPLES_FILE="$OUT_DIR/profile-$FLOW-samples.txt"
@@ -69,9 +77,9 @@ echo "API respondeu."
 
 echo "Habilitando pg_stat_statements e zerando estatísticas..."
 docker exec -e PGPASSWORD="$DB_PASSWORD_VALUE" "$DB_CONTAINER" \
-  psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" > /dev/null 2>&1 || true
+  psql -U "$DB_ADMIN_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" > /dev/null 2>&1 || true
 docker exec -e PGPASSWORD="$DB_PASSWORD_VALUE" "$DB_CONTAINER" \
-  psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT pg_stat_statements_reset();" > /dev/null
+  psql -U "$DB_ADMIN_USER" -d "$DB_NAME" -c "SELECT pg_stat_statements_reset();" > /dev/null
 
 grab() {
   curl -s "$API_URL/metrics" | grep -E "system_runtime_threadpool_queue_length|system_runtime_threadpool_thread_count|process_cpu_seconds_total|system_runtime_total_pause_time_by_gc_total|system_runtime_gc_heap_size|dotnet_total_memory_bytes" | grep -vE "^#"
@@ -103,7 +111,7 @@ grab >> "$SAMPLES_FILE"
 
 echo "Coletando top de queries do Postgres (pg_stat_statements)..."
 docker exec -e PGPASSWORD="$DB_PASSWORD_VALUE" "$DB_CONTAINER" \
-  psql -U "$DB_USER" -d "$DB_NAME" -A -F'|' -c "SELECT calls, round(total_exec_time::numeric,0) total_ms, round(mean_exec_time::numeric,2) mean_ms, round((100*total_exec_time/NULLIF(sum(total_exec_time) over (),0))::numeric,1) pct, left(regexp_replace(query,'\s+',' ','g'),90) q FROM pg_stat_statements WHERE query NOT LIKE '%pg_stat_statements%' ORDER BY total_exec_time DESC LIMIT 15;" \
+  psql -U "$DB_ADMIN_USER" -d "$DB_NAME" -A -F'|' -c "SELECT calls, round(total_exec_time::numeric,0) total_ms, round(mean_exec_time::numeric,2) mean_ms, round((100*total_exec_time/NULLIF(sum(total_exec_time) over (),0))::numeric,1) pct, left(regexp_replace(query,'\s+',' ','g'),90) q FROM pg_stat_statements WHERE query NOT LIKE '%pg_stat_statements%' ORDER BY total_exec_time DESC LIMIT 15;" \
   > "$PGSTAT_FILE" 2>&1
 
 echo ""

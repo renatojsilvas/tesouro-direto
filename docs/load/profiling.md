@@ -54,9 +54,12 @@ Compose Spec de propósito: o Compose v2 rejeita o projeto se um overlay usar a 
 PROFILE_CPUS=1 PROFILE_MEM=1g \
   docker compose -f docker-compose.yml -f docker-compose.profiling.yml up -d db app
 
-docker exec -i tesouro-direto-db psql -U app -d tesouro_direto \
+docker exec -i tesouro-direto-db psql -U postgres -d tesouro_direto \
   < tests/TesouroDireto.E2E.Tests/seed.sql
 ```
+
+`-U postgres`: role admin (79-A.2) — o seed roda TRUNCATE/INSERT direto nas tabelas, não com a
+credencial `td_app` da aplicação.
 
 `PROFILE_CPUS`/`PROFILE_MEM` têm default `1`/`1g` no overlay; ajuste para o hardware real da
 VPS se quiser reproduzir mais fielmente. O seed usa o mesmo arquivo dos testes E2E — nunca rode

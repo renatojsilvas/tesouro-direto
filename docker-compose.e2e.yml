@@ -22,13 +22,12 @@ services:
     container_name: tesouro-direto-e2e-db
     environment:
       POSTGRES_DB: tesouro_direto_e2e
-      # 79-A.1: bootstrap do initdb continua `app` DE PROPÓSITO — a
-      # aplicação ainda conecta com essa credencial nesta fase (linha 60,
-      # não tocada); a troca para `postgres` entra só na 79-A.2. Diferente
-      # da produção, o `db` do e2e NÃO tem volume de pgdata (é efêmero):
-      # o initdb SEMPRE roda aqui, então o hook de provisionamento da
-      # td_app (abaixo) sempre é exercitado, mesmo nesta fase.
-      POSTGRES_USER: app
+      # 79-A.2: bootstrap do initdb passa a ser `postgres` — a aplicação já
+      # conecta como `td_app` (linha 60, trocada nesta mesma fase).
+      # Diferente da produção, o `db` do e2e NÃO tem volume de pgdata (é
+      # efêmero): o initdb SEMPRE roda aqui, então o hook de
+      # provisionamento da td_app (abaixo) sempre é exercitado.
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: app123
       # 79-A.1: e2e usa valores fixos, sem .env — mesmo padrão do resto
       # deste arquivo (ex.: POSTGRES_PASSWORD acima).
@@ -40,7 +39,7 @@ services:
       - ./infra/postgres/initdb:/docker-entrypoint-initdb.d:ro
       - ./infra/postgres/sql:/opt/td/sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d tesouro_direto_e2e"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tesouro_direto_e2e"]
       interval: 3s
       timeout: 3s
       retries: 10
@@ -59,7 +58,7 @@ services:
     ports:
       - "5000:8080"
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto_e2e;Username=app;Password=app123
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto_e2e;Username=td_app;Password=app123
       - ASPNETCORE_ENVIRONMENT=Development
     depends_on:
       db:

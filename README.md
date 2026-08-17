@@ -176,6 +176,7 @@ O `docker-compose.yml` **falha o boot** se as variáveis obrigatórias estiverem
 
 | Variável | Obrigatória | Observação |
 |----------|:-----------:|------------|
+| `TD_APP_PASSWORD` | sim | Senha da role `td_app` — a credencial com que a **aplicação** conecta ao Postgres (não-superuser; ver `infra/postgres/sql/td-app-role.sql`). |
 | `API_KEY` | sim | Chave compartilhada entre API e Web (`X-Api-Key`). |
 | `ADMIN_EMAIL` | sim | E-mail do usuário que recebe papel Admin aprovado automaticamente no boot. |
 | `GC_PROM_URL` | sim | URL de `remote_write` do Prometheus do Grafana Cloud (página "Details" da stack). |
@@ -185,10 +186,10 @@ O `docker-compose.yml` **falha o boot** se as variáveis obrigatórias estiverem
 | `GC_LOKI_USER` | sim | Username/Instance ID numérico do Loki do Grafana Cloud. |
 | `GC_IP_SALT` | sim | Salt (gere com `openssl rand -hex 32`) do hash do IP de cliente nos logs de nginx, aplicado pelo Alloy **antes** do envio ao Grafana Cloud — exigência de LGPD (transferência internacional de dado pessoal, Res. CD/ANPD 19/2024). |
 | `TELEGRAM_BOT_TOKEN` | não* | *Não é exigida pelo `docker compose` — a 77.4 removeu o serviço `grafana`, que era quem a exigia no boot. Ainda é exigida por `scripts/grafana-cloud/apply-cloud.sh`, que provisiona a entrega de alerta a partir do Grafana Cloud (placeholder serve localmente). |
-| `DB_PASSWORD` | não | Senha do Postgres (default `app123`). |
+| `DB_PASSWORD` | não | Senha da role **admin** (`postgres`, bootstrap do cluster; default `app123`) — usada só por initdb, manutenção e profiling, **nunca** pela aplicação (que usa `TD_APP_PASSWORD`, acima). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | não | Credenciais de login OAuth Google (default vazio; `docker-compose.yml:166-167`). |
 
-> As 8 primeiras variáveis são `${VAR:?}` no `docker-compose.yml`: faltar **qualquer uma** delas falha a interpolação do arquivo inteiro (o `docker compose up` nem chega a subir um container). `GRAFANA_PASSWORD` e `GRAFANA_ROOT_URL` de versões anteriores deste README **não existem mais** — a 77.4 removeu o serviço `grafana` do compose.
+> As 9 primeiras variáveis são `${VAR:?}` no `docker-compose.yml`: faltar **qualquer uma** delas falha a interpolação do arquivo inteiro (o `docker compose up` nem chega a subir um container). `GRAFANA_PASSWORD` e `GRAFANA_ROOT_URL` de versões anteriores deste README **não existem mais** — a 77.4 removeu o serviço `grafana` do compose.
 >
 > Nunca faça commit do `.env` — ele está no `.gitignore`. Este README **não** contém valores, só nomes. Fonte de verdade: [`.env.example`](.env.example).
 
@@ -245,7 +246,7 @@ cd tests/TesouroDireto.E2E.Tests && npm ci && npx playwright install --with-deps
 
 **Secrets do GitHub necessários** (nomes apenas — valores nos *Settings → Secrets* do repositório):
 
-`API_KEY`, `DB_PASSWORD`, `ADMIN_EMAIL`, `TELEGRAM_BOT_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GC_PROM_URL`, `GC_PROM_USER`, `GC_TOKEN`, `GC_LOKI_URL`, `GC_LOKI_USER`, `GC_IP_SALT`, `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `SONAR_TOKEN`, `SONAR_HOST_URL`.
+`API_KEY`, `DB_PASSWORD`, `TD_APP_PASSWORD`, `ADMIN_EMAIL`, `TELEGRAM_BOT_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GC_PROM_URL`, `GC_PROM_USER`, `GC_TOKEN`, `GC_LOKI_URL`, `GC_LOKI_USER`, `GC_IP_SALT`, `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `SONAR_TOKEN`, `SONAR_HOST_URL`.
 
 ### Acesso às ferramentas de operação (túnel SSH)
 
@@ -266,6 +267,12 @@ Provisionados no **Grafana Cloud** (free tier, retenção de 14 dias) por `scrip
 
 - **Dashboards** — `tesouro-direto.json` (métricas de app e negócio: frescor do último preço, latência, erros, simulações) e `host.json` (CPU/memória/disco/rede coletados pelo `prometheus.exporter.unix` do Alloy). Existe um terceiro, `load-test.json`, que **não** sobe para a nuvem por desenho: lê o Prometheus efêmero do teste de carga (`--profile load`), que o backend SaaS não alcança; o `apply-cloud.sh` o remove da nuvem por convergência se alguém o subir manualmente.
 - **Alertas** — 21 regras Grafana-managed (`infra/grafana/cloud/rules.yaml`, com `contactpoints.yaml`/`policies.yaml`), destino **Telegram**: dado velho (frescor > 48h útil), app down, DB/readiness down, taxa de erro 5xx alta, latência p95 alta, falha de import, simulador degradado (BCB indisponível), simulador com taxa de falhas alta, disco raiz acima de 85%, rate limit anômalo (429 na borda), memória de container acima de 85%/95% do limite, reclaim de memória sustentado, throttling de CPU sustentado, container reiniciou, OOM kill (métrica de container), métricas de container obsoletas (timer do host parado), OOM detectado no log de kernel, séries ativas do Grafana Cloud próximas do teto do free tier, overage de métricas ou logs do Grafana Cloud e projeção mensal de logs próxima do teto do free tier. Por avaliar na nuvem (fora da VPS), ausência de dado também dispara `NoData` → Telegram — um dead-man's switch que a stack antiga, hospedada na própria VPS, não tinha (se a VPS caía, o alerting calava junto). As 3 últimas (77.5) monitoram a saúde da própria ingestão do Grafana Cloud: se ela passar a ser rejeitada (free tier estourado), todos os outros 18 alertas ficam mudos sem aviso — isso precisa ser alerta, não dashboard que ninguém olha vazio.
+
+### Acesso ao banco de dados — regras permanentes
+
+A partir da 79-A (`docs/PLANO.md`), estas não são recomendações: são regras. A aplicação é a **única** detentora de credencial deste database — a role `td_app` (NOSUPERUSER, NOCREATEDB, NOCREATEROLE, ver `infra/postgres/README.md`). Integração com os dados é **exclusivamente** pela API HTTP; nenhum outro sistema, serviço ou pessoa recebe conexão direta ao Postgres. Backup e manutenção usam a role administrativa (`postgres`), nunca `td_app`. A role administrativa **nunca** entra em connection string de aplicação. Se uma ferramenta de observabilidade precisar ler o banco no futuro (por exemplo, para expor `pg_stat_statements`), ela recebe uma role **read-only própria**, criada como decisão consciente e documentada — reusar a credencial da aplicação para isso está descartado. O profiling atual, que já lê `pg_stat_statements`, roda com a role admin porque essa view exige `SUPERUSER`, privilégio que `td_app` não tem e não deve ter.
+
+Isso é sustentado por um fato operacional aplicado desde a 79-A: `REVOKE CONNECT ON DATABASE ... FROM PUBLIC` está em vigor (`infra/postgres/sql/td-app-role.sql`), então uma role nova criada no cluster **não consegue nem conectar** até receber `GRANT CONNECT` explícito — conceder isso a alguém é sempre uma decisão deliberada, nunca um efeito colateral acidental de criar a role.
 
 ### Rotina de manutenção
 
