@@ -116,22 +116,83 @@ $$;
 -- pré-79-A — é exatamente o que a migration
 -- `20260723171253_AddTituloIndexes` faz em `titulos`).
 --
+-- NÃO usamos `REASSIGN OWNED BY app TO td_app` aqui: em produção `app` é o
+-- superuser de BOOTSTRAP do cluster (o role criado por `POSTGRES_USER=app`
+-- na primeira inicialização do volume, OID 10), e por isso é também dono
+-- dos catálogos de sistema, que são *pinned*. `REASSIGN OWNED` é
+-- tudo-ou-nada — não aceita filtro por schema — e falha inteiro por causa
+-- desses catálogos. Medido contra o cluster real:
+--   ERROR:  cannot reassign ownership of objects owned by role app
+--   because they are required by the database system
+--   CONTEXT:  SQL statement "REASSIGN OWNED BY app TO td_app"
+--   EXIT=3
+-- Com `ON_ERROR_STOP=1`, essa falha abortava o script ali mesmo e todo
+-- GRANT/ALTER DEFAULT PRIVILEGES abaixo nunca rodava — só em produção
+-- (ambiente novo não tem `app` dona de nada, o bloco antigo era no-op lá
+-- e o defeito não aparecia). Por isso o laço abaixo é dirigido: troca o
+-- dono só dos objetos do schema `public`, um a um, e nunca toca nos
+-- catálogos do sistema.
+--
+-- Tabelas primeiro, sequências avulsas depois: uma sequência ligada a uma
+-- coluna `GENERATED .. AS IDENTITY`/`serial` (dependência `deptype = 'a'`,
+-- "auto") segue o dono da tabela automaticamente e REJEITA troca de dono
+-- isolada. Medido:
+--   ERROR:  cannot change owner of sequence "tributo_faixas_id_seq"
+--   DETAIL:  Sequence "tributo_faixas_id_seq" is linked to table
+--   "tributo_faixas".
+-- Por isso o laço reassina a tabela (o que já resolve a sequência
+-- vinculada) e só depois procura sequências SEM esse vínculo.
+--
 -- Guardado por `pg_roles`: num cluster onde `app` nunca existiu (ou já foi
 -- removida, pós-79-A.3), o bloco é NO-OP silencioso — o mesmo arquivo roda
 -- em qualquer um dos ambientes.
 --
--- EFEITO COLATERAL CONHECIDO E ACEITO: `REASSIGN OWNED` também transfere
--- objetos "compartilhados" — inclusive a ownership do próprio DATABASE —
--- então `td_app` passa a ser dona do database. Isso é TRANSITÓRIO: a
--- 79-A.3 corrige com `ALTER DATABASE ... OWNER TO postgres` no momento em
--- que `app` for removida (`DROP ROLE app`). Não é bug, é o estado
--- esperado enquanto as duas roles convivem. Reversível a qualquer momento
--- com `REASSIGN OWNED BY td_app TO app`.
+-- Ownership do DATABASE em si (distinto da ownership dos objetos dentro
+-- dele) NÃO é tratada aqui — o laço dirigido não mexe em objetos
+-- compartilhados da instância. Fica para a 79-A.3, quando `app` for
+-- removida (`ALTER DATABASE ... OWNER TO postgres` antes do `DROP ROLE
+-- app`).
 DO $$
+DECLARE r record; n int := 0;
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app') THEN
-    EXECUTE 'REASSIGN OWNED BY app TO td_app';
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app') THEN
+    RETURN;
   END IF;
+
+  -- Tabelas primeiro: sequências "owned" (identity/serial) seguem a tabela
+  -- automaticamente e NÃO podem ter dono trocado isoladamente.
+  FOR r IN SELECT c.relname FROM pg_class c
+             JOIN pg_namespace ns ON ns.oid = c.relnamespace
+            WHERE ns.nspname = 'public' AND c.relkind IN ('r','p')
+              AND pg_get_userbyid(c.relowner) = 'app'
+  LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO td_app', r.relname);
+    n := n + 1;
+  END LOOP;
+
+  -- Sequências AVULSAS (sem vínculo de identity/serial a uma tabela).
+  FOR r IN SELECT c.relname FROM pg_class c
+             JOIN pg_namespace ns ON ns.oid = c.relnamespace
+            WHERE ns.nspname = 'public' AND c.relkind = 'S'
+              AND pg_get_userbyid(c.relowner) = 'app'
+              AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'a')
+  LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO td_app', r.relname);
+    n := n + 1;
+  END LOOP;
+
+  -- Views e materialized views, se algum dia existirem.
+  FOR r IN SELECT c.relname, c.relkind FROM pg_class c
+             JOIN pg_namespace ns ON ns.oid = c.relnamespace
+            WHERE ns.nspname = 'public' AND c.relkind IN ('v','m')
+              AND pg_get_userbyid(c.relowner) = 'app'
+  LOOP
+    EXECUTE format('ALTER %s public.%I OWNER TO td_app',
+                   CASE r.relkind WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'VIEW' END, r.relname);
+    n := n + 1;
+  END LOOP;
+
+  RAISE NOTICE 'td-app-role: % objeto(s) reassinado(s) de app para td_app', n;
 END
 $$;
 
