@@ -21,7 +21,10 @@ timeout 120 bash -c 'until curl -sf http://localhost:5000/health > /dev/null 2>&
 echo "API healthy."
 
 echo "Seeding database..."
-docker exec tesouro-direto-e2e-db psql -U app -d tesouro_direto_e2e -f /seed.sql
+# Seed roda como a role ADMIN (postgres) de proposito: TRUNCATE/INSERT direto
+# em tabelas que passam a pertencer a td_app (79-A.2) -- nunca com a
+# credencial da aplicacao.
+docker exec tesouro-direto-e2e-db psql -U postgres -d tesouro_direto_e2e -f /seed.sql
 
 echo "Waiting for Web..."
 timeout 120 bash -c 'until curl -sf http://localhost:5275/ > /dev/null 2>&1; do sleep 2; done'

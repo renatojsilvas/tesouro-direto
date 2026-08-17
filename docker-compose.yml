@@ -6,7 +6,7 @@ services:
     ports:
       - "127.0.0.1:5000:8080"
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=app;Password=${DB_PASSWORD:-app123}
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=tesouro_direto;Username=td_app;Password=${TD_APP_PASSWORD:?TD_APP_PASSWORD é obrigatório no .env (senha da role td_app da aplicação)}
       - ASPNETCORE_ENVIRONMENT=Production
       # 77.2: alvo passa a ser o Alloy (loki.source.api na porta 3100), não mais o
       # container `loki` — nada muda no protocolo, o sink Serilog não sabe a diferença.
@@ -62,17 +62,17 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: tesouro_direto
-      # 79-A.1: bootstrap do initdb continua `app` DE PROPÓSITO — a
-      # aplicação ainda conecta com essa credencial nesta fase (linha 9,
-      # não tocada). A troca do bootstrap para `postgres` entra na 79-A.2,
-      # junto com a troca da connection string da aplicação para `td_app`.
-      # Mesmo depois de trocar, em volume `pgdata` já inicializado a troca
-      # não tem efeito nenhum — o cluster de produção segue com `app` como
-      # bootstrap até a promoção manual da 79-A.3 (achado 3 do PLANO).
-      POSTGRES_USER: app
-      # Continua a senha da role `app` (a única que a aplicação usa nesta
-      # fase). Na 79-A.2, quando o bootstrap virar `postgres`, esta
-      # variável passa a valer só para a role admin.
+      # 79-A.2: bootstrap do initdb passa a ser `postgres` (admin) — a
+      # aplicação já conecta como `td_app` (linha 9, trocada nesta mesma
+      # fase). MAS em volume `pgdata` JÁ inicializado esta troca NÃO tem
+      # efeito nenhum: o Postgres só roda `initdb` uma vez, na criação do
+      # volume; o cluster de produção segue com `app` como bootstrap até a
+      # promoção manual da 79-A.3 (achado 3 do PLANO) — só um ambiente NOVO
+      # (volume vazio) nasce com `postgres` de fato.
+      POSTGRES_USER: postgres
+      # A partir desta fase, DB_PASSWORD é EXCLUSIVAMENTE a senha da role
+      # admin (`postgres`, bootstrap do cluster) — nenhuma aplicação usa
+      # esta credencial; a aplicação conecta com TD_APP_PASSWORD (abaixo).
       POSTGRES_PASSWORD: ${DB_PASSWORD:-app123}
       # 79-A.1: senha da role td_app, consumida por
       # infra/postgres/initdb/01-provision-td-app.sh (caminho de ambiente
@@ -149,13 +149,14 @@ services:
     # `db` -> 0,10 vCPU; `pg_isready` a cada 5s tambem come quota de um
     # processo que ja e pequeno). `pg_isready` e barato e nao espera
     # nenhum outro serviço, entao start_period fica como esta.
-    # 79-A.1: continua `-U app` (acompanha o bootstrap acima, que não muda
-    # nesta fase). `pg_isready` não autentica de fato — PQping devolve OK
-    # mesmo com falha de auth — então este healthcheck nunca dependeu do
-    # REVOKE nem da existência da role td_app, só de o servidor aceitar
-    # conexões.
+    # 79-A.2: `-U postgres` (acompanha o bootstrap acima). `pg_isready` não
+    # autentica de fato — PQping devolve OK mesmo com falha de auth — então
+    # este healthcheck nunca dependeu do REVOKE nem de qual role existe
+    # (`app`, `postgres` ou `td_app`), só de o servidor aceitar conexões;
+    # por isso é seguro trocar a role aqui sem qualquer relação com o
+    # REVOKE CONNECT do td-app-role.sql.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d tesouro_direto"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tesouro_direto"]
       interval: 15s
       timeout: 5s
       retries: 10
