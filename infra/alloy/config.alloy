@@ -21,6 +21,16 @@ prometheus.scrape "app" {
 	forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
+// job="hub-precos" — Hub de Preços (repo hub-precos), que compartilha esta VPS e a
+// rede `tesouro-net`. O alvo é o container_name de docker-compose.prod.yml daquele
+// repo. Job NOVO: não toca no contrato das 18 regras de alerta acima.
+prometheus.scrape "hub" {
+      targets         = [{__address__ = "hub-precos-app:8080", job = "hub-precos"}]
+      metrics_path    = "/metrics"
+      scrape_interval = "30s"
+      forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
 // Substituiu o container `node-exporter` (77.1; o serviço foi removido do
 // docker-compose.yml na 77.4). Os NOMES de coletor são os mesmos que ele usava —
 // inclusive o textfile, que sustenta 7 regras de alerta.
