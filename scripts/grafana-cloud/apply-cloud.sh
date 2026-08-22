@@ -31,6 +31,12 @@ echo "datasources: prom=$DS_PROM loki=$DS_LOKI usage=$DS_USAGE"
 FOLDER_UID=$(gc_folder_uid TesouroDireto)
 echo "folder TesouroDireto: $FOLDER_UID"
 
+# Pasta separada para o Hub de Precos: o dashboard dele descreve OUTRO servico,
+# versionado em outro repo (hub-precos). `gc_folder_uid` cria a pasta se ainda nao
+# existir, entao nada precisa ser criado a mao no Grafana.
+FOLDER_UID_HUB=$(gc_folder_uid HubPrecos)
+echo "folder HubPrecos: $FOLDER_UID_HUB"
+
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 sed -e "s/__DS_PROM__/${DS_PROM}/g" \
@@ -183,6 +189,23 @@ for d in tesouro-direto host; do
         -H 'Content-Type: application/json' --data-binary @- \
         "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
 done
+
+# --- Dashboard do Hub de Precos, em pasta propria ------------------------------------
+#
+# Fora do laco acima de proposito: mesmo tratamento de datasource, pasta DIFERENTE.
+# O arquivo e versionado no repo hub-precos (infra/grafana/dashboards/hub-precos.json) e
+# copiado para ca porque a publicacao mora neste repo -- as duas copias divergem em
+# silencio se alguem editar so uma. Ver infra/grafana/README.md do hub-precos.
+jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
+   'walk(if type=="object" and .uid=="prometheus" then .uid=$p
+         elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
+   infra/grafana/dashboards/hub-precos.json > "$TMP/hub-precos.json"
+
+jq -nc --slurpfile db "$TMP/hub-precos.json" --arg f "$FOLDER_UID_HUB" \
+   '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
+  | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
+      -H 'Content-Type: application/json' --data-binary @- \
+      "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
 
 # --- Convergencia: apaga da nuvem o load-test-k6 subido por engano na 77.3 -----------
 #
