@@ -37,7 +37,7 @@ gc_curl() {
 # cair para filtro por tipo excluindo os datasources meta conhecidos e abortar se
 # sobrar mais de 1 candidato — ambiguidade nunca se resolve escolhendo o primeiro.
 gc_datasource_uid() {
-  local tipo="$1" canonico="" lista candidatos n achado
+  local tipo="$1" canonico="" lista candidatos n achado qtd_total
 
   case "$tipo" in
     prometheus) canonico="grafanacloud-prom" ;;
@@ -62,6 +62,22 @@ gc_datasource_uid() {
 
   if [ "$n" -ne 1 ]; then
     echo "gc_datasource_uid: esperava exatamente 1 datasource do tipo '$tipo' apos excluir os meta da stack (uid canonico '$canonico' nao encontrado), achei $n" >&2
+    # Inventario de diagnostico: "achei 0" ou "achei 2" nao diz QUAL das tres causas
+    # (qualitativamente diferentes, cada uma com correcao diferente) esta em jogo —
+    # (1) GET /api/datasources devolveu lista VAZIA: token sem permissao de leitura de
+    # datasources, ou GC_GRAFANA_URL apontando pra stack errada; (2) a lista tem
+    # datasources mas NENHUM do tipo pedido; (3) existe um datasource do tipo certo,
+    # mas o uid dele nao e o canonico E casa com o regex de exclusao dos meta acima —
+    # ou seja, o PROPRIO FILTRO esta descartando o datasource certo. Sem ver o que a
+    # API realmente devolveu, quem le so a mensagem acima nao distingue as tres. Nunca
+    # imprimir token/header aqui — so uid/type/name, que nao sao segredo.
+    qtd_total=$(echo "$lista" | jq 'length')
+    if [ "$qtd_total" -eq 0 ]; then
+      echo "gc_datasource_uid: a API devolveu 0 datasources — verifique se GC_GRAFANA_TOKEN tem permissao de leitura de datasources e se GC_GRAFANA_URL aponta para a stack certa" >&2
+    else
+      echo "gc_datasource_uid: datasources devolvidos pela API (uid / type / name):" >&2
+      echo "$lista" | jq -r '.[] | "  \(.uid)\t\(.type)\t\(.name)"' >&2
+    fi
     return 1
   fi
   echo "$candidatos"
@@ -79,13 +95,24 @@ gc_datasource_uid() {
 # outra stack, aborta em vez de adivinhar — o mesmo principio de
 # gc_datasource_uid, so que para um uid especifico em vez de um tipo.
 gc_datasource_uid_usage() {
-  local canonico="grafanacloud-usage" lista achado
+  local canonico="grafanacloud-usage" lista achado qtd_total
 
   lista=$(gc_curl GET /api/datasources)
   achado=$(echo "$lista" | jq -r --arg u "$canonico" 'map(select(.uid == $u)) | .[0].uid // empty')
 
   if [ -z "$achado" ]; then
     echo "gc_datasource_uid_usage: datasource '$canonico' nao encontrado na stack" >&2
+    # Mesma cegueira que gc_datasource_uid tinha (ver comentario la): "nao encontrado"
+    # nao diz se a API devolveu lista vazia (token sem permissao / GC_GRAFANA_URL
+    # errado) ou se a lista tem datasources mas nenhum com esse uid canonico. Inventario
+    # abaixo distingue os dois. So uid/type/name — nunca token nem header.
+    qtd_total=$(echo "$lista" | jq 'length')
+    if [ "$qtd_total" -eq 0 ]; then
+      echo "gc_datasource_uid_usage: a API devolveu 0 datasources — verifique se GC_GRAFANA_TOKEN tem permissao de leitura de datasources e se GC_GRAFANA_URL aponta para a stack certa" >&2
+    else
+      echo "gc_datasource_uid_usage: datasources devolvidos pela API (uid / type / name):" >&2
+      echo "$lista" | jq -r '.[] | "  \(.uid)\t\(.type)\t\(.name)"' >&2
+    fi
     return 1
   fi
   echo "$achado"
