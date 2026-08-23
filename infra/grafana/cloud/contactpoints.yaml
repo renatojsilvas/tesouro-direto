@@ -8,4 +8,19 @@ contactPoints:
         settings:
           bottoken: '${TELEGRAM_BOT_TOKEN}'
           chatid: "144442958"
+          message: |
+            🟢 TESOURO DIRETO
+            {{ template "default.message" . }}
+        disableResolveMessage: false
+  - orgId: 1
+    name: telegram-hub
+    receivers:
+      - uid: hub-telegram-receiver
+        type: telegram
+        settings:
+          bottoken: '${TELEGRAM_BOT_TOKEN}'
+          chatid: "144442958"
+          message: |
+            🔵 HUB DE PRECOS
+            {{ template "default.message" . }}
         disableResolveMessage: false
