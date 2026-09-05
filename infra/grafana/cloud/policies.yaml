@@ -11,3 +11,6 @@ policies:
         - receiver: telegram-hub
           matchers:
             - service = hub-precos
+        - receiver: telegram-operacoes
+          matchers:
+            - service = operacoes

@@ -24,3 +24,15 @@ contactPoints:
             🔵 HUB DE PRECOS
             {{ template "default.message" . }}
         disableResolveMessage: false
+  - orgId: 1
+    name: telegram-operacoes
+    receivers:
+      - uid: operacoes-telegram-receiver
+        type: telegram
+        settings:
+          bottoken: '${TELEGRAM_BOT_TOKEN}'
+          chatid: "144442958"
+          message: |
+            🟠 OPERACOES
+            {{ template "default.message" . }}
+        disableResolveMessage: false

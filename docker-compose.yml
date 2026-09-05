@@ -367,10 +367,31 @@ services:
     # A regra `td-cloud-overage` (77.5) alerta sobre esse cenário, e as regras
     # `td-container-*` alertam se a não-descartável passar de 85%/95% deste teto.
     # Reavaliar após 17/08 com dado sob o regime real do free tier.
+    #
+    # 05/09/2026 — teto subido de 192M para 256M, APLICADO, decisão do dono.
+    # PADROES §10.14 ("serviço novo muda o orçamento dos VIZINHOS, não só o seu"): o
+    # repo `operacoes` acrescentou um alvo de scrape (prometheus.scrape "operacoes" em
+    # infra/alloy/config.alloy, job="operacoes", a cada 30s), e o vizinho que paga por
+    # isso é este container — é ele que guarda as séries.
+    #
+    # O número não é estimativa. Medido na VPS em 05/09/2026, ANTES de acrescentar o
+    # alvo: `docker stats` mostrou este container em 169 MiB de 192 MiB — 88% do teto,
+    # já sem o job novo. A máquina tem 1967 MB no total com 1035 MB disponíveis, então
+    # os 64 MB a mais cabem com folga. E 256M não é chute: é exatamente o teto que os
+    # outros dois serviços fixos desta VPS já usam (`app`, ~linha 56, e `db`, ~linha
+    # 196) — número que vem do molde, não de "parece que sobra" (o LEIA-ME-KIT registra
+    # "dimensionar recurso sem medir, e chamar o número de folgado" como erro que já
+    # custou duas semanas até virar alerta de throttling).
+    #
+    # Por que ANTES do deploy e não depois de medir o custo marginal real: este
+    # container é quem sustenta 12 das 18 regras de alerta. Se ele sofrer OOM, os
+    # alertas de TODOS os serviços ficam mudos — e mudos é exatamente o estado em que
+    # ninguém é avisado de que ficaram mudos. O custo de errar para mais são 64 MB numa
+    # máquina com 1 GB livre; o de errar para menos é perder a observabilidade inteira.
     deploy:
       resources:
         limits:
-          memory: 192M
+          memory: 256M
 
 volumes:
   pgdata:

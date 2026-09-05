@@ -1,0 +1,107 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: operacoes-alertas
+    folder: Operacoes
+    interval: 1m
+    rules:
+      - uid: operacoes-app-down
+        title: Operações — App down (target não respondendo)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: up{job="operacoes"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: eq
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: O Prometheus não está conseguindo fazer scrape do target operacoes
+          description: >-
+            Mesma forma de td-app-down (repo tesouro-direto-api, rules.yaml): up==0, não
+            absent(), porque o alvo já está declarado em infra/alloy/config.alloy
+            (prometheus.scrape "operacoes") e o que este alerta vigia é ele parar de
+            responder, não sumir do config. noDataState=Alerting de propósito: se a
+            série inteira desaparecer (alvo removido do scrape, container renomeado, ou
+            o próprio Alloy fora do ar), isso também precisa soar — ausência de dado não
+            pode ser lida como "está tudo bem". Verifique primeiro se o container
+            operacoes-app está de pé na VPS (docker ps), depois os logs do container
+            tesouro-direto-alloy (ele é quem faz o scrape), e por fim se o alvo
+            operacoes-app:8080/metrics responde de dentro da rede tesouro-net.
+        labels:
+          severity: critical
+          service: operacoes
+        isPaused: false
+      - uid: operacoes-db-readiness-down
+        title: Operações — DB/readiness down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: aspnetcore_healthcheck_status{job="operacoes",name="AppDbContext"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: eq
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: Health check do banco de dados (readiness) está falhando
+          description: >-
+            Mesma forma de td-db-readiness-down. noDataState=Alerting: a métrica
+            aspnetcore_healthcheck_status só é publicada quando algo chama /health,
+            /health/ready ou /health/live — em produção quem garante isso 24/7 é o
+            healthcheck do próprio docker-compose.prod.yml (curl em /health/ready a cada
+            30s), não o scrape do Alloy. Se a série sumir, o caminho mais provável é o
+            processo do operacoes ter parado de responder por completo (coberto também
+            por operacoes-app-down) ou o healthcheck do compose ter sido removido/quebrado
+            — ausência aqui não pode ser lida como "banco ok". Verifique a
+            connectivity com o Postgres compartilhado (host tesouro-direto-db) e os logs
+            do container operacoes-app para a exceção do AppDbContext antes de escalar.
+        labels:
+          severity: critical
+          service: operacoes
+        isPaused: false

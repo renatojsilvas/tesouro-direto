@@ -31,6 +31,20 @@ prometheus.scrape "hub" {
       forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
+// job="operacoes" — serviço Operações (repo operacoes), que compartilha esta VPS e a
+// rede `tesouro-net`. O alvo é o alias `operacoes-app` registrado tanto pelo nome do
+// serviço quanto pelo container_name em docker-compose.prod.yml daquele repo (PADROES
+// §10.1 conferido: nem "operacoes" nem "operacoes-app" colidem com os aliases já
+// ocupados na rede). Job NOVO: não toca no contrato das 18 regras de alerta acima nem
+// nas 4 do Hub — `verificar-f1.sh` do repo operacoes procura `job="operacoes"` e as
+// regras de infra/grafana/cloud/rules-operacoes.yaml filtram por ele.
+prometheus.scrape "operacoes" {
+      targets         = [{__address__ = "operacoes-app:8080", job = "operacoes"}]
+      metrics_path    = "/metrics"
+      scrape_interval = "30s"
+      forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
 // Substituiu o container `node-exporter` (77.1; o serviço foi removido do
 // docker-compose.yml na 77.4). Os NOMES de coletor são os mesmos que ele usava —
 // inclusive o textfile, que sustenta 7 regras de alerta.
