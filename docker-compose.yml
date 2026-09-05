@@ -168,13 +168,32 @@ services:
     # postmaster trata como crash e reinicia o cluster inteiro — ver Risco
     # da 74 no PLANO.md), por isso `memswap_limit` = `memory` tambem aqui:
     # falha alta e visivel em vez de latencia arrastada.
+    #
+    # 2026-09-05: teto de memoria de 128M para 256M. Esta instancia deixou de
+    # servir so o `tesouro_direto` (44 MB) — o database `hub`, do repo
+    # hub-precos, vive aqui e chegou a 298 MB, dos quais 288 MB sao a tabela
+    # `precos` (867 mil linhas de serie historica). Servir ~342 MB de dados
+    # dentro de um cgroup de 128 MiB fazia o kernel reciclar pagina
+    # continuamente, disparando o alerta td-container-reclaim-sustentado com
+    # `container = tesouro-direto-db` (a propria regra anota que a linha de
+    # base medida era zero, entao era pressao real, nao ruido).
+    #
+    # Os 128 MiB vieram do `plataforma-rabbitmq` (compose do hub-precos), que
+    # usava 88 MiB de 384 MiB para mover ~1 mensagem por dia. A soma dos tetos
+    # da VPS nao mudou. `shared_buffers` fica em 64MB de proposito: com 256 MiB
+    # de teto isso e ~25%, a proporcao padrao — o que faltava era espaco para
+    # page cache, nao para buffer do Postgres.
+    #
+    # GATILHO DE REVISITA: 256 MiB cobre o working set, nao os 342 MB. `precos`
+    # cresce todo dia util, e a fase 2 do hub (acoes e cripto) muda o patamar —
+    # aqui e onde se decide entre subir de novo ou dar instancia propria.
     cpu_shares: 1024
-    memswap_limit: 128M
+    memswap_limit: 256M
     deploy:
       resources:
         limits:
           cpus: "0.60"
-          memory: 128M
+          memory: 256M
           pids: 128
 
   web:
