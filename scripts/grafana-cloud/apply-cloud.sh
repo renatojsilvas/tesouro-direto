@@ -37,6 +37,11 @@ echo "folder TesouroDireto: $FOLDER_UID"
 FOLDER_UID_HUB=$(gc_folder_uid HubPrecos)
 echo "folder HubPrecos: $FOLDER_UID_HUB"
 
+# Mesmo raciocinio do FOLDER_UID_HUB acima: pasta separada para o servico Operacoes
+# (repo operacoes), que descreve OUTRO servico versionado em outro repo.
+FOLDER_UID_OPERACOES=$(gc_folder_uid Operacoes)
+echo "folder Operacoes: $FOLDER_UID_OPERACOES"
+
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 sed -e "s/__DS_PROM__/${DS_PROM}/g" \
@@ -217,6 +222,43 @@ else
   echo "infra/grafana/cloud/rules-hub.yaml ausente — pulando publicacao de regras do Hub (TD ja publicado acima)"
 fi
 
+# --- Regras do Operacoes, em pasta e grupo proprios ------------------------------------
+#
+# Mesmo mecanismo e mesmo raciocinio do bloco do Hub logo acima (PUT idempotente por
+# grupo, atras de um `if -f` para nao abortar a publicacao do TD/Hub por causa de um
+# arquivo de servico vizinho que pode nao ter sido copiado nesta execucao), aplicado a
+# infra/grafana/cloud/rules-operacoes.yaml — conteudo escrito no repo operacoes e copiado
+# para ca porque o publicador mora aqui (ver infra/grafana/README.md daquele repo).
+# Nome de arquivo DIFERENTE de "rules.yaml" pelo mesmo motivo do Hub: um "rules.yaml" do
+# Operacoes sobrescreveria por PUT as 21 regras do TD que ja vivem sob esse nome aqui.
+#
+# O grupo se chama "operacoes-alertas" e a pasta e "Operacoes" (FOLDER_UID_OPERACOES) —
+# o que impede colisao com as regras do TD e do Hub e a PASTA, nao o nome do grupo.
+if [ -f infra/grafana/cloud/rules-operacoes.yaml ]; then
+  sed -e "s/__DS_PROM__/${DS_PROM}/g" \
+      -e "s/__DS_LOKI__/${DS_LOKI}/g" \
+      -e "s/__DS_USAGE__/${DS_USAGE}/g" \
+      infra/grafana/cloud/rules-operacoes.yaml > "$TMP/rules-operacoes.yaml"
+
+  n_grupos_operacoes=$(yq '.groups | length' "$TMP/rules-operacoes.yaml")
+  for ((gi = 0; gi < n_grupos_operacoes; gi++)); do
+    nome_grupo=$(yq -r ".groups[$gi].name" "$TMP/rules-operacoes.yaml")
+    intervalo_raw=$(yq -r ".groups[$gi].interval" "$TMP/rules-operacoes.yaml")
+    intervalo_seg=$(converter_intervalo_para_segundos "$intervalo_raw") || exit 1
+
+    regras_grupo=$(yq -o=json ".groups[$gi].rules" "$TMP/rules-operacoes.yaml" \
+      | jq --arg fu "$FOLDER_UID_OPERACOES" --arg rg "$nome_grupo" 'map(. + {folderUID: $fu, ruleGroup: $rg})')
+
+    corpo_grupo=$(jq -n --arg t "$nome_grupo" --argjson interval "$intervalo_seg" --argjson rules "$regras_grupo" \
+      '{title: $t, interval: $interval, rules: $rules}')
+
+    provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID_OPERACOES}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
+    echo "grupo de regras aplicado (Operacoes): ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
+  done
+else
+  echo "infra/grafana/cloud/rules-operacoes.yaml ausente — pulando publicacao de regras do Operacoes (TD/Hub ja publicados acima)"
+fi
+
 # --- Dashboards -------------------------------------------------------------------
 #
 # Dashboards no MESMO processo: DS_PROM/DS_LOKI/FOLDER_UID sao variaveis locais deste
@@ -282,6 +324,38 @@ if [ -f infra/grafana/dashboards/hub-precos.json ]; then
   HUB_DASHBOARD_PUBLICADO=true
 else
   echo "infra/grafana/dashboards/hub-precos.json ausente — pulando publicacao do dashboard do Hub (TD ja publicado acima)"
+fi
+
+# --- Dashboard do Operacoes, em pasta propria ----------------------------------------
+#
+# Mesmo raciocinio do bloco do Hub logo acima: pasta DIFERENTE (FOLDER_UID_OPERACOES),
+# arquivo versionado no repo operacoes (infra/grafana/dashboards/operacoes.json, ver
+# infra/grafana/README.md la) e copiado manualmente para ca porque a publicacao mora
+# neste repo:
+#
+#   cp ../operacoes/infra/grafana/dashboards/operacoes.json infra/grafana/dashboards/
+#   cp ../operacoes/infra/grafana/cloud/rules-operacoes.yaml infra/grafana/cloud/
+#
+# `if -f` para nao abortar o script depois que TD/Hub ja foram aplicados com sucesso —
+# a pasta Operacoes ja foi criada vazia nesse ponto (FOLDER_UID_OPERACOES acima), o que
+# e inofensivo (`gc_folder_uid` e idempotente). OPERACOES_DASHBOARD_PUBLICADO controla
+# tambem a verificacao final mais abaixo, pelo mesmo motivo do HUB_DASHBOARD_PUBLICADO:
+# um GET num uid nunca publicado voltaria 404 e abortaria sob `set -e`.
+OPERACOES_DASHBOARD_PUBLICADO=false
+if [ -f infra/grafana/dashboards/operacoes.json ]; then
+  jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
+     'walk(if type=="object" and .uid=="prometheus" then .uid=$p
+           elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
+     infra/grafana/dashboards/operacoes.json > "$TMP/operacoes.json"
+
+  jq -nc --slurpfile db "$TMP/operacoes.json" --arg f "$FOLDER_UID_OPERACOES" \
+     '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
+    | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
+        -H 'Content-Type: application/json' --data-binary @- \
+        "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
+  OPERACOES_DASHBOARD_PUBLICADO=true
+else
+  echo "infra/grafana/dashboards/operacoes.json ausente — pulando publicacao do dashboard do Operacoes (TD/Hub ja publicados acima)"
 fi
 
 # --- Convergencia: apaga da nuvem o load-test-k6 subido por engano na 77.3 -----------
@@ -365,6 +439,19 @@ else
   echo "regras na pasta HubPrecos: rules-hub.yaml ausente nesta execucao, pulando conferencia"
 fi
 
+# Mesmo raciocinio do bloco do Hub logo acima, aplicado ao Operacoes.
+if [ -f infra/grafana/cloud/rules-operacoes.yaml ]; then
+  qtd_operacoes_esperada=$(yq '[.groups[].rules[]] | length' "$TMP/rules-operacoes.yaml")
+  qtd_operacoes=$(echo "$regras_nuvem" | jq --arg f "$FOLDER_UID_OPERACOES" '[.[] | select((.folderUID // .folderUid) == $f)] | length')
+  echo "regras na pasta Operacoes: ${qtd_operacoes}"
+  if [ "$qtd_operacoes" -ne "$qtd_operacoes_esperada" ]; then
+    echo "ABORTADO: a pasta Operacoes tem ${qtd_operacoes} regras de alerta, esperado ${qtd_operacoes_esperada} (lido de rules-operacoes.yaml)" >&2
+    exit 1
+  fi
+else
+  echo "regras na pasta Operacoes: rules-operacoes.yaml ausente nesta execucao, pulando conferencia"
+fi
+
 # __expr__ e o pseudo-datasource do no de threshold (condition C de toda regra) —
 # NAO e um datasource real e aparece em todas as 21 regras; nao e erro. So
 # 'prometheus'/'loki' (uid de casa que nao existe na nuvem), uid vazio, e qualquer
@@ -435,6 +522,12 @@ uids_dashboards_verificar=(tesouro-direto-api host-node-exporter)
 # (ver infra/grafana/README.md do repo hub-precos), igual aos outros dois.
 if [ "$HUB_DASHBOARD_PUBLICADO" = true ]; then
   uids_dashboards_verificar+=(hub-precos)
+fi
+
+# Mesmo raciocinio do HUB_DASHBOARD_PUBLICADO logo acima, aplicado ao Operacoes: uid
+# lido do campo "uid" de topo do proprio operacoes.json.
+if [ "$OPERACOES_DASHBOARD_PUBLICADO" = true ]; then
+  uids_dashboards_verificar+=(operacoes)
 fi
 
 for uid in "${uids_dashboards_verificar[@]}"; do
