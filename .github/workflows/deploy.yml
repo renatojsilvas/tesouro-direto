@@ -268,7 +268,20 @@ jobs:
             cp infra/host/container-metrics.sh /usr/local/bin/container-metrics.sh.new
             chmod +x /usr/local/bin/container-metrics.sh.new
             mv -f /usr/local/bin/container-metrics.sh.new /usr/local/bin/container-metrics.sh
-            cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
+            # ANCORA: /etc/nginx/sites-enabled/tesouro-direto pode ser um SYMLINK para
+            # ESTE mesmo arquivo -- e e, nesta VPS, desde 2026-03-25. Nesse arranjo o
+            # `git reset --hard` acima ja deixou a config correta, e o `cp` nao so e
+            # desnecessario como FALHA: "cp: ... are the same file", exit 1.
+            # Isso vinha falhando em silencio desde que o symlink foi criado, porque o
+            # `script_stop: true` que deveria abortar o script tinha sido removido da
+            # action (ver PR #80). Com o `set -e` restaurado, a falha passou a abortar o
+            # deploy ANTES do `docker compose up -d` -- foi assim que ela apareceu.
+            # Comparar os caminhos resolvidos cobre os dois arranjos (symlink ou copia).
+            if [ "$(readlink -f infra/nginx/tesouro-direto.conf)" = "$(readlink -f /etc/nginx/sites-enabled/tesouro-direto 2>/dev/null)" ]; then
+              echo "nginx: sites-enabled ja e symlink para o arquivo do repo; nada a copiar."
+            else
+              cp infra/nginx/tesouro-direto.conf /etc/nginx/sites-enabled/tesouro-direto
+            fi
             nginx -t && systemctl reload nginx
             # Cache de build habilitado: o reset --hard acima ja muda os inputs do
             # COPY (codigo-fonte) a cada deploy, e as versoes de pacote sao fixas nos
