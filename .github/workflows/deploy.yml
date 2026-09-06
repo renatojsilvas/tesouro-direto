@@ -180,6 +180,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             mkdir -p /opt/tesouro-direto
             # ANCORA: este .env e reescrito POR COMPLETO a cada deploy (nao e um merge
             # com o que ja existe na VPS). Qualquer ${VAR:?...} novo que entre no
@@ -210,12 +211,20 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          # 77.0: sem script_stop: true, um comando que falha nao para a execucao.
+          # 77.0: sem parada em erro, um comando que falha nao para a execucao.
           # A ultima linha (docker image prune -f) sempre sucede, entao o healthcheck
           # testa o container ANTIGO que continua respondendo 200, fechando o job VERDE
           # mesmo com deploy quebrado no meio. Achado pela revisao adversarial da 77.0.
-          script_stop: true
+          #
+          # A parada vem do `set -e` na primeira linha do script, NAO de `script_stop:
+          # true`: esse input foi REMOVIDO do appleboy/ssh-action e o tag flutuante
+          # `@v1` ja aponta para uma versao que nao o conhece. Ele vinha sendo ignorado
+          # em silencio -- o run anotava "Unexpected input(s) 'script_stop'" e o job
+          # seguia -- ou seja, a guarda que este comentario descreve NAO existia mais, e
+          # o modo de falha acima estava reaberto. `set -e` nao depende de versao de
+          # action nenhuma.
           script: |
+            set -e
             cd /opt/tesouro-direto
             if [ ! -d .git ]; then
               git clone https://github.com/${{ github.repository }} .
@@ -270,7 +279,7 @@ jobs:
             # SAIU do arquivo -- exatamente o caso de grafana/loki/promtail/
             # node-exporter, removidos do docker-compose.yml nesta fase. O comando
             # fecha com exit code 0 e so um `level=warning "Found orphan containers"`
-            # no stderr; como `script_stop: true` (ver ANCORA acima) so aborta em
+            # no stderr; como o `set -e` (ver ANCORA acima) so aborta em
             # ERRO, nao em warning, o deploy fecharia VERDE com os 5 containers
             # antigos ainda de pe e nenhum dos ~588 MB que sao o proposito inteiro da
             # 77.4 seria liberado.
@@ -290,7 +299,7 @@ jobs:
             # para tras (72 MB) depois do teste, e nenhum deploy o recolheria.
             # `rm -sf` com o profile explicito para e remove; e idempotente quando ele
             # nao existe ("No stopped containers", exit 0), o que importa sob
-            # `script_stop: true`. O volume `prometheus-data` nao e tocado.
+            # `set -e`. O volume `prometheus-data` nao e tocado.
             docker compose --profile load rm -sf prometheus
             # Bind-mount de config nao e recriado por `up -d` quando o arquivo muda
             # (feedback compose_bindmount_no_recreate). O alloy tem a mesma armadilha
