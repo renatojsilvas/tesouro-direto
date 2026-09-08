@@ -42,6 +42,12 @@ echo "folder HubPrecos: $FOLDER_UID_HUB"
 FOLDER_UID_OPERACOES=$(gc_folder_uid Operacoes)
 echo "folder Operacoes: $FOLDER_UID_OPERACOES"
 
+# Mesmo raciocinio do FOLDER_UID_HUB e FOLDER_UID_OPERACOES acima: pasta separada para
+# o servico Custodia (repo custodia), que descreve OUTRO servico versionado em outro
+# repo.
+FOLDER_UID_CUSTODIA=$(gc_folder_uid Custodia)
+echo "folder Custodia: $FOLDER_UID_CUSTODIA"
+
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 sed -e "s/__DS_PROM__/${DS_PROM}/g" \
@@ -259,6 +265,44 @@ else
   echo "infra/grafana/cloud/rules-operacoes.yaml ausente — pulando publicacao de regras do Operacoes (TD/Hub ja publicados acima)"
 fi
 
+# --- Regras da Custodia, em pasta e grupo proprios -------------------------------------
+#
+# Mesmo mecanismo e mesmo raciocinio dos blocos do Hub e do Operacoes logo acima (PUT
+# idempotente por grupo, atras de um `if -f` para nao abortar a publicacao do
+# TD/Hub/Operacoes por causa de um arquivo de servico vizinho que pode nao ter sido
+# copiado nesta execucao), aplicado a infra/grafana/cloud/rules-custodia.yaml —
+# conteudo escrito no repo custodia e copiado para ca porque o publicador mora aqui
+# (ver infra/grafana/README.md daquele repo). Nome de arquivo DIFERENTE de "rules.yaml"
+# pelo mesmo motivo do Hub e do Operacoes: um "rules.yaml" da Custodia sobrescreveria
+# por PUT as 21 regras do TD que ja vivem sob esse nome aqui.
+#
+# O grupo se chama "custodia-alertas" e a pasta e "Custodia" (FOLDER_UID_CUSTODIA) — o
+# que impede colisao com as regras do TD/Hub/Operacoes e a PASTA, nao o nome do grupo.
+if [ -f infra/grafana/cloud/rules-custodia.yaml ]; then
+  sed -e "s/__DS_PROM__/${DS_PROM}/g" \
+      -e "s/__DS_LOKI__/${DS_LOKI}/g" \
+      -e "s/__DS_USAGE__/${DS_USAGE}/g" \
+      infra/grafana/cloud/rules-custodia.yaml > "$TMP/rules-custodia.yaml"
+
+  n_grupos_custodia=$(yq '.groups | length' "$TMP/rules-custodia.yaml")
+  for ((gi = 0; gi < n_grupos_custodia; gi++)); do
+    nome_grupo=$(yq -r ".groups[$gi].name" "$TMP/rules-custodia.yaml")
+    intervalo_raw=$(yq -r ".groups[$gi].interval" "$TMP/rules-custodia.yaml")
+    intervalo_seg=$(converter_intervalo_para_segundos "$intervalo_raw") || exit 1
+
+    regras_grupo=$(yq -o=json ".groups[$gi].rules" "$TMP/rules-custodia.yaml" \
+      | jq --arg fu "$FOLDER_UID_CUSTODIA" --arg rg "$nome_grupo" 'map(. + {folderUID: $fu, ruleGroup: $rg})')
+
+    corpo_grupo=$(jq -n --arg t "$nome_grupo" --argjson interval "$intervalo_seg" --argjson rules "$regras_grupo" \
+      '{title: $t, interval: $interval, rules: $rules}')
+
+    provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID_CUSTODIA}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
+    echo "grupo de regras aplicado (Custodia): ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
+  done
+else
+  echo "infra/grafana/cloud/rules-custodia.yaml ausente — pulando publicacao de regras da Custodia (TD/Hub/Operacoes ja publicados acima)"
+fi
+
 # --- Dashboards -------------------------------------------------------------------
 #
 # Dashboards no MESMO processo: DS_PROM/DS_LOKI/FOLDER_UID sao variaveis locais deste
@@ -358,6 +402,39 @@ else
   echo "infra/grafana/dashboards/operacoes.json ausente — pulando publicacao do dashboard do Operacoes (TD/Hub ja publicados acima)"
 fi
 
+# --- Dashboard da Custodia, em pasta propria -------------------------------------------
+#
+# Mesmo raciocinio dos blocos do Hub e do Operacoes logo acima: pasta DIFERENTE
+# (FOLDER_UID_CUSTODIA), arquivo versionado no repo custodia
+# (infra/grafana/dashboards/custodia.json, ver infra/grafana/README.md la) e copiado
+# manualmente para ca porque a publicacao mora neste repo:
+#
+#   cp ../custodia/infra/grafana/dashboards/custodia.json infra/grafana/dashboards/
+#   cp ../custodia/infra/grafana/cloud/rules-custodia.yaml infra/grafana/cloud/
+#
+# `if -f` para nao abortar o script depois que TD/Hub/Operacoes ja foram aplicados com
+# sucesso — a pasta Custodia ja foi criada vazia nesse ponto (FOLDER_UID_CUSTODIA
+# acima), o que e inofensivo (`gc_folder_uid` e idempotente). CUSTODIA_DASHBOARD_PUBLICADO
+# controla tambem a verificacao final mais abaixo, pelo mesmo motivo do
+# HUB_DASHBOARD_PUBLICADO/OPERACOES_DASHBOARD_PUBLICADO: um GET num uid nunca publicado
+# voltaria 404 e abortaria o script sob `set -e`.
+CUSTODIA_DASHBOARD_PUBLICADO=false
+if [ -f infra/grafana/dashboards/custodia.json ]; then
+  jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
+     'walk(if type=="object" and .uid=="prometheus" then .uid=$p
+           elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
+     infra/grafana/dashboards/custodia.json > "$TMP/custodia.json"
+
+  jq -nc --slurpfile db "$TMP/custodia.json" --arg f "$FOLDER_UID_CUSTODIA" \
+     '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
+    | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
+        -H 'Content-Type: application/json' --data-binary @- \
+        "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
+  CUSTODIA_DASHBOARD_PUBLICADO=true
+else
+  echo "infra/grafana/dashboards/custodia.json ausente — pulando publicacao do dashboard da Custodia (TD/Hub/Operacoes ja publicados acima)"
+fi
+
 # --- Convergencia: apaga da nuvem o load-test-k6 subido por engano na 77.3 -----------
 #
 # Antes desta fase o loop acima incluia "load-test" e ja rodou em producao (77.3) — o
@@ -452,6 +529,21 @@ else
   echo "regras na pasta Operacoes: rules-operacoes.yaml ausente nesta execucao, pulando conferencia"
 fi
 
+# Mesmo raciocinio dos blocos do Hub e do Operacoes logo acima, aplicado a Custodia.
+if [ -f infra/grafana/cloud/rules-custodia.yaml ]; then
+  qtd_custodia_esperada=$(yq '[.groups[].rules[]] | length' "$TMP/rules-custodia.yaml")
+  # Mesma tolerancia de grafia dos blocos acima (`.folderUID // .folderUid`) — ver
+  # comentario no bloco do TD para o porque.
+  qtd_custodia=$(echo "$regras_nuvem" | jq --arg f "$FOLDER_UID_CUSTODIA" '[.[] | select((.folderUID // .folderUid) == $f)] | length')
+  echo "regras na pasta Custodia: ${qtd_custodia}"
+  if [ "$qtd_custodia" -ne "$qtd_custodia_esperada" ]; then
+    echo "ABORTADO: a pasta Custodia tem ${qtd_custodia} regras de alerta, esperado ${qtd_custodia_esperada} (lido de rules-custodia.yaml)" >&2
+    exit 1
+  fi
+else
+  echo "regras na pasta Custodia: rules-custodia.yaml ausente nesta execucao, pulando conferencia"
+fi
+
 # __expr__ e o pseudo-datasource do no de threshold (condition C de toda regra) —
 # NAO e um datasource real e aparece em todas as 21 regras; nao e erro. So
 # 'prometheus'/'loki' (uid de casa que nao existe na nuvem), uid vazio, e qualquer
@@ -528,6 +620,12 @@ fi
 # lido do campo "uid" de topo do proprio operacoes.json.
 if [ "$OPERACOES_DASHBOARD_PUBLICADO" = true ]; then
   uids_dashboards_verificar+=(operacoes)
+fi
+
+# Mesmo raciocinio do HUB_DASHBOARD_PUBLICADO/OPERACOES_DASHBOARD_PUBLICADO logo acima,
+# aplicado a Custodia: uid lido do campo "uid" de topo do proprio custodia.json.
+if [ "$CUSTODIA_DASHBOARD_PUBLICADO" = true ]; then
+  uids_dashboards_verificar+=(custodia)
 fi
 
 for uid in "${uids_dashboards_verificar[@]}"; do

@@ -45,6 +45,19 @@ prometheus.scrape "operacoes" {
       forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
+// job="custodia" — serviço Custódia (repo custodia), que compartilha esta VPS e a
+// rede `tesouro-net`. O alvo é o alias `custodia-app`, container_name registrado em
+// docker-compose.prod.yml daquele repo. Job NOVO: não toca no contrato das 18 regras
+// de alerta acima nem nas do Hub/Operações — `verificar-f1.sh` do repo custodia
+// procura `job="custodia"` e as regras de infra/grafana/cloud/rules-custodia.yaml
+// filtram por ele.
+prometheus.scrape "custodia" {
+      targets         = [{__address__ = "custodia-app:8080", job = "custodia"}]
+      metrics_path    = "/metrics"
+      scrape_interval = "30s"
+      forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
 // Substituiu o container `node-exporter` (77.1; o serviço foi removido do
 // docker-compose.yml na 77.4). Os NOMES de coletor são os mesmos que ele usava —
 // inclusive o textfile, que sustenta 7 regras de alerta.

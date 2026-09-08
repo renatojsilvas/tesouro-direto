@@ -36,3 +36,15 @@ contactPoints:
             🟠 OPERACOES
             {{ template "default.message" . }}
         disableResolveMessage: false
+  - orgId: 1
+    name: telegram-custodia
+    receivers:
+      - uid: custodia-telegram-receiver
+        type: telegram
+        settings:
+          bottoken: '${TELEGRAM_BOT_TOKEN}'
+          chatid: "144442958"
+          message: |
+            🟣 CUSTODIA
+            {{ template "default.message" . }}
+        disableResolveMessage: false
