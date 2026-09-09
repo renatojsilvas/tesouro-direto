@@ -71,9 +71,11 @@ prometheus.scrape "custodia" {
 // novo entra aqui, nem em GC_* nem no ambiente deste serviço.
 //
 // A escolha de `/metrics/detailed?family=queue_coarse_metrics` (rabbitmq_detailed_
-// queue_messages_ready), e não `/metrics` nem `/metrics/per-object`, é DESVIO DELIBERADO
-// da grafia literal do ROADMAP (que escreve rabbitmq_queue_messages_ready) — o SINAL é o
-// mesmo (existência da fila), só o nome da métrica muda:
+// queue_messages_ready), e não `/metrics` nem `/metrics/per-object`, foi um desvio
+// deliberado da grafia que o ROADMAP da `custodia` trazia ANTES da correção do F2 (ele
+// escrevia rabbitmq_queue_messages_ready). O ROADMAP já foi corrigido e hoje concorda com
+// este arquivo — não procure a contradição, ela está resolvida. O SINAL sempre foi o
+// mesmo (existência da fila); o que mudou foi o nome da métrica, e o motivo é este:
 //   - `/metrics` (default) NÃO tem o label `queue` — rabbitmq_queue_messages_ready vem
 //     agregado, sem por-fila. Um `absent(...{queue="custodia.prices"})` contra essa série
 //     NUNCA CASARIA, e o absent() dispararia todo dia, para sempre — o defeito exato que
