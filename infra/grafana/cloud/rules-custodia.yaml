@@ -105,3 +105,82 @@ groups:
           severity: critical
           service: custodia
         isPaused: false
+      - uid: custodia-topologia-ausente
+        title: Custodia — Topologia ausente (fila custodia.prices)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: absent(rabbitmq_detailed_queue_messages_ready{vhost="/",queue="custodia.prices"})
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 3m
+        annotations:
+          summary: A fila custodia.prices não existe no broker — dead-man's switch de topologia entre o F2 e o F4
+          description: >-
+            Esta regra JÁ É um absent(): quando a fila custodia.prices existe (estado
+            normal), a série rabbitmq_detailed_queue_messages_ready{queue="custodia.prices"}
+            é retornada pelo Prometheus e absent() devolve vetor VAZIO — do ponto de vista
+            do Grafana, a query A não tem dado, porque o "sem dado" e o "ausente" se
+            sobrepõem aqui. noDataState=OK de propósito: esse "sem dado" É o estado são,
+            não uma anomalia — copiar Alerting das duas regras acima sem pensar faria este
+            alerta disparar o tempo todo durante operação normal, o oposto do que ele
+            existe para fazer. Quando a fila SOME de verdade, absent() passa a devolver um
+            ponto com valor 1 (Prometheus tem dado a entregar), e é aí que a condição C
+            (gt 0) avalia Alerting — a ausência já carrega o próprio sinal, sem precisar de
+            noDataState para isso. execErrState=Alerting continua, diferente do caso
+            acima: falha de EXECUÇÃO da query (datasource fora do ar, sintaxe quebrada) é
+            anomalia de verdade, independente de a fila existir ou não. A métrica é
+            rabbitmq_detailed_queue_messages_ready (não rabbitmq_queue_messages_ready) por
+            desvio deliberado do alloy raspar /metrics/detailed?family=queue_coarse_metrics
+            do plataforma-rabbitmq — ver o comentário em
+            ../tesouro-direto-api/infra/alloy/config.alloy (prometheus.scrape "rabbitmq")
+            para o porquê (o /metrics default não tem label queue e faria este absent()
+            disparar todo dia para sempre; o /metrics/per-object teria o label mas custa
+            ~730 séries que crescem com conexão/canal de terceiro). LACUNA DECLARADA: a
+            fila existir não prova que os quatro bindings (prices.#, corpactions.#,
+            eod.ready, trades.registered) existem — o incidente real (perda do volume do
+            broker) leva fila e bindings juntos, e a ausência da série cobre esse caso; a
+            remoção cirúrgica de um binding com a fila intacta fica coberta pela
+            verificação bloqueante do passo de deploy (management API, onde binding é
+            conferível), não por este alerta. REJEITADO NOMINALMENTE: contagem de
+            bindings do exchange prices — o rabbitmq_prometheus expõe séries por fila e
+            contagens globais, mas NÃO expõe contagem de bindings por exchange (a regra
+            nasceria sobre série inexistente, disparando para sempre), e essa contagem
+            muda quando outro serviço binda uma fila nova na mesma exchange (seria alerta
+            nosso disparando por mudança alheia). É ESTA REGRA QUE AUTORIZA o ::warning::
+            do passo de deploy no caso "broker inacessível depois do laço de espera": sem
+            ela, aquele desfecho tem que virar reprova (exit 1) — quem for apagar esta
+            regra precisa reabrir essa decisão no passo de deploy primeiro. Ao
+            diagnosticar: confira primeiro se o container plataforma-rabbitmq está de pé
+            (docker ps na VPS do hub-precos), depois se o alvo job="plataforma-rabbitmq"
+            aparece saudável na UI do tesouro-direto-alloy (127.0.0.1:12345), e por fim
+            GET /api/queues/%2F/custodia.prices na management API do broker para confirmar
+            se a fila em si existe antes de reexecutar o passo de deploy da custodia.
+        labels:
+          severity: critical
+          service: custodia
+        isPaused: false

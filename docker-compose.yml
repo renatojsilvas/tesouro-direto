@@ -348,6 +348,25 @@ services:
       # o tail parar de ver log novo em silêncio (decisão original do serviço
       # `promtail`, removido na 77.4, preservada aqui).
       - /var/log:/var/log/host:ro
+    # 08/09/2026 (F2 da custodia) — o alloy entra TAMBÉM na rede `plataforma`, onde vive
+    # o broker `plataforma-rabbitmq` (repo hub-precos). `default` (tesouro-net) TEM que
+    # continuar listado aqui: declarar `networks:` no serviço substitui a associação
+    # implícita, e listar só a nova faria o alloy PERDER todos os alvos atuais (`app`,
+    # `web`, `db`, `hub-precos-app`, `operacoes-app`, `custodia-app`) — regressão
+    # silenciosa em 18+ regras de alerta que dependem desses jobs.
+    # Alias explícito `tesouro-direto-alloy` na `plataforma`: sem ele, o Compose ainda
+    # registraria o nome do SERVIÇO (`alloy`) como alias DNS ali, e `alloy` é genérico
+    # demais para uma rede compartilhada por três repos (PADROES §10.1 — foi assim que o
+    # front do tesouro-direto colidiu com um `app` do Hub). Medido em 08/09/2026: nem
+    # `alloy` nem `tesouro-direto-alloy` colidem com os aliases já ocupados na
+    # `plataforma` (custodia-app, custodia, hub-precos-app, hub, operacoes-app,
+    # operacoes, hub-precos-rabbitmq, plataforma-rabbitmq) — confira de novo com
+    # `docker inspect` antes do deploy, porque a lista envelhece.
+    networks:
+      default:
+      plataforma:
+        aliases:
+          - tesouro-direto-alloy
     # Teto INTERINO fixado na 77.5, deliberadamente folgado (~3× o medido).
     #
     # Medido em produção com o Alloy já fazendo TODO o trabalho (métricas de host da
@@ -388,6 +407,15 @@ services:
     # alertas de TODOS os serviços ficam mudos — e mudos é exatamente o estado em que
     # ninguém é avisado de que ficaram mudos. O custo de errar para mais são 64 MB numa
     # máquina com 1 GB livre; o de errar para menos é perder a observabilidade inteira.
+    #
+    # 08/09/2026 (F2 da custodia) — alvo novo `prometheus.scrape "rabbitmq"` acrescentado
+    # em infra/alloy/config.alloy (job="plataforma-rabbitmq", família
+    # `queue_coarse_metrics`, mesmo §10.14 do parágrafo acima). NÃO subiu o teto desta
+    # vez: são ~12 séries a MAIS (medido contra o endpoint /metrics/detailed real do
+    # `plataforma-rabbitmq`, não estimado), ordem de grandeza irrelevante perto das
+    # centenas que motivaram os 192M -> 256M de cima. Registrado aqui para a próxima
+    # pessoa não precisar remedir: se o mesmo endpoint vier a ser trocado por
+    # `/metrics/per-object` (~730 séries) o cálculo muda e o teto volta a entrar em jogo.
     deploy:
       resources:
         limits:
@@ -401,3 +429,9 @@ volumes:
 networks:
   default:
     name: tesouro-net
+  # 08/09/2026 (F2 da custodia) — compartilhada, NÃO pertence a este repo: quem a cria é
+  # o preflight de deploy da custodia (ou o compose do hub-precos). `external: true` de
+  # propósito, mesma razão do bloco análogo em custodia/docker-compose.prod.yml — um
+  # `docker compose down` daqui não pode arrastar a rede de baixo dos vizinhos.
+  plataforma:
+    external: true

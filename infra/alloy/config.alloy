@@ -58,6 +58,44 @@ prometheus.scrape "custodia" {
       forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
+// job="plataforma-rabbitmq" — o broker `plataforma-rabbitmq` (repo hub-precos, imagem
+// rabbitmq:4-management-alpine, plugin rabbitmq_prometheus habilitado) na rede
+// compartilhada `plataforma`. O alloy só o RASPA: o broker é serviço de OUTRO repo, quem
+// declara a topologia (exchange/fila/bindings) é o passo de deploy da custodia (F2 do
+// ROADMAP), não este arquivo. Existe porque a regra `custodia-topologia-ausente`
+// (infra/grafana/cloud/rules-custodia.yaml) precisa de uma série que prove que a fila
+// `custodia.prices` existe — sem isso, a fase inteira ficaria sem dead-man's switch
+// entre o F2 e o F4 (ver LEIA-ME-KIT.md, "Perder o volume do broker apaga fila e binding").
+//
+// Endpoint SEM autenticação (porta 15692, medido em produção) — por isso nenhum segredo
+// novo entra aqui, nem em GC_* nem no ambiente deste serviço.
+//
+// A escolha de `/metrics/detailed?family=queue_coarse_metrics` (rabbitmq_detailed_
+// queue_messages_ready), e não `/metrics` nem `/metrics/per-object`, é DESVIO DELIBERADO
+// da grafia literal do ROADMAP (que escreve rabbitmq_queue_messages_ready) — o SINAL é o
+// mesmo (existência da fila), só o nome da métrica muda:
+//   - `/metrics` (default) NÃO tem o label `queue` — rabbitmq_queue_messages_ready vem
+//     agregado, sem por-fila. Um `absent(...{queue="custodia.prices"})` contra essa série
+//     NUNCA CASARIA, e o absent() dispararia todo dia, para sempre — o defeito exato que
+//     esta fase existe para impedir, com outro nome.
+//   - `/metrics/per-object` preserva o nome com label `queue`, mas custa ~730 séries
+//     (medido) contra um teto de 10k já em 3149 séries ativas, e CRESCE com conexão/canal
+//     de TERCEIROS (relay do operacoes, do hub) — o nosso orçamento de séries passaria a
+//     depender do churn de um vizinho, a mesma classe de "estragar/depender do alheio por
+//     causa de um serviço que não é seu" que o ROADMAP rejeita em outros pontos desta fase.
+//   - `/metrics/detailed?family=queue_coarse_metrics` dá rabbitmq_detailed_queue_messages_
+//     ready, COM label `queue`, em só 12 linhas de série (medido) — o mesmo sinal, mais
+//     barato e sem depender de terceiro.
+prometheus.scrape "rabbitmq" {
+      targets         = [{__address__ = "plataforma-rabbitmq:15692", job = "plataforma-rabbitmq"}]
+      metrics_path    = "/metrics/detailed"
+      params          = {
+            family = ["queue_coarse_metrics"],
+      }
+      scrape_interval = "30s"
+      forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
 // Substituiu o container `node-exporter` (77.1; o serviço foi removido do
 // docker-compose.yml na 77.4). Os NOMES de coletor são os mesmos que ele usava —
 // inclusive o textfile, que sustenta 7 regras de alerta.
