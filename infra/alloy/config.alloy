@@ -84,8 +84,13 @@ prometheus.scrape "custodia" {
 //     depender do churn de um vizinho, a mesma classe de "estragar/depender do alheio por
 //     causa de um serviço que não é seu" que o ROADMAP rejeita em outros pontos desta fase.
 //   - `/metrics/detailed?family=queue_coarse_metrics` dá rabbitmq_detailed_queue_messages_
-//     ready, COM label `queue`, em só 12 linhas de série (medido) — o mesmo sinal, mais
-//     barato e sem depender de terceiro.
+//     ready, COM label `queue`. Medido em 2026-09-09 na PRÓPRIA NUVEM, com as quatro
+//     filas do F2 da custodia já declaradas: o job inteiro custa 31 séries ativas
+//     (5 famílias por fila + build/identity + as meta-séries de scrape), e cresce ~5 por
+//     fila nova. ATENÇÃO ao número que este comentário trazia antes: os "12" eram linhas
+//     no CORPO do endpoint com UMA fila de sonda — outra grandeza. Para o teto de 10k
+//     vale a contagem de séries ativas. O mesmo sinal, mais barato e sem depender de
+//     terceiro.
 prometheus.scrape "rabbitmq" {
       targets         = [{__address__ = "plataforma-rabbitmq:15692", job = "plataforma-rabbitmq"}]
       metrics_path    = "/metrics/detailed"

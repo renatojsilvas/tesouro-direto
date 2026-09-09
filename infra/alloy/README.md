@@ -16,7 +16,7 @@ graça.
 | `prometheus.scrape "hub"` | `/metrics` do Hub de Preços (`job="hub-precos"`) | idem |
 | `prometheus.scrape "operacoes"` | `/metrics` do Operações (`job="operacoes"`) | idem |
 | `prometheus.scrape "custodia"` | `/metrics` da Custódia (`job="custodia"`) | idem |
-| `prometheus.scrape "rabbitmq"` | `/metrics/detailed?family=queue_coarse_metrics` do broker `plataforma-rabbitmq` (repo hub-precos, rede `plataforma`), `job="plataforma-rabbitmq"` — só a existência de fila por vhost/queue (12 séries), não `/metrics` (sem label `queue`) nem `/metrics/per-object` (~730 séries, cresce com churn de terceiro) | idem |
+| `prometheus.scrape "rabbitmq"` | `/metrics/detailed?family=queue_coarse_metrics` do broker `plataforma-rabbitmq` (repo hub-precos, rede `plataforma`), `job="plataforma-rabbitmq"` — só a existência de fila por vhost/queue. **31 séries ativas na nuvem, medidas em 2026-09-09 com as quatro filas do F2 da `custodia`** (`count by (job)` na API do Grafana Cloud) — 5 famílias × fila, mais `build_info`/`identity_info` e as meta-séries de scrape (`up`, `scrape_*`); cresce ~5 por fila nova. Não `/metrics` (sem label `queue`) nem `/metrics/per-object` (~730 séries, cresce com churn de terceiro) | idem |
 | `prometheus.exporter.unix "host"` + `discovery.relabel "node"` | métricas de host e o textfile collector de `infra/host/container-metrics.sh` (`job="node"`) | idem |
 | `loki.source.file "nginx"` | access log do nginx, **com hash de IP** | `loki.write "cloud"` |
 | `loki.source.file "kernel"` | `kern.log`, filtrado para linhas de OOM | idem |
