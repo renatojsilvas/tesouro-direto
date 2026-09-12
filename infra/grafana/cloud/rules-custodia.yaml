@@ -139,7 +139,7 @@ groups:
         execErrState: Alerting
         for: 3m
         annotations:
-          summary: A fila custodia.prices não existe no broker — dead-man's switch de topologia entre o F2 e o F4
+          summary: A série da fila custodia.prices sumiu — ou a fila foi apagada, ou o scrape do broker parou. As duas exigem ação, e a mensagem NÃO distingue qual é
           description: >-
             Esta regra JÁ É um absent(): quando a fila custodia.prices existe (estado
             normal), a série rabbitmq_detailed_queue_messages_ready{queue="custodia.prices"}
@@ -166,7 +166,23 @@ groups:
             broker) leva fila e bindings juntos, e a ausência da série cobre esse caso; a
             remoção cirúrgica de um binding com a fila intacta fica coberta pela
             verificação bloqueante do passo de deploy (management API, onde binding é
-            conferível), não por este alerta. REJEITADO NOMINALMENTE: contagem de
+            conferível), não por este alerta. SEGUNDA LACUNA DECLARADA, e ela muda o que
+            você faz ao ser acordado: absent() devolve 1 tanto quando a fila é APAGADA
+            quanto quando o SCRAPE PARA (alloy fora, o target plataforma-rabbitmq removido
+            do config.alloy — que vive em OUTRO repo —, ou o endpoint de métricas do
+            broker engasgando). Nesses casos a fila existe e este alerta grita mesmo
+            assim. Então o PRIMEIRO passo do diagnóstico é desambiguar, e não reexecutar
+            o deploy: consulte up{job="plataforma-rabbitmq"} no Grafana Cloud — se for 0
+            ou ausente, o problema é de COLETA e a topologia provavelmente está intacta.
+            Se for 1, o alvo respondeu — mas isso NÃO prova que a família
+            queue_coarse_metrics foi raspada: se alguém editar o config.alloy (que vive em
+            OUTRO repo) e perder o parâmetro family, o endpoint responde 200, up fica 1, a
+            série some, e concluir "a fila sumiu" seria errado. Confirme com
+            GET /api/queues/%2F/custodia.prices na management API antes de concluir. TERCEIRA LACUNA: com lookback
+            de 5m mais o for de 3m, a detecção de "fila apagada" leva até ~8 minutos, e
+            nessa janela trades.registered é descartado em silêncio — inerente à detecção
+            por ausência de série, e escrito aqui para não ser descoberto durante um
+            incidente. REJEITADO NOMINALMENTE: contagem de
             bindings do exchange prices — o rabbitmq_prometheus expõe séries por fila e
             contagens globais, mas NÃO expõe contagem de bindings por exchange (a regra
             nasceria sobre série inexistente, disparando para sempre), e essa contagem
@@ -182,5 +198,387 @@ groups:
             se a fila em si existe antes de reexecutar o passo de deploy da custodia.
         labels:
           severity: critical
+          service: custodia
+        isPaused: false
+      - uid: custodia-prices-consumidor-parado
+        title: Custodia — custodia.prices não drena (consumidor parado ou atrasado)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_fila_profundidade{job="custodia",fila="custodia.prices"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 15m
+        annotations:
+          summary: A fila custodia.prices está com mensagens prontas há pelo menos 15 minutos seguidos
+          description: >-
+            Métrica: custodia_fila_profundidade{fila="custodia.prices"} (Gauge, F4,
+            ConsumidorMetrics.RegistrarProfundidadeDaFila) — série do PRÓPRIO custodia-app
+            (job="custodia"), não do plataforma-rabbitmq: RabbitMqFilaProfundidadePoller
+            mede via AMQP (queue.declare passivo, channel.MessageCountAsync) a cada 15s
+            para as quatro filas e publica sempre, mesmo com profundidade 0 — por isso
+            noDataState=OK aqui não é "sem sinal": ausência de dado significa app fora do
+            ar (já coberto por custodia-app-down), não fila vazia.
+            LIMIAR PROVISÓRIO — CHUTE DOCUMENTADO, NÃO MEDIDO: o consumidor processa
+            SERIAL (prefetchCount=1, ARQUITETURA §7.3/§5) e o volume de trades.registered
+            não tem SLA declarado no ROADMAP; "profundidade > 0 por 15 minutos seguidos"
+            assume que qualquer lote normal drena bem antes disso. Sem medição de volume
+            real em produção este número pode estar tanto folgado (deixando um consumidor
+            travado incomodar por 15min sem aviso) quanto apertado (disparando em rajada
+            legítima). Reveja com `docker stats`/profundidade observada durante o dreno de
+            um backlog real (LEIA-ME-KIT, "Recurso") antes de considerar este número
+            definitivo — não é chute descartável, é chute que precisa de dado para virar
+            número de verdade. Ao diagnosticar: confira primeiro se custodia-app-down ou
+            custodia-db-readiness-down também estão disparando (consumidor parado por
+            crash ou por Postgres fora do ar); se não, veja custodia_consumo_duracao_segundos
+            e os logs do RabbitMqTradeConsumidor para handler lento ou preso.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-prices-dlq-nao-vazia
+        title: Custodia — custodia.prices.dlq não vazia (mensagem-veneno)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_fila_profundidade{job="custodia",fila="custodia.prices.dlq"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: A DLQ custodia.prices.dlq tem ao menos uma mensagem há 5 minutos
+          description: >-
+            Métrica: custodia_fila_profundidade{fila="custodia.prices.dlq"}, mesmo Gauge e
+            mesmo poller da regra custodia-prices-consumidor-parado, sem qualquer chute de
+            limiar: a DLQ é destino de dead-letter do broker (custodia.prices.dlq, F2),
+            e nada nesta topologia republica dela de volta sozinho — diferente de
+            custodia.retry (que tem TTL+DLX de volta para custodia.prices), uma mensagem
+            aqui fica PARADA até ação manual. Por isso o limiar é 0 reto, sem margem: uma
+            mensagem na DLQ já é o sinal, não uma tendência. for=5m só filtra o instante
+            de churn de um scrape perdido (intervalo de scrape 30s); não é tolerância a
+            "backlog pequeno é normal" — não é. noDataState=OK pelo mesmo motivo da regra
+            acima: o poller publica 0 quando a fila está vazia, então ausência de série
+            é "app fora do ar", não "DLQ vazia". Ao diagnosticar: a mensagem carrega
+            x-death e os headers de erro originais — inspecione pela management API
+            (GET /api/queues/%2F/custodia.prices.dlq) antes de decidir descartar ou
+            reprocessar manualmente; nenhum comando administrativo desta fase drena a
+            DLQ automaticamente.
+        labels:
+          severity: critical
+          service: custodia
+        isPaused: false
+      - uid: custodia-retry-travado
+        title: Custodia — custodia.retry não está ciclando (estorno órfão preso)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_fila_profundidade{job="custodia",fila="custodia.retry"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: A fila custodia.retry está com mensagens há 10 minutos seguidos — 20x o TTL de 30s dela
+          description: >-
+            Métrica: custodia_fila_profundidade{fila="custodia.retry"}, mesmo Gauge e
+            poller das duas regras acima. custodia.retry tem x-message-ttl=30000ms
+            (RabbitMqTopologia.RetryTtlMs, F2) com DLX de volta para custodia.prices: em
+            operação SÃ uma mensagem passa no máximo ~30s aqui antes de retornar para ser
+            reavaliada (Decisão A, estorno órfão). Profundidade > 0 SUSTENTADA por 10
+            minutos (20x o TTL) não é "um estorno órfão esperando o trade chegar" — isso
+            dura segundos, não minutos — é sinal de que o ciclo de redelivery não está
+            fechando: ou o volume de estornos órfãos é anormalmente alto e contínuo, ou a
+            fila custodia.prices que deveria recebê-las de volta está ela mesma
+            travada/não consumindo (ver custodia-prices-consumidor-parado). for=10m,
+            não 15m como a de custodia.prices, porque aqui o próprio desenho já prevê
+            SAÍDA em 30s — 10 minutos é folga generosa, não chute apertado.
+            noDataState=OK pelo mesmo motivo das regras acima (poller sempre publica,
+            inclusive 0). Ao diagnosticar: confira o volume de TradeRegistered de estorno
+            chegando (RoteadorDeEventos) e se custodia-prices-consumidor-parado também
+            está disparando antes de concluir que o problema é só no retry.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-parked-nao-vazio
+        title: Custodia — custodia.parked não vazia (estacionamento manual pendente)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_fila_profundidade{job="custodia",fila="custodia.parked"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: A fila custodia.parked tem ao menos uma mensagem há 5 minutos
+          description: >-
+            Métrica: custodia_fila_profundidade{fila="custodia.parked"}, mesmo Gauge e
+            poller das três regras acima — é o sinal AO VIVO de que há mensagem
+            estacionada, atualizado a cada 15s independente de qualquer ação humana.
+            Este é o sinal para "existe mensagem em custodia.parked agora", e é
+            DIFERENTE do papel da regra custodia-parked-residual-por-motivo (abaixo):
+            aquela usa custodia_parked_mensagens{motivo=}, publicada só quando alguém
+            RODA o comando administrativo de dreno para aquele motivo (ParkingDrenador,
+            F4) — pode estar arbitrariamente desatualizada. Esta aqui não pode: o
+            RabbitMqFilaProfundidadePoller nunca deixa de rodar enquanto o processo
+            estiver de pé. for=5m só absorve o instante entre uma mensagem cair no
+            parking e o próximo ciclo do poller (até 15s) mais folga para não disparar
+            por um blip de scrape — custodia.parked não tem TTL nem redelivery
+            automática nenhuma (F4, Decisão A): tudo que cai aqui fica até uma pessoa
+            rodar o dreno. noDataState=OK pelo mesmo motivo das regras irmãs (ausência de
+            série é "app fora do ar", coberto por custodia-app-down). Ao diagnosticar:
+            rode o comando administrativo de dreno (docs/ROADMAP.md F4, verbo
+            "drenar-parking") por motivo para ver QUAL x-custodia-motivo está acumulando
+            antes de decidir a ação corretiva — a fila em si não expõe o motivo, só a
+            contagem.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-parked-residual-por-motivo
+        title: Custodia — resíduo por motivo após dreno do parking
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_parked_mensagens{job="custodia"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: A última passagem do dreno do parking para um motivo terminou com mensagens residuais
+          description: >-
+            Métrica: custodia_parked_mensagens{motivo=} (Gauge, F4,
+            ParkingDrenadorMetrics.RegistrarResidualPorMotivo) — rótulo por
+            x-custodia-motivo, cardinalidade fechada nos 13 valores de
+            MotivoEstacionamento.All. DUAS LACUNAS DECLARADAS, as duas por causa de COMO
+            este Gauge é alimentado — nunca por um processo contínuo, só pelo comando
+            administrativo `drenar-parking <motivo>` (Custodia.API/Program.cs), que um
+            humano roda dentro do container:
+            (1) ESTE GAUGE PODE FICAR ARBITRARIAMENTE DESATUALIZADO. Ele só muda quando
+            alguém roda o dreno para aquele motivo específico — se ninguém rodar por dias,
+            o valor fica parado no resultado da última passagem, mesmo que mensagens novas
+            daquele motivo continuem caindo em custodia.parked nesse meio tempo. Por isso
+            este alerta NÃO é o sinal de "parking está crescendo agora" (esse é
+            custodia-parked-nao-vazio, acima, alimentado a cada 15s independente de ação
+            humana) — é o sinal de "da ÚLTIMA VEZ que alguém rodou o dreno para este
+            motivo, sobrou resíduo", útil para saber SE a intervenção mais recente
+            resolveu ou não, não para saber se HOJE há problema.
+            (2) ESTE GAUGE ZERA NO RESTART DO PROCESSO. É estado em memória
+            (Prometheus.Gauge), não lido do broker nem do banco; um redeploy silenciosamente
+            reseta para 0 o resíduo de TODOS os motivos, mesmo que a passagem anterior
+            tivesse terminado com resíduo real e ninguém tenha corrigido nada — o painel
+            "parece" resolvido só porque o processo reiniciou. noDataState=OK porque a
+            série só existe depois da PRIMEIRA vez que alguém roda o dreno para aquele
+            motivo (RESIDUAL_MOTIVO é publicado nos desfechos Completude/Parcial/
+            VazioDoMotivo — DesfechoDrenagem — nunca antes disso): ausência de dado é o
+            estado inicial normal, não uma anomalia. for=1m é curto de propósito: como o
+            valor só muda por ação humana (não por um ciclo automático), não há "rajada"
+            a filtrar — o "for" aqui só absorve o próprio scrape (30s), não tendência
+            nenhuma. Ao diagnosticar: o label `motivo` da série que disparou diz qual dos
+            13 motivos fechados sobrou; RESIDUAL_MOTIVO no stdout do comando (Program.cs)
+            já tinha mostrado esse número na hora — este alerta existe para quando
+            ninguém estava olhando o terminal naquele momento.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-posicao-negativa-sinalizada
+        title: Custodia — Posição negativa sinalizada (camada 3 — resgate maior ou venda sem compra)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(custodia_posicao_negativa_sinalizada_total{job="custodia"}[15m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: A camada 3 (ADR-11) sinalizou posição negativa em pelo menos um instrumento nos últimos 15 minutos
+          description: >-
+            Métrica: custodia_posicao_negativa_sinalizada_total{instrumento_id=} (Counter, F4,
+            BusinessMetrics.RegistrarPosicaoNegativaSinalizada), incrementada por
+            ProcessarTradeRegisteredCommandHandler.SinalizarSeNecessarioAsync DEPOIS de o
+            movimento já ter passado pelo repositório e a posição já ter sido atualizada —
+            este alerta NÃO significa que algo foi recusado: a Decisão D do F4 (Camada 3 da
+            §6.1/ADR-11) exige que resgate maior que a posição e venda sem compra ENTREM no
+            livro do mesmo jeito, e sejam só SINALIZADOS por métrica + log + alerta, nunca
+            rejeitados — rejeitar reintroduziria na Custódia a validação que a ADR-10 tirou
+            de Operações. Para instrumento comum (rótulo instrumento_id = id cru do Hub,
+            ADR-4), o sinal é POR LINHA: quantidade < 0 depois de aplicar o movimento. Em
+            registro manual isso costuma significar "falta lançar a compra antiga", não um
+            bug na Custódia — o conserto é a compra/aporte retroativo que falta, e é isso que
+            o operador deve procurar primeiro, não uma falha de processamento. PARA
+            `caixa:BRL` A LEITURA DO SINAL MUDA (V6, F3): é sobre a SOMA
+            `caixa:BRL + caixa:a_liquidar`, nunca por linha — conferido no código
+            (SinalizarSeNecessarioAsync): quando o instrumento tocado é caixa:a_liquidar
+            isoladamente a função devolve sucesso sem checar nada, e é só ao processar
+            caixa:BRL que ela soma as duas pernas e sinaliza se a soma for negativa, sempre
+            com o rótulo instrumento_id="caixa:BRL" — nunca "caixa:a_liquidar" sozinho. Isso é
+            deliberado: o negativo TRANSITÓRIO de caixa:a_liquidar por reaplicação no mesmo
+            dia é ESPERADO (V6) e alertar por linha aqui produziria alerta permanentemente
+            falso. increase(...[15m]), não Gauge polled: a métrica é um Counter incrementado
+            por EVENTO (um TradeRegistered que resultou em posição negativa), não por um
+            poller contínuo como custodia_fila_profundidade — por isso ausência de dado
+            (noDataState=OK) é o estado NORMAL antes do primeiro sinal, não app fora do ar: a
+            série só nasce no primeiro incremento daquele instrumento (rótulo dinâmico,
+            cardinalidade ilimitada por desenho — comentário no próprio BusinessMetrics.cs),
+            igual custodia_parked_mensagens{motivo=} antes do primeiro dreno. for=1m é curto
+            de propósito: não há tendência a filtrar, o sinal É o evento — o "for" aqui só
+            absorve o próprio scrape (30s), como em custodia-parked-residual-por-motivo. A
+            janela de 15m dentro do increase() só define até quando o alerta permanece
+            Firing depois do evento; não é limiar de volume, um único trade já dispara.
+            severity=warning e não critical porque a Decisão D é explícita: isto NÃO é
+            rejeição nem perda de dado, é um estado do livro que precisa de atenção, não uma
+            indisponibilidade. Ao diagnosticar: o mesmo RegistrarPosicaoNegativaSinalizada
+            grava um LogWarning com clienteId, o instrumento (ou "caixa:BRL") e a
+            quantidade/soma resultante — use-o para achar o cliente e decidir se falta lançar
+            uma compra/aporte retroativo em Operações; não há comando administrativo desta
+            fase que corrija isto automaticamente, e este alerta não corresponde a nenhum
+            evento publicado pela Custódia (ela não é produtora — ADR-10, sem exchange, sem
+            routing key, sem outbox).
+        labels:
+          severity: warning
           service: custodia
         isPaused: false
