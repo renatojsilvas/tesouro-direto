@@ -704,7 +704,7 @@ groups:
           severity: warning
           service: custodia
         isPaused: false
-      - uid: custodia-guarda-f5-a-liquidar-vencida-sem-liquidacao
+      - uid: custodia-guarda-f5-a-liquidar-vencida
         title: Custodia — Guarda F5 3/4 — a_liquidar vencida sem liq:<fato>:brl (job de liquidação atrasado ou parado)
         condition: C
         data:
@@ -763,7 +763,7 @@ groups:
           severity: warning
           service: custodia
         isPaused: false
-      - uid: custodia-guarda-f5-tributo-divergente-do-rederivado
+      - uid: custodia-guarda-f5-tributo-divergente
         title: Custodia — Guarda F5 4/4 — tributo divergente do re-derivado pela fila FIFO
         condition: C
         data:
@@ -881,7 +881,7 @@ groups:
           severity: warning
           service: custodia
         isPaused: false
-      - uid: custodia-preco-campo-posicao-nao-informado
+      - uid: custodia-preco-campo-posicao-ausente
         title: Custodia — F6 — item do asof sem campoPosicao (defeito de classificação no Hub)
         condition: C
         data:
@@ -935,7 +935,7 @@ groups:
           severity: warning
           service: custodia
         isPaused: false
-      - uid: custodia-preco-valor-divergente-no-historico
+      - uid: custodia-preco-valor-divergente
         title: Custodia — Valor divergente no histórico de preços (mesma chave natural, valor diferente)
         condition: C
         data:
@@ -1043,7 +1043,7 @@ groups:
           severity: critical
           service: custodia
         isPaused: false
-      - uid: custodia-preco-instrumentos-sem-preco-atual-prolongado
+      - uid: custodia-preco-livro-sem-preco-atual
         title: Custodia — Instrumentos do livro sem preco_atual por tempo prolongado
         condition: C
         data:
