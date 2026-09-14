@@ -468,7 +468,7 @@ groups:
           description: >-
             Métrica: custodia_parked_mensagens{motivo=} (Gauge, F4,
             ParkingDrenadorMetrics.RegistrarResidualPorMotivo) — rótulo por
-            x-custodia-motivo, cardinalidade fechada nos 13 valores de
+            x-custodia-motivo, cardinalidade fechada nos 14 valores de
             MotivoEstacionamento.All. DUAS LACUNAS DECLARADAS, as duas por causa de COMO
             este Gauge é alimentado — nunca por um processo contínuo, só pelo comando
             administrativo `drenar-parking <motivo>` (Custodia.API/Program.cs), que um
@@ -494,7 +494,7 @@ groups:
             valor só muda por ação humana (não por um ciclo automático), não há "rajada"
             a filtrar — o "for" aqui só absorve o próprio scrape (30s), não tendência
             nenhuma. Ao diagnosticar: o label `motivo` da série que disparou diz qual dos
-            13 motivos fechados sobrou; RESIDUAL_MOTIVO no stdout do comando (Program.cs)
+            14 motivos fechados sobrou; RESIDUAL_MOTIVO no stdout do comando (Program.cs)
             já tinha mostrado esse número na hora — este alerta existe para quando
             ninguém estava olhando o terminal naquele momento.
         labels:
@@ -578,6 +578,523 @@ groups:
             fase que corrija isto automaticamente, e este alerta não corresponde a nenhum
             evento publicado pela Custódia (ela não é produtora — ADR-10, sem exchange, sem
             routing key, sem outbox).
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-guarda-f5-resgates-sem-aliq
+        title: Custodia — Guarda F5 1/4 — resgate efetivo sem aliq:<tradeId>
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_conciliacao_resgates_sem_valor_a_receber{job="custodia"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Existe pelo menos um resgate efetivo (venda não revertida) sem a linha aliq:<tradeId>
+          description: >-
+            Métrica: custodia_conciliacao_resgates_sem_valor_a_receber (Gauge, F5 onda 3, BusinessMetrics.
+            RegistrarGuardaResgatesSemAliq), medida a cada ciclo do ConciliacaoDeResgatesJob
+            (IHostedService de varredura periódica, default 300s, configurável por
+            Decisao:ConciliacaoDeResgatesCicloIntervaloSegundos) reexecutando a MESMA consulta SQL do
+            backfill da janela F4→F5 (IRepararResgatesAntigosReadRepository.
+            ObterResgatesSemAliqAsync — resgate = tipo='venda' efetivo, sem qualquer ajuste
+            revertendo-o, sem a linha aliq:<tradeId>). O DISCRIMINADOR É aliq:, NUNCA ir: —
+            um resgate com prejuízo em TODOS os lotes legitimamente não tem ir: nem iof:
+            (Σ das bases positivas = 0, e não se grava zero), mas aliq: é gravado SEMPRE,
+            porque a_liquidar entra BRUTO; um alerta escrito sobre "sem ir:" dispararia para
+            sempre em toda venda com prejuízo. Fora da janela F4→F5 este número deveria ser
+            SEMPRE zero: o handler ao vivo (ProcessarTradeRegisteredCommandHandler.
+            ProcessarResgateAsync) grava aliq: na MESMA transação da venda. Reaparecer depois
+            do backfill fechado é BUG DO HANDLER, não pendência de migração — trate como
+            severidade alta. noDataState=OK porque o job publica sempre, mesmo com zero
+            pendências (mesma convenção de custodia_fila_profundidade); ausência de dado é
+            job parado ou app fora do ar (custodia-app-down cobre isso), não "zero
+            pendências". Ao diagnosticar: rode o comando administrativo
+            --reparar-resgates-antigos se a fase de migração F4→F5 ainda não fechou; se já
+            fechou, busque o LogWarning de RegistrarGuardaResgatesSemAliq e o trade_id via
+            IRepararResgatesAntigosReadRepository.ObterResgatesSemAliqAsync para achar o cliente
+            e o resgate ofensor.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-guarda-f5-ajustes-sem-reversao
+        title: "Custodia — Guarda F5 2/4 — ajuste sobre resgate sem o conjunto est: correspondente"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_conciliacao_estornos_sem_reversao_completa{job="custodia"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: "Existe pelo menos um ajuste sobre resgate cujo conjunto est: correspondente ainda não foi gravado por inteiro"
+          description: >-
+            Métrica: custodia_conciliacao_estornos_sem_reversao_completa (Gauge, F5 onda 3,
+            BusinessMetrics.RegistrarGuardaAjustesDeResgateSemReversao), medida pelo mesmo
+            ConciliacaoDeResgatesJob, reexecutando IRepararResgatesAntigosReadRepository.
+            ObterAjustesDeResgateSemReversaoAsync (ajuste que reverte uma venda, com aliq:
+            do resgate original existente E sem est:aliq: correspondente — o mesmo
+            discriminador incondicional da guarda 1/4, aplicado à reversão: se a
+            transação que reverteu o resgate criou est:aliq:, criou por inteiro o conjunto
+            que aquele fato de fato tem — o CONJUNTO ESPERADO É DERIVADO das linhas que o
+            fato realmente tem, nunca um conjunto fixo de cinco; sem iof: não há
+            est:iof:, sem liquidação não há as duas est:liq:). Fora da janela F4→F5 este
+            número deveria ser SEMPRE zero: o handler ao vivo
+            (ProcessarTradeRegisteredCommandHandler.ReverterDerivadosDoResgateAsync) grava o
+            conjunto est: na MESMA transação do ajuste sobre o principal. ORDEM: esta guarda
+            só faz sentido rodar DEPOIS do backfill da janela F4→F5 ter passado pela metade
+            (i) — rodar o comando --reparar-resgates-antigos aplica sempre as duas metades em
+            sequência (i então ii) numa única invocação. noDataState=OK pela mesma
+            convenção das guardas deste grupo. Ao diagnosticar: rode
+            --reparar-resgates-antigos se a migração ainda não fechou; se já fechou, é bug do
+            handler de estorno — busque o LogWarning de
+            RegistrarGuardaAjustesDeResgateSemReversao.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-guarda-f5-a-liquidar-vencida-sem-liquidacao
+        title: Custodia — Guarda F5 3/4 — a_liquidar vencida sem liq:<fato>:brl (job de liquidação atrasado ou parado)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_conciliacao_dinheiro_nao_creditado{job="custodia"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 15m
+        annotations:
+          summary: Existe pelo menos um a_liquidar vencido e não revertido sem a perna liq:<fato>:brl
+          description: >-
+            Métrica: custodia_conciliacao_dinheiro_nao_creditado (Gauge, F5 onda 3,
+            BusinessMetrics.RegistrarGuardaALiquidarVencidaSemLiquidacao). É a ÚNICA das
+            quatro guardas que reusa, LITERALMENTE, a MESMA consulta que o
+            LiquidarResgatesVencidosCommandHandler usa para achar candidatas
+            (IAReceberVencidoReadRepository.ObterAbertasNaoRevertidasAsync — que já
+            filtra nem a linha aliq: nem o movimento principal revertidos), com o MESMO
+            filtro de vencimento (D+1 útil <= hoje, via IProximoDiaUtilService) que o job
+            aplica candidata a candidata — por isso um JOB ATRASADO OU PARADO APONTA PARA SI
+            MESMO em vez de deixar o livro incompleto em silêncio. for=15m (mais longo que
+            as guardas 1/2) porque o job de liquidação é de CICLO CURTO (default 60s,
+            Decisao:LiquidacaoCicloIntervaloSegundos) e uma candidata pode ficar `NaoVencida`
+            legitimamente por horas — 15 minutos filtra o ciclo normal e só soa quando o job
+            realmente parou de ciclar. noDataState=OK pela mesma convenção. Ao diagnosticar:
+            confira primeiro se o job está registrado (Decisao:LiquidacaoJobHabilitado —
+            pode estar desligado de propósito durante um backfill da janela F4→F5; religue
+            depois), depois os logs do LiquidacaoDeResgatesJob para
+            LiquidacaoErrors.LimiteDeCandidatasPorCicloExcedido (parada por LIMITE, PADROES
+            10.31) e por fim RegistrarLiquidacaoCandidataInconsistente para candidata órfã
+            pulada.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-guarda-f5-tributo-divergente-do-rederivado
+        title: Custodia — Guarda F5 4/4 — tributo divergente do re-derivado pela fila FIFO
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_conciliacao_tributo_divergente{job="custodia"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Existe pelo menos um resgate já tributado cujo IR/IOF diverge do re-derivado da fila FIFO de hoje
+          description: >-
+            Métrica: custodia_conciliacao_tributo_divergente (Gauge, F5 onda 3,
+            BusinessMetrics.RegistrarGuardaTributoDivergenteDoRederivado). ÚNICA das quatro
+            guardas que NÃO é consulta de ausência: para cada resgate efetivo já tributado
+            (aliq: presente), re-deriva IR/IOF via RecalculoDeTributos — a MESMA
+            função de domínio que o handler ao vivo usa para tributar, com o CORTE
+            POSICIONAL DO PRÓPRIO RESGATE (nunca da fila cheia, que alertaria toda chave com
+            qualquer movimento posterior a um resgate) — e compara com as linhas ir:/iof:
+            EFETIVAS (LivroSemEstornos.MovimentosEfetivos; resgate estornado nunca alerta).
+            "Base zero ⇒ ausência de linha" conta como CONCORDÂNCIA (ambos os lados chegam a
+            zero). Cobre TRÊS causas com uma consulta: compra retroativa; estorno de compra
+            cujo lote uma venda já tributada consumiu; e venda ou resgate retroativo que
+            passa a preceder um resgate já tributado. severity=critical porque, ao contrário
+            das guardas 1-3 (linha ausente, conserta com backfill/religar job), esta é
+            DINHEIRO JÁ CALCULADO ERRADO gravado numa tabela sem UPDATE — o conserto é
+            estorno do resgate e relançamento, NUNCA UPDATE na linha de tributo. for=5m
+            absorve o ciclo do ConciliacaoDeResgatesJob (default 300s) sem exigir dois ciclos seguidos.
+            noDataState=OK pela mesma convenção. Ao diagnosticar: busque o LogCritical de
+            RegistrarGuardaTributoDivergenteDoRederivado e, para o par (cliente_id,
+            instrumento_id) apontado, confira se houve compra/estorno de compra/venda com
+            data_evento retroativa àquele resgate — o resgate correto é sempre o mais
+            recente na sequência canônica (data_evento, registrado_em, id).
+        labels:
+          severity: critical
+          service: custodia
+        isPaused: false
+      - uid: custodia-preco-instrumento-desconhecido
+        title: Custodia — F6 — instrumento do livro desconhecido no Hub de Preços
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(custodia_preco_instrumento_desconhecido_total{job="custodia"}[15m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: O bootstrap ou a conciliação de preços encontrou instrumento do livro que o Hub não conhece
+          description: >-
+            Métrica: custodia_preco_instrumento_desconhecido_total{instrumento_id=} (Counter, F6,
+            BusinessMetrics.RegistrarPrecoInstrumentoDesconhecido), incrementada por
+            ColetarPrecosDoHubCommandHandler sempre que um item do GET /v1/prices/asof volta com
+            motivo="instrumento_desconhecido" — caso DIFERENTE de "sem_preco_ate_a_data"
+            (PADROES §10.32: os dois nunca se fundem), porque aqui o Hub não conhece o
+            instrumento_id de jeito nenhum, não é "sem preço ainda". Nenhuma linha é gravada em
+            historico_precos nem em preco_atual para ele. Counter incrementado por EVENTO (uma
+            resposta do asof), não por poller contínuo — por isso ausência de dado
+            (noDataState=OK) é o estado normal antes do primeiro caso, igual
+            custodia-posicao-negativa-sinalizada. Causas prováveis: o instrumento entrou no
+            livro (via trades.registered, resolvido na borda por Operações — ADR-10) antes do
+            Hub publicar o catálogo dele, ou id gravado errado em algum dos dois lados (ADR-4:
+            a Custódia grava o instrumento_id do Hub CRU, sem de-para). Ao diagnosticar: busque
+            o LogError de RegistrarPrecoInstrumentoDesconhecido com o instrumento_id e confira
+            o catálogo do Hub (repo hub-precos) para esse id; não há comando administrativo
+            que corrija isto automaticamente, porque a Custódia não tem catálogo próprio contra
+            o qual comparar (ADR-4 proíbe a terceira identidade).
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-preco-campo-posicao-nao-informado
+        title: Custodia — F6 — item do asof sem campoPosicao (defeito de classificação no Hub)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(custodia_preco_campo_posicao_nao_informado_total{job="custodia"}[15m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: O Hub devolveu campos de preço sem campoPosicao para um instrumento do livro
+          description: >-
+            Métrica: custodia_preco_campo_posicao_nao_informado_total{instrumento_id=} (Counter,
+            F6, BusinessMetrics.RegistrarPrecoCampoPosicaoNaoInformado), incrementada por
+            ColetarPrecosDoHubCommandHandler quando um item do asof vem com motivo nulo e
+            campos preenchidos, mas campoPosicao nulo — a §4.5 não marca esse caso com motivo
+            próprio, então é classificado aqui como defeito de classificação no Hub (classe do
+            instrumento não resolvida no catálogo dele). O histórico É gravado (todos os campos
+            presentes, cada um com o dataRef PRÓPRIO — nunca item.dataRef); preco_atual NUNCA é
+            tocado, porque não há como saber qual campo marca a posição. Counter por evento;
+            noDataState=OK antes do primeiro caso, mesma convenção de
+            custodia-preco-instrumento-desconhecido. NUNCA confundir com a métrica de
+            "instrumento posicionado sem preço" (custodia_preco_instrumento_posicionado_sem_preco_total)
+            — aquela é ausência de VALOR com classificação normal; esta é ausência da PRÓPRIA
+            classificação. Ao diagnosticar: busque o LogError com o instrumento_id e confira o
+            catálogo de classes do Hub (ClasseInstrumento) para esse id.
+        labels:
+          severity: warning
+          service: custodia
+        isPaused: false
+      - uid: custodia-preco-valor-divergente-no-historico
+        title: Custodia — Valor divergente no histórico de preços (mesma chave natural, valor diferente)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(custodia_preco_valor_divergente_total{job="custodia"}[15m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: Chegou um PriceObserved (push, drenagem ou bootstrap) cuja chave natural já existia com outro valor
+          description: >-
+            Métrica: custodia_preco_valor_divergente_total{instrumento_id=,campo=} (Counter, F6,
+            BusinessMetrics.RegistrarValorDivergenteNoHistoricoDePrecos), incrementada sempre
+            que a chave natural (instrumento_id, data_ref, campo, fonte, revisao) já está
+            gravada em historico_precos com um VALOR DIFERENTE do recebido — violação do
+            contrato do Hub, que exige revisao+1 para qualquer mudança de valor. NADA é
+            sobrescrito em nenhuma das duas tabelas (nem historico_precos, nem preco_atual);
+            o desfecho é log crítico + esta métrica. Counter por evento; noDataState=OK antes
+            do primeiro caso, mesma convenção das demais métricas de F6. severity=critical
+            porque é violação de contrato do produtor, não apenas dado ausente. Ao
+            diagnosticar: busque o LogCritical de RegistrarValorDivergenteNoHistoricoDePrecos
+            com instrumento/campo/data/fonte/revisão e os dois valores (gravado x recebido);
+            o conserto é investigar do lado do Hub por que o mesmo (data, campo, fonte,
+            revisão) mudou de valor sem bump de revisão — a Custódia não tem comando
+            administrativo para "escolher um lado", de propósito.
+        labels:
+          severity: critical
+          service: custodia
+        isPaused: false
+      - uid: custodia-conciliacao-precos-falhando
+        title: Custodia — Conciliação cíclica de preços falhando
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: increase(custodia_conciliacao_precos_volta_total{job="custodia",desfecho="falha"}[30m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: A conciliação cíclica de preços (ConciliacaoDePrecosJob) falhou em pelo menos uma volta recente
+          description: >-
+            Métrica: custodia_conciliacao_precos_volta_total{desfecho=} (Counter, F6,
+            BusinessMetrics.RegistrarConciliacaoDePrecosVolta), incrementada a cada volta do
+            hosted service ConciliacaoDePrecosJob (PeriodicTimer, default 900s, configurável
+            por Decisao:ConciliacaoDePrecosCicloIntervaloSegundos), rotulado por desfecho
+            (completude|falha). O job chama ColetarPrecosDoHubCommand no escopo
+            SemPrecoAtualSoHoje — instrumentos do livro (fora de caixa:) sem linha em
+            preco_atual, pedindo asof(hoje) só para eles — e é ELE quem cria preco_atual para
+            um instrumento que entrou no livro depois do último bootstrap. Falha aqui (Hub
+            fora do ar, coleta incompleta, resposta inválida) significa que esse buraco fica
+            aberto: o LogError do próprio job traz o code/mensagem do erro. Janela de 30m
+            (2 ciclos no intervalo padrão) para não disparar por uma falha isolada de rede;
+            noDataState=OK porque o Counter só nasce depois da primeira volta (mesma convenção
+            das métricas de evento desta fase). Ao diagnosticar: confira Hub__BaseUrl/Hub__ApiKey
+            (HubConfigGuard) e a saúde do Hub de Preços antes de suspeitar de bug local.
+        labels:
+          severity: critical
+          service: custodia
+        isPaused: false
+      - uid: custodia-preco-instrumentos-sem-preco-atual-prolongado
+        title: Custodia — Instrumentos do livro sem preco_atual por tempo prolongado
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __DS_PROM__
+            model:
+              expr: custodia_conciliacao_precos_sem_preco_atual{job="custodia"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 1h
+        annotations:
+          summary: Instrumento(s) do livro seguem sem preco_atual depois de várias voltas da conciliação
+          description: >-
+            Métrica: custodia_conciliacao_precos_sem_preco_atual (Gauge, F6, BusinessMetrics.
+            RegistrarConciliacaoDePrecosSemPrecoAtual), medida a cada volta do
+            ConciliacaoDePrecosJob com o MESMO tamanho do escopo SemPrecoAtualSoHoje que o job
+            acabou de coletar (ResultadoColetaDePrecos.Instrumentos) — é a mesma métrica que
+            mantém viva a família "posicionado sem preço" em regime, quando não há push nem
+            bootstrap recentes. Publicada em TODO ciclo, inclusive com valor zero — ausência de
+            dado (noDataState=OK) aqui não significa app fora do ar (isso é
+            custodia-app-down), e sim que o job nunca rodou nesta série. for=1h (≈4 ciclos no
+            intervalo padrão de 900s) de propósito: um instrumento novo no livro fica
+            transitoriamente sem preco_atual até a próxima volta, e isso é o comportamento
+            ESPERADO (Pronto (i) do F6) — só vira sinal quando persiste por várias voltas
+            seguidas, o que indica Hub fora do ar, instrumento desconhecido no Hub (ver
+            custodia-preco-instrumento-desconhecido) ou item chegando sempre com
+            motivo="sem_preco_ate_a_data". Ao diagnosticar: cruze com
+            custodia-conciliacao-precos-falhando e com o LogWarning de
+            RegistrarConciliacaoDePrecosSemPrecoAtual para decidir qual das três causas é.
         labels:
           severity: warning
           service: custodia
