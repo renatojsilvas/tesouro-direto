@@ -27,6 +27,9 @@ test.describe("Simulador Page", () => {
     await page.fill("input#valorInvestido", "10000");
     await page.fill("input#dataCompra", "2024-01-02");
     await page.fill("input#taxaContratada", "12");
+    // Projecao informada: sem ela, titulo nao prefixado consulta o Focus do BCB ao vivo
+    // (SimularCommandHandler), e o E2E cai junto quando o olinda.bcb.gov.br cai.
+    await page.fill("input#projecaoAnual", "4.5");
     await page.click("button#simular");
 
     // Wait for either result or error
