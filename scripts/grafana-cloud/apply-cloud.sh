@@ -31,23 +31,6 @@ echo "datasources: prom=$DS_PROM loki=$DS_LOKI usage=$DS_USAGE"
 FOLDER_UID=$(gc_folder_uid TesouroDireto)
 echo "folder TesouroDireto: $FOLDER_UID"
 
-# Pasta separada para o Hub de Precos: o dashboard dele descreve OUTRO servico,
-# versionado em outro repo (hub-precos). `gc_folder_uid` cria a pasta se ainda nao
-# existir, entao nada precisa ser criado a mao no Grafana.
-FOLDER_UID_HUB=$(gc_folder_uid HubPrecos)
-echo "folder HubPrecos: $FOLDER_UID_HUB"
-
-# Mesmo raciocinio do FOLDER_UID_HUB acima: pasta separada para o servico Operacoes
-# (repo operacoes), que descreve OUTRO servico versionado em outro repo.
-FOLDER_UID_OPERACOES=$(gc_folder_uid Operacoes)
-echo "folder Operacoes: $FOLDER_UID_OPERACOES"
-
-# Mesmo raciocinio do FOLDER_UID_HUB e FOLDER_UID_OPERACOES acima: pasta separada para
-# o servico Custodia (repo custodia), que descreve OUTRO servico versionado em outro
-# repo.
-FOLDER_UID_CUSTODIA=$(gc_folder_uid Custodia)
-echo "folder Custodia: $FOLDER_UID_CUSTODIA"
-
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 sed -e "s/__DS_PROM__/${DS_PROM}/g" \
@@ -139,20 +122,6 @@ done
 # envelope {apiVersion, policies:[...]} do arquivo e sem `orgId` (a stack da nuvem e
 # de org unica; mandar orgId de outra org quebra o PUT). E um PUT de arvore INTEIRA, nao
 # incremental — o corpo abaixo passa a SER a politica inteira na nuvem.
-#
-# infra/grafana/cloud/policies.yaml tem uma rota filha (`service = hub-precos` →
-# receiver `telegram-hub`) alem da raiz (`telegram-tesouro`, inalterada). O contrato
-# dessa rota e IMPLICITO e vive no repo VIZINHO: quem casa o label e a regra que o
-# CARREGA, nao este arquivo — as regras do Hub (infra/grafana/cloud/rules-hub.yaml,
-# copiado de hub-precos/infra/grafana/cloud/rules.yaml) tem `labels: {service:
-# hub-precos}` em cada uma. Quem le so este policies.yaml nao ve essa dependencia. Se o
-# label mudar de nome/valor num lado sem espelhar no outro, o alerta do Hub nao some —
-# cai na raiz e sai pelo `telegram-tesouro` rotulado (pelo template de mensagem do
-# proprio contact point) como se fosse do TD, o que confunde mas nao silencia (mesmo
-# raciocinio do `if -f` acima: a falha aqui e visivel, nao muda). Ver
-# infra/grafana/cloud/contactpoints.yaml para os dois templates de mensagem
-# (`telegram-tesouro` prefixa "🟢 TESOURO DIRETO", `telegram-hub` prefixa "🔵 HUB DE
-# PRECOS") que sao o unico sinal visual de origem quando o roteamento funciona certo.
 politica_corpo=$(yq -o=json '.policies[0] | del(.orgId)' infra/grafana/cloud/policies.yaml)
 provisioning_call PUT /api/v1/provisioning/policies "$politica_corpo" >/dev/null
 echo "notification policy aplicada"
@@ -183,125 +152,6 @@ for ((gi = 0; gi < n_grupos; gi++)); do
   provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
   echo "grupo de regras aplicado: ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
 done
-
-# --- Regras do Hub de Precos, em pasta e grupo proprios -------------------------------
-#
-# Mesmo mecanismo do bloco acima (PUT idempotente por grupo), aplicado a
-# infra/grafana/cloud/rules-hub.yaml — conteudo versionado no repo hub-precos e copiado
-# para ca porque o publicador mora aqui, mesmo arranjo do hub-precos.json em
-# infra/grafana/dashboards/ (ver bloco de dashboard do Hub mais abaixo). Nome de arquivo
-# DIFERENTE de proposito: um "rules.yaml" do Hub sobrescreveria por PUT as 21 regras do
-# TD que ja vivem sob esse nome aqui (o PUT e por grupo, mas o arquivo de origem seria
-# o mesmo `$TMP/rules.yaml` acima se o nome colidisse).
-#
-# rules-hub.yaml pode nao existir ainda (hub-precos sem regra publicada, ou quem rodou o
-# apply esqueceu de copiar) — isso NAO pode abortar a publicacao do TD, que ja terminou
-# com sucesso no bloco acima. Falhar o TD por causa da ausencia de um arquivo do vizinho
-# seria pior que simplesmente pular o Hub nesta execucao. Por isso o bloco inteiro fica
-# atras de um `if -f`, so avisando quando o arquivo falta.
-#
-# O grupo do Hub se chama "hub-alertas" (diferente de "tesouro-alertas"), mas o que
-# realmente impede colisao com as regras do TD e a PASTA (FOLDER_UID_HUB != FOLDER_UID):
-# nome de grupo so precisa ser unico DENTRO da pasta.
-if [ -f infra/grafana/cloud/rules-hub.yaml ]; then
-  sed -e "s/__DS_PROM__/${DS_PROM}/g" \
-      -e "s/__DS_LOKI__/${DS_LOKI}/g" \
-      -e "s/__DS_USAGE__/${DS_USAGE}/g" \
-      infra/grafana/cloud/rules-hub.yaml > "$TMP/rules-hub.yaml"
-
-  n_grupos_hub=$(yq '.groups | length' "$TMP/rules-hub.yaml")
-  for ((gi = 0; gi < n_grupos_hub; gi++)); do
-    nome_grupo=$(yq -r ".groups[$gi].name" "$TMP/rules-hub.yaml")
-    intervalo_raw=$(yq -r ".groups[$gi].interval" "$TMP/rules-hub.yaml")
-    intervalo_seg=$(converter_intervalo_para_segundos "$intervalo_raw") || exit 1
-
-    regras_grupo=$(yq -o=json ".groups[$gi].rules" "$TMP/rules-hub.yaml" \
-      | jq --arg fu "$FOLDER_UID_HUB" --arg rg "$nome_grupo" 'map(. + {folderUID: $fu, ruleGroup: $rg})')
-
-    corpo_grupo=$(jq -n --arg t "$nome_grupo" --argjson interval "$intervalo_seg" --argjson rules "$regras_grupo" \
-      '{title: $t, interval: $interval, rules: $rules}')
-
-    provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID_HUB}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
-    echo "grupo de regras aplicado (Hub): ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
-  done
-else
-  echo "infra/grafana/cloud/rules-hub.yaml ausente — pulando publicacao de regras do Hub (TD ja publicado acima)"
-fi
-
-# --- Regras do Operacoes, em pasta e grupo proprios ------------------------------------
-#
-# Mesmo mecanismo e mesmo raciocinio do bloco do Hub logo acima (PUT idempotente por
-# grupo, atras de um `if -f` para nao abortar a publicacao do TD/Hub por causa de um
-# arquivo de servico vizinho que pode nao ter sido copiado nesta execucao), aplicado a
-# infra/grafana/cloud/rules-operacoes.yaml — conteudo escrito no repo operacoes e copiado
-# para ca porque o publicador mora aqui (ver infra/grafana/README.md daquele repo).
-# Nome de arquivo DIFERENTE de "rules.yaml" pelo mesmo motivo do Hub: um "rules.yaml" do
-# Operacoes sobrescreveria por PUT as 21 regras do TD que ja vivem sob esse nome aqui.
-#
-# O grupo se chama "operacoes-alertas" e a pasta e "Operacoes" (FOLDER_UID_OPERACOES) —
-# o que impede colisao com as regras do TD e do Hub e a PASTA, nao o nome do grupo.
-if [ -f infra/grafana/cloud/rules-operacoes.yaml ]; then
-  sed -e "s/__DS_PROM__/${DS_PROM}/g" \
-      -e "s/__DS_LOKI__/${DS_LOKI}/g" \
-      -e "s/__DS_USAGE__/${DS_USAGE}/g" \
-      infra/grafana/cloud/rules-operacoes.yaml > "$TMP/rules-operacoes.yaml"
-
-  n_grupos_operacoes=$(yq '.groups | length' "$TMP/rules-operacoes.yaml")
-  for ((gi = 0; gi < n_grupos_operacoes; gi++)); do
-    nome_grupo=$(yq -r ".groups[$gi].name" "$TMP/rules-operacoes.yaml")
-    intervalo_raw=$(yq -r ".groups[$gi].interval" "$TMP/rules-operacoes.yaml")
-    intervalo_seg=$(converter_intervalo_para_segundos "$intervalo_raw") || exit 1
-
-    regras_grupo=$(yq -o=json ".groups[$gi].rules" "$TMP/rules-operacoes.yaml" \
-      | jq --arg fu "$FOLDER_UID_OPERACOES" --arg rg "$nome_grupo" 'map(. + {folderUID: $fu, ruleGroup: $rg})')
-
-    corpo_grupo=$(jq -n --arg t "$nome_grupo" --argjson interval "$intervalo_seg" --argjson rules "$regras_grupo" \
-      '{title: $t, interval: $interval, rules: $rules}')
-
-    provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID_OPERACOES}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
-    echo "grupo de regras aplicado (Operacoes): ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
-  done
-else
-  echo "infra/grafana/cloud/rules-operacoes.yaml ausente — pulando publicacao de regras do Operacoes (TD/Hub ja publicados acima)"
-fi
-
-# --- Regras da Custodia, em pasta e grupo proprios -------------------------------------
-#
-# Mesmo mecanismo e mesmo raciocinio dos blocos do Hub e do Operacoes logo acima (PUT
-# idempotente por grupo, atras de um `if -f` para nao abortar a publicacao do
-# TD/Hub/Operacoes por causa de um arquivo de servico vizinho que pode nao ter sido
-# copiado nesta execucao), aplicado a infra/grafana/cloud/rules-custodia.yaml —
-# conteudo escrito no repo custodia e copiado para ca porque o publicador mora aqui
-# (ver infra/grafana/README.md daquele repo). Nome de arquivo DIFERENTE de "rules.yaml"
-# pelo mesmo motivo do Hub e do Operacoes: um "rules.yaml" da Custodia sobrescreveria
-# por PUT as 21 regras do TD que ja vivem sob esse nome aqui.
-#
-# O grupo se chama "custodia-alertas" e a pasta e "Custodia" (FOLDER_UID_CUSTODIA) — o
-# que impede colisao com as regras do TD/Hub/Operacoes e a PASTA, nao o nome do grupo.
-if [ -f infra/grafana/cloud/rules-custodia.yaml ]; then
-  sed -e "s/__DS_PROM__/${DS_PROM}/g" \
-      -e "s/__DS_LOKI__/${DS_LOKI}/g" \
-      -e "s/__DS_USAGE__/${DS_USAGE}/g" \
-      infra/grafana/cloud/rules-custodia.yaml > "$TMP/rules-custodia.yaml"
-
-  n_grupos_custodia=$(yq '.groups | length' "$TMP/rules-custodia.yaml")
-  for ((gi = 0; gi < n_grupos_custodia; gi++)); do
-    nome_grupo=$(yq -r ".groups[$gi].name" "$TMP/rules-custodia.yaml")
-    intervalo_raw=$(yq -r ".groups[$gi].interval" "$TMP/rules-custodia.yaml")
-    intervalo_seg=$(converter_intervalo_para_segundos "$intervalo_raw") || exit 1
-
-    regras_grupo=$(yq -o=json ".groups[$gi].rules" "$TMP/rules-custodia.yaml" \
-      | jq --arg fu "$FOLDER_UID_CUSTODIA" --arg rg "$nome_grupo" 'map(. + {folderUID: $fu, ruleGroup: $rg})')
-
-    corpo_grupo=$(jq -n --arg t "$nome_grupo" --argjson interval "$intervalo_seg" --argjson rules "$regras_grupo" \
-      '{title: $t, interval: $interval, rules: $rules}')
-
-    provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID_CUSTODIA}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
-    echo "grupo de regras aplicado (Custodia): ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
-  done
-else
-  echo "infra/grafana/cloud/rules-custodia.yaml ausente — pulando publicacao de regras da Custodia (TD/Hub/Operacoes ja publicados acima)"
-fi
 
 # --- Dashboards -------------------------------------------------------------------
 #
@@ -334,106 +184,6 @@ for d in tesouro-direto host; do
         -H 'Content-Type: application/json' --data-binary @- \
         "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
 done
-
-# --- Dashboard do Hub de Precos, em pasta propria ------------------------------------
-#
-# Fora do laco acima de proposito: mesmo tratamento de datasource, pasta DIFERENTE.
-# O arquivo e versionado no repo hub-precos (infra/grafana/dashboards/hub-precos.json,
-# ver infra/grafana/README.md la) e copiado manualmente para ca porque a publicacao mora
-# neste repo -- as duas copias divergem em silencio se alguem editar so uma:
-#
-#   cp ../hub-precos/infra/grafana/dashboards/hub-precos.json infra/grafana/dashboards/
-#   cp ../hub-precos/infra/grafana/cloud/rules.yaml infra/grafana/cloud/rules-hub.yaml
-#
-# Mesmo raciocinio do `if -f` do bloco de regras do Hub acima: o arquivo pode nao
-# existir nesta execucao (copia manual esquecida) e isso NAO pode abortar o script
-# depois que o TD (contact points, policy, 21 regras, dashboards TD/host) ja foi
-# aplicado com sucesso -- a pasta HubPrecos ja foi criada vazia nesse ponto (FOLDER_UID_HUB
-# acima), o que e inofensivo (`gc_folder_uid` e idempotente). HUB_DASHBOARD_PUBLICADO
-# controla tambem a verificacao final mais abaixo, que so consulta o dashboard do Hub se
-# ele realmente foi publicado nesta execucao -- senao o GET voltaria 404 e abortaria sob
-# `set -e`, o mesmo modo de falha que o comentario do load-test-k6 ja documenta.
-HUB_DASHBOARD_PUBLICADO=false
-if [ -f infra/grafana/dashboards/hub-precos.json ]; then
-  jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
-     'walk(if type=="object" and .uid=="prometheus" then .uid=$p
-           elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
-     infra/grafana/dashboards/hub-precos.json > "$TMP/hub-precos.json"
-
-  jq -nc --slurpfile db "$TMP/hub-precos.json" --arg f "$FOLDER_UID_HUB" \
-     '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
-    | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
-        -H 'Content-Type: application/json' --data-binary @- \
-        "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
-  HUB_DASHBOARD_PUBLICADO=true
-else
-  echo "infra/grafana/dashboards/hub-precos.json ausente — pulando publicacao do dashboard do Hub (TD ja publicado acima)"
-fi
-
-# --- Dashboard do Operacoes, em pasta propria ----------------------------------------
-#
-# Mesmo raciocinio do bloco do Hub logo acima: pasta DIFERENTE (FOLDER_UID_OPERACOES),
-# arquivo versionado no repo operacoes (infra/grafana/dashboards/operacoes.json, ver
-# infra/grafana/README.md la) e copiado manualmente para ca porque a publicacao mora
-# neste repo:
-#
-#   cp ../operacoes/infra/grafana/dashboards/operacoes.json infra/grafana/dashboards/
-#   cp ../operacoes/infra/grafana/cloud/rules-operacoes.yaml infra/grafana/cloud/
-#
-# `if -f` para nao abortar o script depois que TD/Hub ja foram aplicados com sucesso —
-# a pasta Operacoes ja foi criada vazia nesse ponto (FOLDER_UID_OPERACOES acima), o que
-# e inofensivo (`gc_folder_uid` e idempotente). OPERACOES_DASHBOARD_PUBLICADO controla
-# tambem a verificacao final mais abaixo, pelo mesmo motivo do HUB_DASHBOARD_PUBLICADO:
-# um GET num uid nunca publicado voltaria 404 e abortaria sob `set -e`.
-OPERACOES_DASHBOARD_PUBLICADO=false
-if [ -f infra/grafana/dashboards/operacoes.json ]; then
-  jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
-     'walk(if type=="object" and .uid=="prometheus" then .uid=$p
-           elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
-     infra/grafana/dashboards/operacoes.json > "$TMP/operacoes.json"
-
-  jq -nc --slurpfile db "$TMP/operacoes.json" --arg f "$FOLDER_UID_OPERACOES" \
-     '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
-    | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
-        -H 'Content-Type: application/json' --data-binary @- \
-        "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
-  OPERACOES_DASHBOARD_PUBLICADO=true
-else
-  echo "infra/grafana/dashboards/operacoes.json ausente — pulando publicacao do dashboard do Operacoes (TD/Hub ja publicados acima)"
-fi
-
-# --- Dashboard da Custodia, em pasta propria -------------------------------------------
-#
-# Mesmo raciocinio dos blocos do Hub e do Operacoes logo acima: pasta DIFERENTE
-# (FOLDER_UID_CUSTODIA), arquivo versionado no repo custodia
-# (infra/grafana/dashboards/custodia.json, ver infra/grafana/README.md la) e copiado
-# manualmente para ca porque a publicacao mora neste repo:
-#
-#   cp ../custodia/infra/grafana/dashboards/custodia.json infra/grafana/dashboards/
-#   cp ../custodia/infra/grafana/cloud/rules-custodia.yaml infra/grafana/cloud/
-#
-# `if -f` para nao abortar o script depois que TD/Hub/Operacoes ja foram aplicados com
-# sucesso — a pasta Custodia ja foi criada vazia nesse ponto (FOLDER_UID_CUSTODIA
-# acima), o que e inofensivo (`gc_folder_uid` e idempotente). CUSTODIA_DASHBOARD_PUBLICADO
-# controla tambem a verificacao final mais abaixo, pelo mesmo motivo do
-# HUB_DASHBOARD_PUBLICADO/OPERACOES_DASHBOARD_PUBLICADO: um GET num uid nunca publicado
-# voltaria 404 e abortaria o script sob `set -e`.
-CUSTODIA_DASHBOARD_PUBLICADO=false
-if [ -f infra/grafana/dashboards/custodia.json ]; then
-  jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
-     'walk(if type=="object" and .uid=="prometheus" then .uid=$p
-           elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
-     infra/grafana/dashboards/custodia.json > "$TMP/custodia.json"
-
-  jq -nc --slurpfile db "$TMP/custodia.json" --arg f "$FOLDER_UID_CUSTODIA" \
-     '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
-    | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
-        -H 'Content-Type: application/json' --data-binary @- \
-        "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
-  CUSTODIA_DASHBOARD_PUBLICADO=true
-else
-  echo "infra/grafana/dashboards/custodia.json ausente — pulando publicacao do dashboard da Custodia (TD/Hub/Operacoes ja publicados acima)"
-fi
 
 # --- Convergencia: apaga da nuvem o load-test-k6 subido por engano na 77.3 -----------
 #
@@ -469,7 +219,7 @@ echo "conferindo regras aplicadas:"
 regras_nuvem=$(gc_curl GET /api/v1/provisioning/alert-rules)
 # So informativo — soma TODAS as pastas da stack, entao nao serve de asserção (ver o
 # comentario abaixo sobre por que um total agregado nao pega a regressao que importa).
-# As asserções reais sao qtd_td/qtd_hub, por pasta, logo a seguir.
+# A asserção real e qtd_td, por pasta, logo a seguir.
 qtd_nuvem=$(echo "$regras_nuvem" | jq 'length')
 echo "regras na nuvem (todas as pastas, so informativo): ${qtd_nuvem}"
 
@@ -497,51 +247,6 @@ echo "regras na pasta TesouroDireto: ${qtd_td}"
 if [ "$qtd_td" -ne 21 ]; then
   echo "ABORTADO: a pasta TesouroDireto tem ${qtd_td} regras de alerta, esperado 21" >&2
   exit 1
-fi
-
-# A contagem esperada do Hub vem do proprio rules-hub.yaml (numero de regras nao e
-# fixo do lado do TD, entao nao ha "21" para chumbar aqui) — se o arquivo nao existe
-# nesta execucao, o bloco de publicacao acima ja pulou o Hub e nao ha nada a conferir.
-if [ -f infra/grafana/cloud/rules-hub.yaml ]; then
-  qtd_hub_esperada=$(yq '[.groups[].rules[]] | length' "$TMP/rules-hub.yaml")
-  # Mesma tolerancia de grafia do bloco do TD acima (`.folderUID // .folderUid`) —
-  # ver comentario la para o porque.
-  qtd_hub=$(echo "$regras_nuvem" | jq --arg f "$FOLDER_UID_HUB" '[.[] | select((.folderUID // .folderUid) == $f)] | length')
-  echo "regras na pasta HubPrecos: ${qtd_hub}"
-  if [ "$qtd_hub" -ne "$qtd_hub_esperada" ]; then
-    echo "ABORTADO: a pasta HubPrecos tem ${qtd_hub} regras de alerta, esperado ${qtd_hub_esperada} (lido de rules-hub.yaml)" >&2
-    exit 1
-  fi
-else
-  echo "regras na pasta HubPrecos: rules-hub.yaml ausente nesta execucao, pulando conferencia"
-fi
-
-# Mesmo raciocinio do bloco do Hub logo acima, aplicado ao Operacoes.
-if [ -f infra/grafana/cloud/rules-operacoes.yaml ]; then
-  qtd_operacoes_esperada=$(yq '[.groups[].rules[]] | length' "$TMP/rules-operacoes.yaml")
-  qtd_operacoes=$(echo "$regras_nuvem" | jq --arg f "$FOLDER_UID_OPERACOES" '[.[] | select((.folderUID // .folderUid) == $f)] | length')
-  echo "regras na pasta Operacoes: ${qtd_operacoes}"
-  if [ "$qtd_operacoes" -ne "$qtd_operacoes_esperada" ]; then
-    echo "ABORTADO: a pasta Operacoes tem ${qtd_operacoes} regras de alerta, esperado ${qtd_operacoes_esperada} (lido de rules-operacoes.yaml)" >&2
-    exit 1
-  fi
-else
-  echo "regras na pasta Operacoes: rules-operacoes.yaml ausente nesta execucao, pulando conferencia"
-fi
-
-# Mesmo raciocinio dos blocos do Hub e do Operacoes logo acima, aplicado a Custodia.
-if [ -f infra/grafana/cloud/rules-custodia.yaml ]; then
-  qtd_custodia_esperada=$(yq '[.groups[].rules[]] | length' "$TMP/rules-custodia.yaml")
-  # Mesma tolerancia de grafia dos blocos acima (`.folderUID // .folderUid`) — ver
-  # comentario no bloco do TD para o porque.
-  qtd_custodia=$(echo "$regras_nuvem" | jq --arg f "$FOLDER_UID_CUSTODIA" '[.[] | select((.folderUID // .folderUid) == $f)] | length')
-  echo "regras na pasta Custodia: ${qtd_custodia}"
-  if [ "$qtd_custodia" -ne "$qtd_custodia_esperada" ]; then
-    echo "ABORTADO: a pasta Custodia tem ${qtd_custodia} regras de alerta, esperado ${qtd_custodia_esperada} (lido de rules-custodia.yaml)" >&2
-    exit 1
-  fi
-else
-  echo "regras na pasta Custodia: rules-custodia.yaml ausente nesta execucao, pulando conferencia"
 fi
 
 # __expr__ e o pseudo-datasource do no de threshold (condition C de toda regra) —
@@ -602,31 +307,6 @@ verificar_datasources_resolvidos() {
 # la, ver bloco de convergencia acima) — consulta-lo aqui devolveria 404 e abortaria
 # o script sob `set -e`.
 uids_dashboards_verificar=(tesouro-direto-api host-node-exporter)
-
-# hub-precos so entra condicionado a HUB_DASHBOARD_PUBLICADO (setado no bloco "Dashboard
-# do Hub de Precos" acima): o dashboard so foi publicado nesta execucao se
-# infra/grafana/dashboards/hub-precos.json existia. Consultar um uid que nunca foi
-# publicado devolveria 404 e abortaria o script sob `set -e` — o mesmo modo de falha que
-# o comentario do load-test-k6 acima ja documenta, so que para um arquivo que pode faltar
-# em vez de um dashboard removido de proposito. Quando publicado, o mesmo modo de falha
-# silenciosa (walk() que nao acha nada para trocar, POST 200 com painel quebrado) dos
-# outros dois vale para ele. uid lido do campo "uid" de topo do proprio hub-precos.json
-# (ver infra/grafana/README.md do repo hub-precos), igual aos outros dois.
-if [ "$HUB_DASHBOARD_PUBLICADO" = true ]; then
-  uids_dashboards_verificar+=(hub-precos)
-fi
-
-# Mesmo raciocinio do HUB_DASHBOARD_PUBLICADO logo acima, aplicado ao Operacoes: uid
-# lido do campo "uid" de topo do proprio operacoes.json.
-if [ "$OPERACOES_DASHBOARD_PUBLICADO" = true ]; then
-  uids_dashboards_verificar+=(operacoes)
-fi
-
-# Mesmo raciocinio do HUB_DASHBOARD_PUBLICADO/OPERACOES_DASHBOARD_PUBLICADO logo acima,
-# aplicado a Custodia: uid lido do campo "uid" de topo do proprio custodia.json.
-if [ "$CUSTODIA_DASHBOARD_PUBLICADO" = true ]; then
-  uids_dashboards_verificar+=(custodia)
-fi
 
 for uid in "${uids_dashboards_verificar[@]}"; do
   verificar_datasources_resolvidos "$uid"
