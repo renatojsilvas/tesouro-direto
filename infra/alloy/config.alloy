@@ -21,6 +21,18 @@ prometheus.scrape "app" {
 	forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
+// job="plataforma" — serviço Plataforma (repo plataforma), que compartilha esta VPS e a
+// rede `tesouro-net`. O alvo é o alias `plataforma-app`, container_name registrado em
+// docker-compose.prod.yml daquele repo. Job NOVO: não toca no contrato das 18 regras
+// de alerta acima — `verificar-f1.sh` do repo plataforma procura `job="plataforma"` e
+// as regras de infra/grafana/cloud/rules-plataforma.yaml filtram por ele.
+prometheus.scrape "plataforma" {
+      targets         = [{__address__ = "plataforma-app:8080", job = "plataforma"}]
+      metrics_path    = "/metrics"
+      scrape_interval = "30s"
+      forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
 // Substituiu o container `node-exporter` (77.1; o serviço foi removido do
 // docker-compose.yml na 77.4). Os NOMES de coletor são os mesmos que ele usava —
 // inclusive o textfile, que sustenta 7 regras de alerta.

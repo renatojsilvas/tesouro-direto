@@ -12,3 +12,15 @@ contactPoints:
             🟢 TESOURO DIRETO
             {{ template "default.message" . }}
         disableResolveMessage: false
+  - orgId: 1
+    name: telegram-plataforma
+    receivers:
+      - uid: plataforma-telegram-receiver
+        type: telegram
+        settings:
+          bottoken: '${TELEGRAM_BOT_TOKEN}'
+          chatid: "144442958"
+          message: |
+            🟡 PLATAFORMA
+            {{ template "default.message" . }}
+        disableResolveMessage: false
