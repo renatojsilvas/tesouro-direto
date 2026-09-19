@@ -31,6 +31,12 @@ echo "datasources: prom=$DS_PROM loki=$DS_LOKI usage=$DS_USAGE"
 FOLDER_UID=$(gc_folder_uid TesouroDireto)
 echo "folder TesouroDireto: $FOLDER_UID"
 
+# Pasta separada para a Plataforma: o dashboard dela descreve OUTRO servico,
+# versionado em outro repo (plataforma). `gc_folder_uid` cria a pasta se ainda nao
+# existir, entao nada precisa ser criado a mao no Grafana.
+FOLDER_UID_PLATAFORMA=$(gc_folder_uid Plataforma)
+echo "folder Plataforma: $FOLDER_UID_PLATAFORMA"
+
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 sed -e "s/__DS_PROM__/${DS_PROM}/g" \
@@ -153,6 +159,50 @@ for ((gi = 0; gi < n_grupos; gi++)); do
   echo "grupo de regras aplicado: ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
 done
 
+# --- Regras da Plataforma, em pasta e grupo proprios -----------------------------------
+#
+# Mesmo mecanismo do bloco acima (PUT idempotente por grupo), aplicado a
+# infra/grafana/cloud/rules-plataforma.yaml — conteudo versionado no repo plataforma e
+# copiado para ca porque o publicador mora aqui, mesmo arranjo do plataforma.json em
+# infra/grafana/dashboards/ (ver bloco de dashboard da Plataforma mais abaixo). Nome de
+# arquivo DIFERENTE de proposito: um "rules.yaml" da Plataforma sobrescreveria por PUT
+# as 21 regras do TD que ja vivem sob esse nome aqui (o PUT e por grupo, mas o arquivo
+# de origem seria o mesmo `$TMP/rules.yaml` acima se o nome colidisse).
+#
+# rules-plataforma.yaml pode nao existir ainda (plataforma sem regra publicada, ou quem
+# rodou o apply esqueceu de copiar) — isso NAO pode abortar a publicacao do TD, que ja
+# terminou com sucesso no bloco acima. Falhar o TD por causa da ausencia de um arquivo
+# do vizinho seria pior que simplesmente pular a Plataforma nesta execucao. Por isso o
+# bloco inteiro fica atras de um `if -f`, so avisando quando o arquivo falta.
+#
+# O grupo da Plataforma se chama "plataforma-alertas" (diferente de "tesouro-alertas"),
+# mas o que realmente impede colisao com as regras do TD e a PASTA (FOLDER_UID_PLATAFORMA
+# != FOLDER_UID): nome de grupo so precisa ser unico DENTRO da pasta.
+if [ -f infra/grafana/cloud/rules-plataforma.yaml ]; then
+  sed -e "s/__DS_PROM__/${DS_PROM}/g" \
+      -e "s/__DS_LOKI__/${DS_LOKI}/g" \
+      -e "s/__DS_USAGE__/${DS_USAGE}/g" \
+      infra/grafana/cloud/rules-plataforma.yaml > "$TMP/rules-plataforma.yaml"
+
+  n_grupos_plataforma=$(yq '.groups | length' "$TMP/rules-plataforma.yaml")
+  for ((gi = 0; gi < n_grupos_plataforma; gi++)); do
+    nome_grupo=$(yq -r ".groups[$gi].name" "$TMP/rules-plataforma.yaml")
+    intervalo_raw=$(yq -r ".groups[$gi].interval" "$TMP/rules-plataforma.yaml")
+    intervalo_seg=$(converter_intervalo_para_segundos "$intervalo_raw") || exit 1
+
+    regras_grupo=$(yq -o=json ".groups[$gi].rules" "$TMP/rules-plataforma.yaml" \
+      | jq --arg fu "$FOLDER_UID_PLATAFORMA" --arg rg "$nome_grupo" 'map(. + {folderUID: $fu, ruleGroup: $rg})')
+
+    corpo_grupo=$(jq -n --arg t "$nome_grupo" --argjson interval "$intervalo_seg" --argjson rules "$regras_grupo" \
+      '{title: $t, interval: $interval, rules: $rules}')
+
+    provisioning_call PUT "/api/v1/provisioning/folder/${FOLDER_UID_PLATAFORMA}/rule-groups/${nome_grupo}" "$corpo_grupo" >/dev/null
+    echo "grupo de regras aplicado (Plataforma): ${nome_grupo} ($(echo "$regras_grupo" | jq 'length') regras, interval=${intervalo_seg}s)"
+  done
+else
+  echo "infra/grafana/cloud/rules-plataforma.yaml ausente — pulando publicacao de regras da Plataforma (TD ja publicado acima)"
+fi
+
 # --- Dashboards -------------------------------------------------------------------
 #
 # Dashboards no MESMO processo: DS_PROM/DS_LOKI/FOLDER_UID sao variaveis locais deste
@@ -184,6 +234,42 @@ for d in tesouro-direto host; do
         -H 'Content-Type: application/json' --data-binary @- \
         "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
 done
+
+# --- Dashboard da Plataforma, em pasta propria ------------------------------------------
+#
+# Fora do laco acima de proposito: mesmo tratamento de datasource, pasta DIFERENTE.
+# O arquivo e versionado no repo plataforma (infra/grafana/dashboards/plataforma.json,
+# ver infra/grafana/README.md la) e copiado manualmente para ca porque a publicacao mora
+# neste repo -- as duas copias divergem em silencio se alguem editar so uma:
+#
+#   cp ../plataforma/infra/grafana/dashboards/plataforma.json infra/grafana/dashboards/
+#   cp ../plataforma/infra/grafana/cloud/rules-plataforma.yaml infra/grafana/cloud/
+#
+# Mesmo raciocinio do `if -f` do bloco de regras da Plataforma acima: o arquivo pode nao
+# existir nesta execucao (copia manual esquecida) e isso NAO pode abortar o script
+# depois que o TD (contact points, policy, 21 regras, dashboards TD/host) ja foi
+# aplicado com sucesso -- a pasta Plataforma ja foi criada vazia nesse ponto
+# (FOLDER_UID_PLATAFORMA acima), o que e inofensivo (`gc_folder_uid` e idempotente).
+# PLATAFORMA_DASHBOARD_PUBLICADO controla tambem a verificacao final mais abaixo, que so
+# consulta o dashboard da Plataforma se ele realmente foi publicado nesta execucao --
+# senao o GET voltaria 404 e abortaria sob `set -e`, o mesmo modo de falha que o
+# comentario do load-test-k6 ja documenta.
+PLATAFORMA_DASHBOARD_PUBLICADO=false
+if [ -f infra/grafana/dashboards/plataforma.json ]; then
+  jq --arg p "$DS_PROM" --arg l "$DS_LOKI" \
+     'walk(if type=="object" and .uid=="prometheus" then .uid=$p
+           elif type=="object" and .uid=="loki" then .uid=$l else . end)' \
+     infra/grafana/dashboards/plataforma.json > "$TMP/plataforma.json"
+
+  jq -nc --slurpfile db "$TMP/plataforma.json" --arg f "$FOLDER_UID_PLATAFORMA" \
+     '{dashboard: $db[0], folderUid: $f, overwrite: true}' \
+    | curl -sf -X POST -H "Authorization: Bearer ${GC_GRAFANA_TOKEN}" \
+        -H 'Content-Type: application/json' --data-binary @- \
+        "${GC_GRAFANA_URL}/api/dashboards/db" | jq -r '.status + " " + .slug'
+  PLATAFORMA_DASHBOARD_PUBLICADO=true
+else
+  echo "infra/grafana/dashboards/plataforma.json ausente — pulando publicacao do dashboard da Plataforma (TD ja publicado acima)"
+fi
 
 # --- Convergencia: apaga da nuvem o load-test-k6 subido por engano na 77.3 -----------
 #
@@ -224,13 +310,13 @@ qtd_nuvem=$(echo "$regras_nuvem" | jq 'length')
 echo "regras na nuvem (todas as pastas, so informativo): ${qtd_nuvem}"
 
 # Contagem POR PASTA, nao um total agregado: este endpoint devolve as regras de TODAS
-# as pastas da stack (TesouroDireto + HubPrecos, desde que o bloco acima publique o
-# Hub), entao um unico "esperado N" pararia de detectar a regressao que esta
+# as pastas da stack (TesouroDireto + Plataforma, desde que o bloco acima publique a
+# Plataforma), entao um unico "esperado N" pararia de detectar a regressao que esta
 # verificacao existe para pegar — ex.: sumiu 1 regra do TD no mesmo dia em que apareceu
-# 1 nova do Hub, o TOTAL bate (21+M == 21+M) mas a pasta TesouroDireto esta quebrada.
-# Cada regra publicada acima carrega folderUID no corpo do PUT (ver blocos "Regras" e
-# "Regras do Hub de Precos" mais acima); a API de leitura devolve esse mesmo campo no
-# objeto de cada regra — filtramos por ele em vez de somar tudo.
+# 1 nova da Plataforma, o TOTAL bate (21+M == 21+M) mas a pasta TesouroDireto esta
+# quebrada. Cada regra publicada acima carrega folderUID no corpo do PUT (ver blocos
+# "Regras" e "Regras da Plataforma" mais acima); a API de leitura devolve esse mesmo
+# campo no objeto de cada regra — filtramos por ele em vez de somar tudo.
 #
 # Grafia tolerante de proposito: `.folderUID // .folderUid`. Este script convive com
 # as DUAS convencoes do Grafana — a API de provisioning de ALERTAS usa `folderUID`
@@ -247,6 +333,24 @@ echo "regras na pasta TesouroDireto: ${qtd_td}"
 if [ "$qtd_td" -ne 21 ]; then
   echo "ABORTADO: a pasta TesouroDireto tem ${qtd_td} regras de alerta, esperado 21" >&2
   exit 1
+fi
+
+# A contagem esperada da Plataforma vem do proprio rules-plataforma.yaml (numero de
+# regras nao e fixo do lado do TD, entao nao ha "21" para chumbar aqui) — se o arquivo
+# nao existe nesta execucao, o bloco de publicacao acima ja pulou a Plataforma e nao ha
+# nada a conferir.
+if [ -f infra/grafana/cloud/rules-plataforma.yaml ]; then
+  qtd_plataforma_esperada=$(yq '[.groups[].rules[]] | length' "$TMP/rules-plataforma.yaml")
+  # Mesma tolerancia de grafia do bloco do TD acima (`.folderUID // .folderUid`) —
+  # ver comentario la para o porque.
+  qtd_plataforma=$(echo "$regras_nuvem" | jq --arg f "$FOLDER_UID_PLATAFORMA" '[.[] | select((.folderUID // .folderUid) == $f)] | length')
+  echo "regras na pasta Plataforma: ${qtd_plataforma}"
+  if [ "$qtd_plataforma" -ne "$qtd_plataforma_esperada" ]; then
+    echo "ABORTADO: a pasta Plataforma tem ${qtd_plataforma} regras de alerta, esperado ${qtd_plataforma_esperada} (lido de rules-plataforma.yaml)" >&2
+    exit 1
+  fi
+else
+  echo "regras na pasta Plataforma: rules-plataforma.yaml ausente nesta execucao, pulando conferencia"
 fi
 
 # __expr__ e o pseudo-datasource do no de threshold (condition C de toda regra) —
@@ -307,6 +411,19 @@ verificar_datasources_resolvidos() {
 # la, ver bloco de convergencia acima) — consulta-lo aqui devolveria 404 e abortaria
 # o script sob `set -e`.
 uids_dashboards_verificar=(tesouro-direto-api host-node-exporter)
+
+# plataforma so entra condicionado a PLATAFORMA_DASHBOARD_PUBLICADO (setado no bloco
+# "Dashboard da Plataforma" acima): o dashboard so foi publicado nesta execucao se
+# infra/grafana/dashboards/plataforma.json existia. Consultar um uid que nunca foi
+# publicado devolveria 404 e abortaria o script sob `set -e` — o mesmo modo de falha que
+# o comentario do load-test-k6 acima ja documenta, so que para um arquivo que pode faltar
+# em vez de um dashboard removido de proposito. Quando publicado, o mesmo modo de falha
+# silenciosa (walk() que nao acha nada para trocar, POST 200 com painel quebrado) dos
+# demais vale para ele. uid lido do campo "uid" de topo do proprio plataforma.json (ver
+# infra/grafana/README.md do repo plataforma), igual aos demais.
+if [ "$PLATAFORMA_DASHBOARD_PUBLICADO" = true ]; then
+  uids_dashboards_verificar+=(plataforma)
+fi
 
 for uid in "${uids_dashboards_verificar[@]}"; do
   verificar_datasources_resolvidos "$uid"
