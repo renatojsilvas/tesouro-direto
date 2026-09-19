@@ -95,7 +95,8 @@ converter_intervalo_para_segundos() {
 # disableResolveMessage), NAO a arvore {contactPoints:[{name, receivers:[...]}]} do
 # arquivo — o `name` do contact point pai (ex.: "telegram-tesouro") tem de ser
 # copiado para dentro de cada receiver. Iteramos TODOS os contactPoints x receivers,
-# sem hardcode de indice — hoje e 1x1, mas o formato do arquivo permite mais.
+# sem hardcode de indice — hoje e 2x1 (telegram-tesouro, telegram-plataforma), mas o
+# formato do arquivo permite mais.
 #
 # Idempotencia: um segundo POST com o mesmo uid provavelmente conflita (a API nao
 # documenta upsert por POST). Consultamos os uids ja existentes uma vez e decidimos
@@ -128,6 +129,11 @@ done
 # envelope {apiVersion, policies:[...]} do arquivo e sem `orgId` (a stack da nuvem e
 # de org unica; mandar orgId de outra org quebra o PUT). E um PUT de arvore INTEIRA, nao
 # incremental — o corpo abaixo passa a SER a politica inteira na nuvem.
+#
+# infra/grafana/cloud/policies.yaml tem uma rota filha (`service = plataforma` →
+# receiver `telegram-plataforma`) alem da raiz (`telegram-tesouro`, inalterada); o
+# contrato do label e IMPLICITO com infra/grafana/cloud/rules-plataforma.yaml (mesmo
+# raciocinio que a rota do Hub tinha antes de d4a3130 remove-la).
 politica_corpo=$(yq -o=json '.policies[0] | del(.orgId)' infra/grafana/cloud/policies.yaml)
 provisioning_call PUT /api/v1/provisioning/policies "$politica_corpo" >/dev/null
 echo "notification policy aplicada"
